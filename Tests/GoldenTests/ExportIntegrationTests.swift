@@ -173,4 +173,92 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
             #expect(!FileManager.default.fileExists(atPath: out.path), "cancelled export left \(out.lastPathComponent)")
         }
     }
+
+    // MARK: - S3: sample rate from the project, confirm-before-cancel hook
+
+    /// Audio sample rate of the first audio stream of `url`, Hz.
+    private func audioRate(_ url: URL) async throws -> Double {
+        let src = try await MediaPool(diskCacheDirectory: nil).source(for: url)
+        return try #require(src.info.streams.first { $0.kind == .audio }, "no audio in \(url.lastPathComponent)").sampleRate
+    }
+
+    /// Edited project → `audioFormatSampleRate` changed → save → reopen → export: every audio
+    /// output (WAV, M4A, MP4's audio track) is written at the reopened project's rate; invalid
+    /// rates fall back to 48 kHz. The click stays at 1.0 s ± 1 frame at the new rate.
+    @Test(arguments: [("22050", 22_050.0), ("32000", 32_000.0), ("44100", 44_100.0),
+                      ("\"abc\"", 48_000.0), ("1000000", 48_000.0)])
+    func exportUsesReopenedProjectSampleRate(lexeme: String, expected: Double) async throws {
+        let dir = try scratchDir("exp-rate")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = try ExportFixture(in: dir)
+        f.bundle.project.root["audioFormatSampleRate"] = try JSON.parse(lexeme)
+        try f.bundle.saveWithBackup()
+        let reopened = try ProjectBundle(url: f.bundle.directory)
+        #expect(reopened.project.serialized() == f.bundle.project.serialized())
+        let scene = SceneModel(project: reopened.project, resolve: reopened.resolve)
+        let audio = AudioScene(project: reopened.project, resolve: reopened.resolve)
+        #expect(audio.sampleRate == (expected == 48_000 ? nil : expected))
+
+        for (name, format) in [("out.wav", ExportFormat.audio(container: "wav")),
+                               ("out.m4a", ExportFormat.audio(container: "m4a")),
+                               ("out.mp4", ExportFormat.mp4(codec: "h264", bitrate: nil))] {
+            let out = dir.appendingPathComponent(name)
+            let session = ExportSession(scene: scene, audio: audio, pool: MediaPool(diskCacheDirectory: nil),
+                                        settings: ExportSettings(format: format), output: out)
+            try await session.run()
+            #expect(try await audioRate(out) == expected, "\(name) at \(lexeme)")
+        }
+        // Sync at the new rate: decode the WAV at its own rate and find the click.
+        let src = try await MediaPool(diskCacheDirectory: nil).source(for: dir.appendingPathComponent("out.wav"))
+        let s = try #require(src.info.streams.first { $0.kind == .audio })
+        let pcm = try await src.audio(stream: s.index, range: CMTimeRange(start: .zero, duration: s.duration),
+                                      format: PCMFormat(sampleRate: expected, channels: 1))
+        let at = try #require(onset(pcm.channels[0]), "click not found")
+        #expect(abs(Double(at) / expected + pcm.startTime.seconds - f.clickAt) <= 1.0 / 30)
+    }
+
+    /// Confirm-before-cancel hook on a real project export: no work to lose before `run()`
+    /// or after it; while running, `cancelAndWait()` returns only once the partial output is
+    /// gone, and the output directory holds nothing but the project afterwards.
+    @Test func cancelAndWaitHookOnProjectExport() async throws {
+        let dir = try scratchDir("exp-cancelwait")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = try ExportFixture(in: dir)
+        let outDir = dir.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        var settings = ExportSettings(format: .mov(profile: "4444"))
+        settings.size = CGSize(width: 1920, height: 1080)  // slow enough to catch mid-run
+        let out = outDir.appendingPathComponent("big.mov")
+        let session = ExportSession(scene: f.scene, audio: f.audio, pool: MediaPool(diskCacheDirectory: nil),
+                                    settings: settings, output: out)
+        #expect(await session.cancellationLosesWork == false)
+        await session.cancelAndWait()  // idle: returns at once, nothing written
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outDir.path).isEmpty)
+
+        let fresh = ExportSession(scene: f.scene, audio: f.audio, pool: MediaPool(diskCacheDirectory: nil),
+                                  settings: settings, output: out)
+        let job = Task { try await fresh.run() }
+        let t0 = Date()
+        while await !fresh.cancellationLosesWork, Date().timeIntervalSince(t0) < 30 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        await fresh.cancelAndWait()
+        #expect(await fresh.cancellationLosesWork == false)
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: outDir.path)
+        do {
+            try await job.value
+            #expect(leftovers == ["big.mov"], "finished before the cancel: only the complete file")
+        } catch ExportError.cancelled {
+            #expect(leftovers.isEmpty, "cancelAndWait returned with \(leftovers) still present")
+        }
+
+        // A finished export keeps its file through cancelAndWait.
+        let small = outDir.appendingPathComponent("small.wav")
+        let done = ExportSession(scene: f.scene, audio: f.audio, pool: MediaPool(diskCacheDirectory: nil),
+                                 settings: ExportSettings(format: .audio(container: "wav")), output: small)
+        try await done.run()
+        await done.cancelAndWait()
+        #expect(await done.cancellationLosesWork == false)
+        #expect(FileManager.default.fileExists(atPath: small.path))
+    }
 }
