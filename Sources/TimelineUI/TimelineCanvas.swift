@@ -12,6 +12,8 @@ enum TimelineDrag: Equatable {
     /// Mouse down on a clip body, not yet past the drag threshold.
     case press(clipID: Int64, origin: CGPoint, wasSelected: Bool)
     case move(origin: CGPoint, plan: MovePlan)
+    /// ⌥-drag of one clip: ripple move.
+    case rippleMove(origin: CGPoint, plan: RippleMovePlan)
     case trim(origin: CGPoint, plan: TrimPlan)
     /// Rubber-band selection; `base` is the selection kept (shift/⌘).
     case marquee(origin: CGPoint, current: CGPoint, base: Set<Int64>)
@@ -275,7 +277,7 @@ final class TimelineCanvas: NSView {
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         switch drag {
-        case .move, .trim, .marquee: autoscroll(toward: p)
+        case .move, .rippleMove, .trim, .marquee: autoscroll(toward: p)
         default: break
         }
         let L = layout
@@ -283,17 +285,19 @@ final class TimelineCanvas: NSView {
         case .none: return
         case .scrub:
             seek(to: L.ticks(atX: max(p.x, L.clipArea.minX)))
-            autoscroll(with: event)
         case .press(let id, let origin, _):
             let o = viewPoint(origin)
             guard hypot(p.x - o.x, p.y - o.y) >= 3 else { return }
             let ids = model.selection.contains(id) ? Array(model.selection) : [id]
-            drag = .move(origin: origin, plan: planMove(ids: ids, origin: origin, to: p, layout: L))
+            drag = moveDrag(ids: ids, origin: origin, to: p, ripple: event.modifierFlags.contains(.option), layout: L)
         case .move(let origin, let plan):
-            drag = .move(origin: origin, plan: planMove(ids: plan.ids, origin: origin, to: p, layout: L))
+            drag = moveDrag(ids: plan.ids, origin: origin, to: p, ripple: event.modifierFlags.contains(.option), layout: L)
+        case .rippleMove(let origin, let plan):
+            drag = moveDrag(ids: [plan.id], origin: origin, to: p, ripple: event.modifierFlags.contains(.option), layout: L)
         case .trim(let origin, let plan):
             let raw = L.ticks(forWidth: p.x - viewPoint(origin).x)
-            if let np = editor.planTrim(id: plan.id, edge: plan.edge, rawDelta: raw, tolerance: snapTolerance) {
+            if let np = editor.planTrim(id: plan.id, edge: plan.edge, rawDelta: raw, tolerance: snapTolerance,
+                                        ripple: event.modifierFlags.contains(.option)) {
                 drag = .trim(origin: origin, plan: np)
             }
         case .marquee(let origin, _, let base):
@@ -314,11 +318,33 @@ final class TimelineCanvas: NSView {
             if wasSelected { model.selection = [id] }
         case .move(_, let plan):
             if plan.isValid { _ = editor.performMove(plan) } else if plan.delta != 0 || plan.trackOffset != 0 { NSSound.beep() }
+        case .rippleMove(_, let plan):
+            if !editor.performRippleMove(plan) { NSSound.beep() }
         case .trim(_, let plan):
             _ = editor.performTrim(plan)
         default: break
         }
         needsDisplay = true
+    }
+
+    /// Plain move of `ids`, or a ripple move when ⌥ is held and one clip is dragged.
+    private func moveDrag(ids: [Int64], origin: CGPoint, to p: CGPoint, ripple: Bool, layout L: TimelineLayout) -> TimelineDrag {
+        let plan = planMove(ids: ids, origin: origin, to: p, layout: L)
+        if ripple, ids.count == 1,
+           let rp = editor.planRippleMove(id: ids[0], rawDelta: L.ticks(forWidth: p.x - viewPoint(origin).x),
+                                          trackOffset: plan.trackOffset, tolerance: snapTolerance) {
+            return .rippleMove(origin: origin, plan: rp)
+        }
+        return .move(origin: origin, plan: plan)
+    }
+
+    /// Clip positions that a ripple drag or trim changes (drawn instead of the originals).
+    var previewPositions: [Int64: ClipPosition] {
+        switch drag {
+        case .trim(_, let plan): editor.preview(plan)
+        case .rippleMove(_, let plan): editor.preview(plan)
+        default: [:]
+        }
     }
 
     private func planMove(ids: [Int64], origin content: CGPoint, to p: CGPoint, layout L: TimelineLayout) -> MovePlan {
