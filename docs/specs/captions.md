@@ -62,7 +62,7 @@ here, as the content is personal.
 | Captions are a parameter of the **audio clip** they belong to, with one keyframe per caption | [obs] |
 | A caption runs from its `time` to the next keyframe's `time`. The vlog has 7 keyframes at 0, 4, 8, …, 24 s: Camtasia's default 4-s segments, all with empty text | [obs] |
 | `value.text` is plain text. `value.textAttributes` is null here; when present it uses the run format of `callouts.md` §5 | [obs null; inf format] |
-| Time axis: the keyframes start at 0 while the clip's `mediaStart` is 1.117 s, so the axis is **clip-local** (or the segments were made before a trim) | [?] Experiment CA1, which adds a left trim |
+| Time axis: the keyframes start at 0 while the clip's `mediaStart` is 1.117 s, so the axis is **clip-local** (or the segments were made before a trim) | [?] Experiment CA1, which adds a left trim. **WizRec uses the media axis** (`mediaStart + (t − start) / scalar`, like every keyframed parameter), so split/trim/speed need no rewrite [WizRec] |
 | `captionAttributes` (above) styles every classic caption | [inf] |
 
 Experiment CA1 confirms the time axis and the non-empty form.
