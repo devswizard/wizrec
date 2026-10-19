@@ -183,7 +183,7 @@ Developer ID or Sparkle approval (no ship agent).
 |---|---|---|---|
 | S3-TL-1 | timeline | claimed | `AddTrack`/`RemoveTrack` inside a group, media drop into an open group: expected-JSON + byte-identical undo tests |
 | S3-TUI-1 | timelineui | claimed | Group-track add/remove + media drops in open groups in the UI, on S3-TL-1 commands |
-| S3-TUI-2 | timelineui | claimed | Dynamic caption style as an inspector section (with app) |
+| S3-TUI-2 | app | claimed | Dynamic caption style as an inspector section (moved from timelineui: inspector is app-owned) |
 | S3-REN-1 | render | claimed | Parallel `OfflineRenderer`: several frames in flight, deterministic, frame N unchanged; ≥ 4× real time 1080p (perf test gated) |
 | S3-REN-2 | render | claimed | Optional: particle shaders (vertexCode), HDR tone mapping |
 | S3-EXP-1 | export | claimed | Audio export sample rate from `audioFormatSampleRate` (additive AudioScene API) |
