@@ -67,7 +67,6 @@ extension TimelineCanvas {
     var draggedIDs: Set<Int64> {
         switch drag {
         case .move(_, let plan): Set(plan.ids)
-        case .trim(_, let plan): [plan.id]
         default: []
         }
     }
@@ -75,17 +74,25 @@ extension TimelineCanvas {
     func drawClips(_ ctx: CGContext, _ L: TimelineLayout, _ dirty: CGRect) {
         let visible = L.clipArea.intersection(dirty)
         let dragged = draggedIDs
+        let moved = previewPositions
+        let invalidRipple: Bool = if case .rippleMove(_, let plan) = drag { !plan.isValid } else { false }
         for track in snapshot.tracks {
-            guard let row = L.row(forTrack: track.index), L.rowRect(row).intersects(visible) else { continue }
             for c in track.clips {
-                guard let r = L.clipRect(track: track.index, start: c.start, duration: c.duration),
+                var item = c, ti = track.index
+                if let pos = moved[c.id] { item.start = pos.start; item.duration = max(1, pos.duration); ti = pos.track }
+                guard let r = L.clipRect(track: ti, start: item.start, duration: item.duration),
                       r.intersects(visible) else { continue }
                 ctx.saveGState()
                 if track.videoHidden || dragged.contains(c.id) { ctx.setAlpha(dragged.contains(c.id) ? 0.35 : 0.5) }
-                drawClip(ctx, c, rect: r, layout: L, visible: visible, selected: model.selection.contains(c.id),
+                drawClip(ctx, item, rect: r, layout: L, visible: visible, selected: model.selection.contains(c.id),
                          muted: track.audioMuted)
+                if invalidRipple, moved[c.id] != nil, model.selection.contains(c.id) {
+                    ctx.setStrokeColor(Palette.invalid.cgColor); ctx.setLineWidth(2)
+                    ctx.stroke(r.insetBy(dx: 1, dy: 1))
+                }
                 ctx.restoreGState()
             }
+            guard moved.isEmpty, let row = L.row(forTrack: track.index), L.rowRect(row).intersects(visible) else { continue }
             for tr in track.transitions {
                 guard let r = L.clipRect(track: track.index, start: tr.start, duration: tr.end - tr.start),
                       r.intersects(visible) else { continue }
@@ -352,13 +359,13 @@ extension TimelineCanvas {
                 }
             }
         case .trim(_, let plan):
+            guide = plan.guide  // the resized clip is drawn by drawClips from previewPositions
+        case .rippleMove(_, let plan):
             guide = plan.guide
-            if let (track, c) = snapshot.clip(plan.id) {
-                var t = c
-                if plan.edge == .start { t.duration = c.end - plan.target; t.start = plan.target } else { t.duration = plan.target - c.start }
-                if let r = L.clipRect(track: track, start: t.start, duration: max(1, t.duration)) {
-                    drawClip(ctx, t, rect: r, layout: L, visible: L.clipArea, selected: true, muted: false)
-                }
+            if let row = L.row(forTrack: plan.toTrack) {
+                let rr = L.rowRect(row), x = L.x(ofTicks: plan.start).rounded()
+                (plan.isValid ? Palette.marqueeStroke : Palette.invalid).setFill()
+                ctx.fill(CGRect(x: x - 1, y: rr.minY, width: 2, height: rr.height))
             }
         case .marquee(let oc, let pc, _):
             let o = viewPoint(oc), p = viewPoint(pc)

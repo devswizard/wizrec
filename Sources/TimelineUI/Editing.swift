@@ -40,13 +40,36 @@ public struct MovePlan: Sendable, Equatable {
     public var guide: Int64?
 }
 
-/// A planned edge trim of one clip to `target` ticks.
+/// A planned edge trim of one clip to `target` ticks (`ripple`: later clips follow, ⌥-drag).
 public struct TrimPlan: Sendable, Equatable {
     public var id: Int64
     public var track: Int
     public var edge: TrimEdge
     public var target: Int64
     public var guide: Int64?
+    public var ripple: Bool = false
+}
+
+/// A planned ripple move (⌥-drag): clip `id` leaves `fromTrack` (gap closes) and is inserted
+/// on `toTrack` at `start`, in that track's layout without the clip (ticks).
+public struct RippleMovePlan: Sendable, Equatable {
+    public var id: Int64
+    public var fromTrack: Int
+    public var toTrack: Int
+    public var start: Int64
+    public var isValid: Bool
+    public var guide: Int64?
+}
+
+/// A clip's place during a preview: track index, start and duration in ticks.
+public struct ClipPosition: Sendable, Equatable {
+    public var track: Int
+    public var start: Int64
+    public var duration: Int64
+    public init(track: Int, start: Int64, duration: Int64) { self.track = track; self.start = start; self.duration = duration }
+
+    /// A clip's span on a known track.
+    public struct Placed: Sendable, Equatable { public var id: Int64; public var start: Int64; public var end: Int64 }
 }
 
 /// Turns gestures into TimelineEngine commands. Pure planning (`planMove`, `planTrim`)
@@ -120,7 +143,8 @@ public struct TimelineEditor {
     /// Moves one edge of clip `id` by `rawDelta` ticks, snapped and frame-rounded, kept at
     /// least one frame long and clear of the neighbouring clips. Media limits are left to
     /// `TrimClip`, which clamps on commit.
-    public func planTrim(id: Int64, edge: TrimEdge, rawDelta: Int64, tolerance: Int64) -> TrimPlan? {
+    public func planTrim(id: Int64, edge: TrimEdge, rawDelta: Int64, tolerance: Int64,
+                         ripple: Bool = false) -> TrimPlan? {
         guard let (track, clip) = snapshot.clip(id), let t = snapshot.track(track), !t.locked else { return nil }
         let original = edge == .start ? clip.start : clip.end
         var target = original + rawDelta
@@ -132,16 +156,104 @@ public struct TimelineEditor {
         if q != target { guide = nil }
         target = q
         let frame = snapshot.frameTicks
+        // Neighbours limit growth unless the trim ripples (⌥ or a magnetic track).
+        let free = ripple || t.magnetic
         let prevEnd = t.clips.filter { $0.id != id && $0.end <= clip.start }.map(\.end).max() ?? 0
         let nextStart = t.clips.filter { $0.id != id && $0.start >= clip.end }.map(\.start).min()
-        // On a magnetic track TrimClip ripples the neighbours, so only 0 and one frame limit it.
+        // Limits only stop growth: a clip already past one can still shrink (as TrimClip).
         switch edge {
-        case .start: target = min(max(target, t.magnetic ? 0 : prevEnd), clip.end - frame)
+        case .start:
+            var limit: Int64 = free ? (ripple ? Int64.min / 4 : 0) : prevEnd
+            if let m = clip.minStart { limit = max(limit, m) }
+            if target < clip.start { target = max(target, min(limit, clip.start)) }
+            target = min(target, clip.end - frame)
         case .end:
+            var limit = Int64.max
+            if !free, let n = nextStart { limit = n }
+            if let m = clip.maxEnd { limit = min(limit, m) }
+            if target > clip.end { target = min(target, max(limit, clip.end)) }
             target = max(target, clip.start + frame)
-            if let n = nextStart, !t.magnetic { target = min(target, n) }
         }
-        return TrimPlan(id: id, track: track, edge: edge, target: target, guide: guide)
+        if guide != nil, guide != target { guide = nil }
+        return TrimPlan(id: id, track: track, edge: edge, target: target, guide: guide, ripple: ripple)
+    }
+
+    /// Where clips sit while a ripple trim is previewed (only the clips that change).
+    public func preview(_ plan: TrimPlan) -> [Int64: ClipPosition] {
+        guard let (track, clip) = snapshot.clip(plan.id), let t = snapshot.track(track) else { return [:] }
+        var out: [Int64: ClipPosition] = [:]
+        let ripple = plan.ripple || t.magnetic
+        switch plan.edge {
+        case .end:
+            let delta = plan.target - clip.end
+            out[clip.id] = ClipPosition(track: track, start: clip.start, duration: clip.duration + delta)
+            if ripple {
+                for o in t.clips where o.id != clip.id && o.start >= clip.end {
+                    out[o.id] = ClipPosition(track: track, start: o.start + delta, duration: o.duration)
+                }
+            }
+        case .start:
+            let delta = plan.target - clip.start
+            if ripple {
+                // The clip keeps its start; only its in-point moves, later clips follow.
+                out[clip.id] = ClipPosition(track: track, start: clip.start, duration: clip.duration - delta)
+                for o in t.clips where o.id != clip.id && o.start >= clip.end {
+                    out[o.id] = ClipPosition(track: track, start: o.start - delta, duration: o.duration)
+                }
+            } else {
+                out[clip.id] = ClipPosition(track: track, start: plan.target, duration: clip.end - plan.target)
+            }
+        }
+        return out
+    }
+
+    /// Ripple move of one clip: it leaves a closed gap and is inserted at a clip boundary of
+    /// the destination track, pushing later clips right. `rawDelta` and `trackOffset` as for
+    /// `planMove`; the drop point snaps to the nearest boundary of a clip it would land inside.
+    public func planRippleMove(id: Int64, rawDelta: Int64, trackOffset: Int, tolerance: Int64) -> RippleMovePlan? {
+        guard let (from, clip) = snapshot.clip(id) else { return nil }
+        let to = min(max(from + trackOffset, 0), max(0, snapshot.tracks.count - 1))
+        guard let src = snapshot.track(from), let dst = snapshot.track(to) else { return nil }
+        // Destination layout without the clip (gap closed when it is the same track).
+        let others = destinationLayout(clip: clip, from: from, to: to)
+        var s = max(0, clip.start + rawDelta)
+        var guide: Int64?
+        if let c = others.first(where: { $0.start < s && s < $0.end }) {
+            s = s - c.start < c.end - s ? c.start : c.end
+            guide = s
+        } else if model.snappingEnabled, tolerance > 0 {
+            let edges: [Int64] = [0, model.playhead] + others.flatMap { o -> [Int64] in [o.start, o.end] }
+            if let best = edges.min(by: { abs($0 - s) < abs($1 - s) }), abs(best - s) <= tolerance { s = best; guide = s }
+        }
+        if guide == nil { s = max(0, snapshot.quantize(s)) }
+        let valid = !src.locked && !dst.locked && (s != clip.start || to != from || dst.magnetic)
+        return RippleMovePlan(id: id, fromTrack: from, toTrack: to, start: s, isValid: valid, guide: guide)
+    }
+
+    /// Clips of `to` as they sit once `clip` has left track `from` (positions only).
+    func destinationLayout(clip: TimelineClipItem, from: Int, to: Int) -> [ClipPosition.Placed] {
+        guard let dst = snapshot.track(to) else { return [] }
+        return dst.clips.filter { $0.id != clip.id }.map { o in
+            let shift = (from == to && o.start >= clip.end) ? -clip.duration : 0
+            return ClipPosition.Placed(id: o.id, start: o.start + shift, end: o.end + shift)
+        }
+    }
+
+    /// Where clips sit while a ripple move is previewed.
+    public func preview(_ plan: RippleMovePlan) -> [Int64: ClipPosition] {
+        guard let (_, clip) = snapshot.clip(plan.id), let src = snapshot.track(plan.fromTrack) else { return [:] }
+        var out: [Int64: ClipPosition] = [:]
+        if plan.fromTrack != plan.toTrack {
+            for o in src.clips where o.id != clip.id && o.start >= clip.end {
+                out[o.id] = ClipPosition(track: plan.fromTrack, start: o.start - clip.duration, duration: o.duration)
+            }
+        }
+        for o in destinationLayout(clip: clip, from: plan.fromTrack, to: plan.toTrack) {
+            let start = o.start >= plan.start ? o.start + clip.duration : o.start
+            out[o.id] = ClipPosition(track: plan.toTrack, start: start, duration: o.end - o.start)
+        }
+        out[clip.id] = ClipPosition(track: plan.toTrack, start: plan.start, duration: clip.duration)
+        return out
     }
 
     // MARK: Commands
@@ -190,7 +302,14 @@ public struct TimelineEditor {
         guard let (_, clip) = snapshot.clip(plan.id) else { return false }
         let original = plan.edge == .start ? clip.start : clip.end
         guard plan.target != original else { return false }
+        if plan.ripple { return perform(RippleTrim(clipID: plan.id, edge: plan.edge, to: plan.target)) }
         return perform(TrimClip(clipID: plan.id, edge: plan.edge, to: plan.target))
+    }
+
+    @discardableResult
+    public func performRippleMove(_ plan: RippleMovePlan) -> Bool {
+        guard plan.isValid else { return false }
+        return perform(RippleMove(clipID: plan.id, toTrack: plan.toTrack, start: plan.start))
     }
 
     /// Splits at the playhead (see `splitTargets`).

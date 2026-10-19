@@ -65,6 +65,11 @@ public struct TimelineClipItem: Sendable, Equatable, Identifiable {
     public var cuts: [Int64]
     /// Groups: inner tracks (bottom first), each a list of child spans in track ticks.
     public var lanes: [[TimelineLaneSpan]]
+    /// Earliest start edge the available media allows (track ticks, frame-rounded inward);
+    /// nil when unbounded (images, callouts, shaders, unknown length).
+    public var minStart: Int64? = nil
+    /// Latest end edge the available media allows; nil when unbounded.
+    public var maxEnd: Int64? = nil
 }
 
 /// A transition drawn as an overlay. `start`/`end` in track ticks.
@@ -135,7 +140,9 @@ extension TimelineSnapshot {
         let rate = project.timebase.editRate > 0 ? project.timebase.editRate : 30
         var sources: [Int64: SourceMedia] = [:]
         for s in project.sourceBin { sources[s.id] = s }
-        let builder = SnapshotBuilder(editRate: rate, sources: sources)
+        let fr = project.frameRate
+        let frame = fr.num > 0 ? max(1, (rate * fr.den) / fr.num) : 1
+        let builder = SnapshotBuilder(editRate: rate, sources: sources, frameTicks: frame)
         let attrs = project.timeline?.trackAttributes ?? []
         var tracks: [TimelineTrackItem] = []
         for (i, t) in project.tracks.enumerated() {
@@ -151,6 +158,7 @@ extension TimelineSnapshot {
 private struct SnapshotBuilder {
     let editRate: Int64
     let sources: [Int64: SourceMedia]
+    let frameTicks: Int64
 
     func track(_ t: Track, index: Int, attributes a: JSONObject?) -> TimelineTrackItem {
         let ident = a?["ident"]?.string ?? ""
@@ -204,10 +212,49 @@ private struct SnapshotBuilder {
         default:
             leafOrUnified(c, window: window, video: &video, audio: &audio)
         }
+        let (lo, hi) = limits(c)
         return TimelineClipItem(
             id: c.id, style: style, name: name(of: c), start: c.start, duration: c.duration,
             speed: 1 / scalar, effectCount: c.effects.filter { !$0.isPlaceholder }.count,
-            videoSpans: video, audioSpans: audio, cuts: cuts, lanes: lanes)
+            videoSpans: video, audioSpans: audio, cuts: cuts, lanes: lanes, minStart: lo, maxEnd: hi)
+    }
+
+    /// Edge limits from the available media, like `TrimClip`: for each timed part,
+    /// `start − (mediaStart − lower) × scalar` (ceil to a frame) and
+    /// `start + (length − mediaStart) × scalar` (floor to a frame). Display only; the
+    /// command does the exact clamp.
+    func limits(_ c: Clip) -> (Int64?, Int64?) {
+        let parts = c.kind == .unified ? [c.video, c.audio].compactMap { $0 } : [c]
+        var lo: Int64?, hi: Int64?
+        for p in parts {
+            guard let len = mediaLength(p) else { continue }
+            let s = p.scalar.double > 0 ? p.scalar.double : 1
+            let lower = c.kind == .stitched ? max(0, p.object["minMediaStart"]?.double ?? 0) : 0
+            let a = Double(p.start) - (p.mediaStart.double - lower) * s
+            let b = Double(p.start) + (len - p.mediaStart.double) * s
+            let fa = Int64((a / Double(frameTicks)).rounded(.up)) * frameTicks
+            let fb = Int64((b / Double(frameTicks)).rounded(.down)) * frameTicks
+            lo = max(lo ?? fa, fa); hi = min(hi ?? fb, fb)
+        }
+        return (lo, hi)
+    }
+
+    /// Media length in the clip's media-time ticks; nil when unbounded or unknown.
+    func mediaLength(_ p: Clip) -> Double? {
+        switch p.kind {
+        case .video, .screenVideo, .audio:
+            guard let sid = p.sourceID, let src = sources[sid] else { return nil }
+            let tracks = src.tracks, n = Int(p.sourceTrackNumber ?? 0)
+            guard tracks.indices.contains(n), tracks[n].editRate > 0, tracks[n].range.count == 2 else { return nil }
+            let len = Double(tracks[n].range[1] - tracks[n].range[0]) * Double(editRate) / Double(tracks[n].editRate)
+            return len.isFinite && len >= 0 && len < 1e17 ? len : nil
+        case .group:
+            return p.tracks.flatMap(\.clips).map { Double($0.end) }.max()
+        case .stitched:
+            return p.segments.map { Double($0.end) }.max()
+        default:
+            return nil
+        }
     }
 
     /// Mapping of a clip's window: track ticks [start, end) ↔ inner ticks from `mediaStart`,
