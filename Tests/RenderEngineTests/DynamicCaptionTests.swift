@@ -175,6 +175,29 @@ private func count(_ img: GPUTest.Image, _ test: (Px) -> Bool) -> (n: Int, minX:
         #expect(lit.n > 0 && lit.maxX < 96)
     }
 
+    /// The highlight moves exactly at a word's start tick: one tick before 0.5 s "The" is red, at 0.5 s "quick".
+    @Test func highlightSwitchesAtWordBoundary() throws {
+        let def = captionDef(["width": 900.0, "height": 200.0, "dynamic-caption-current-word-color-red": 1.0,
+                              "dynamic-caption-current-word-color-green": 0.0, "dynamic-caption-current-word-color-blue": 0.0,
+                              "dynamic-caption-current-word-stroke-extra-width": 0.0])
+        let sc = try scene(def: def)
+        let red: (Px) -> Bool = { $0.r > 200 && $0.g < 60 && $0.b < 60 }
+        func redSpan(at t: Int64) throws -> (n: Int, minX: Int, maxX: Int) {
+            let plan = sc.evaluate(at: t)
+            let layers = plan.layers.filter { $0.clipID == 20 }
+            return count(try GPUTest.render(RenderPlan(time: t, canvasSize: plan.canvasSize, background: RGBA(0, 0, 0),
+                                                       layers: layers), 480, 270), red)
+        }
+        let before = try redSpan(at: s / 2 - 1), after = try redSpan(at: s / 2)
+        #expect(before.n > 20 && after.n > 20)
+        #expect(before.maxX < after.minX)   // "The" is left of "quick"
+        #expect(try caption(sc, at: s / 2 - 1).dynamicCaption?.frame?.currentWord == 0)
+        #expect(try caption(sc, at: s / 2).dynamicCaption?.frame?.currentWord == 1)
+        // The closing "" mark at 1.5 s ends "fox.": no word current, no red.
+        #expect(try redSpan(at: 3 * s / 2).n == 0)
+        #expect(try redSpan(at: 3 * s / 2 - 1).n > 20)
+    }
+
     @Test func emptyFrameDrawsNothing() throws {
         let img = try render(content(nil, DynamicCaptionStyle()))
         #expect(count(img, { $0.r > 20 || $0.g > 20 || $0.b > 20 }).n == 0)

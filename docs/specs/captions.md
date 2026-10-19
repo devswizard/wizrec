@@ -161,6 +161,23 @@ Every style key is a plain constant inside `def`. None is animatable [obs].
 
 Block breaking, line count and the fitted size are [?] until CA2.
 
+### WizRec rules used until CA2
+
+Tag **[WizRec]** marks a rule WizRec chose because Camtasia's is unknown.
+Each is replaceable once CA2 answers it.
+
+| Rule | Tag | Code |
+|---|---|---|
+| **Pairing.** A dynamic-caption callout reads the transcribed audio clips (`AMFile`, or a `UnifiedMedia`'s `audio` half, whose source track has `parameters.transcription`) on the **same track list** as the callout and overlapping it. Audio inside groups or stitched clips is not considered | [inf] no linking key [obs]; scope [WizRec] | `SceneBuilder.pairDynamicCaptions` |
+| **Several audio clips.** At time t the first paired clip playing at t wins, bottom track first | [WizRec] | `SDynamicCaption.frame(at:)` |
+| **Word time.** t → the audio clip's media time (`mediaStart + (t − start) / scalar`, time-mapping.md), then the last word with `time ≤ m` | [inf] (§2) | same |
+| **Blocks.** Greedy: chars per line = box `width` / (0.55 × `font.size`), clamped 8–60; 2 lines; new block after a ≥ 1.5 s pause, after 6 s, or at a sentence end when `new-paragraph-for-each-sentence`; a block stays 1 s after its last word | [WizRec] | `CaptionBlockRules` (CaptionLayout) |
+| **Size.** Base `font.size`, shrunk until the block fits the box; the `textAttributes` `fontSize` (fitted to the placeholder `def.text`) is ignored, its font/weight/colour kept | [WizRec] | `DynamicCaptionText.fit` |
+| **Block transition.** Any non-empty `block-transition-name` fades the block in over `block-transition-duration` | [WizRec] | `DynamicCaptionText.draw` |
+| **Easing.** Over `word-easing-duration` the current word's colour, outline and scale ease in while the previous word's ease out; the word box slides over `word-rectangle-transition-time` | [inf] from key names | same |
+| **Callout `mediaStart`.** Ignored (CP1's 0.2333 s is unexplained); new callouts get 0 | [WizRec] | `AddDynamicCaption` |
+| **Export to SRT/VTT.** One cue per block of every paired audio clip | [WizRec] | `DynamicCaptions.cues` |
+
 ## 5. Experiments
 
 Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/captions/`.
