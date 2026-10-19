@@ -25,7 +25,7 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 | M1-MED-3 | media | claimed | MED-1 | AVFoundation h264/hevc decode, frame-accurate seek, test: seek(n) == sequential(n) |
 | M1-MED-4 | media | claimed | MED-2,3 | `MediaPool` LRU frame cache (PTS-snapped keys) + `prefetch`; perf test 1080p ≥ 120 fps decode |
 | M1-MED-5 | media | claimed | MED-1 | `audio(stream:range:format:)` PCM + resample; `thumbnail` |
-| M1-REN-1 | render | claimed | — | `SceneModel` + `evaluate`: transform, crops, opacity, keyframes; UnifiedMedia, StitchedMedia, Group, scalar; unit tests on hand-built JSON + demo fixture |
+| M1-REN-1 | render | done | — | `SceneModel` + `evaluate`: transform, crops, opacity, keyframes; UnifiedMedia, StitchedMedia, Group, scalar; unit tests on hand-built JSON + demo fixture |
 | M1-REN-2 | render | claimed | REN-1 | `audioSegments(in:)` with nested scalars and gains |
 | M1-REN-3 | render | claimed | REN-1 | `Compositor`: transform, crops, opacity, offscreen groups, shader fallback; GPU tests on synthetic frames (pixel probes) |
 | M1-REN-4 | render | claimed | REN-3, MED-4 | `OfflineRenderer.image`; renders demo frame 0/mid/end to PNG |
@@ -36,6 +36,6 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 | M1-QA-3 | qa | claimed | — | `.github/workflows/ci.yml` macOS runner: brew ffmpeg, `swift build`, `swift test` |
 | M1-QA-4 | qa | claimed | REN-4 | Perf tests: decode + composite throughput 1080p/4K |
 | M1-FMT-1 | format | claimed | — | `docs/specs/time-mapping.md`: groups, stitched, scalar, keyframe time base, `mediaStart` floats/rationals |
-| M1-FMT-2 | format | claimed | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
+| M1-FMT-2 | format | done | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
 | M1-FMT-3 | format | claimed | — | `docs/specs/media-streams.md`: `trackNumber` ↔ stream, stream time origin, `sourceTracks.range`, VFR in `.trec` |
 | M1-APP-1 | app | todo | MED-4, REN-3 | Player window: open `.cmproj`, canvas, play/pause/scrub, 60 fps at 1080p, audio clock |

@@ -75,12 +75,13 @@ Time mapping, per clip, from the parent's time *t* (ticks):
 - Keyframe times are relative to the clip's own `start` [inf]; evaluate with
   `Parameter.value(at:)` (eioe ≈ smoothstep until `docs/specs/animation.md`).
 
-Layer geometry (pending `docs/specs/transform.md` from `format`):
+Layer geometry (**published spec: `docs/specs/transform.md`** — it wins over this summary):
 
-- `size` = source `rect` w×h (video/image), group `widthAttr`/`heightAttr`.
+- `size` = `sourceTracks[trackNumber].trackRect` w×h for video [obs], source
+  `rect` for images, group `widthAttr`/`heightAttr`.
 - `transform` = translate(`translation0`, `translation1`) · rotate(`rotation2`)
-  · scale(`scale0`, `scale1`), canvas px, origin centre, **+y up** [inf:
-  translation1 < 0 places the demo camera bottom-right].
+  · scale(`scale0`, `scale1`), canvas px, origin centre, **+y up** [obs,
+  checked against Camtasia's ProjectThumbnail]. `rotation2` in radians [obs].
 - `geometryCrop0..3` = left, top, right, bottom fractions [inf].
 - Missing parameter → Camtasia default (scale 1, opacity 1, crop 0).
 - `background` = `timeline.backgroundColor` / 255.
