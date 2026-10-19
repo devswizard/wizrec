@@ -58,14 +58,28 @@ enum M2 {
     static let stillSeconds: Int64 = 5
 
     static func insertClip(_ c: InsertClip, _ project: Project) throws -> Int64 {
-        guard let source = project.source(id: c.sourceID) else {
-            throw EditError.invalid("source \(c.sourceID) not found")
-        }
         let tracks = Locator.sceneTracks(project)
         guard tracks.indices.contains(c.track) else { throw EditError.trackNotFound(c.track) }
-        let grid = FrameGrid(project)
-        let start = grid.nearest(c.start)
+        let start = FrameGrid(project).nearest(c.start)
         guard start >= 0 else { throw EditError.invalid("start must be ≥ 0") }
+        let clip = try newClip(sourceID: c.sourceID, start: start, project)
+        let duration = clip["duration"]?.int ?? 0
+        let magnetic = Magnetic.isMagnetic(project, track: c.track)
+        let edits = magnetic ? tracks[c.track].track.copy()
+            : try trackForInsert(tracks[c.track].track, start: start, duration: duration, track: c.track)
+        if magnetic { Magnetic.insert(clip, into: edits, start: start) } else { try insertSorted(clip, into: edits) }
+        try c.swap.commit([(tracks[c.track].path, edits)], in: project)
+        return clip.clipID ?? -1
+    }
+
+    /// A new clip for `sourceID` at `start` (ticks, already on the frame
+    /// grid), with ids from `project.maxID + 1`. Its type, duration and
+    /// scale follow the InsertClip rules above.
+    static func newClip(sourceID: Int64, start: Int64, _ project: Project) throws -> JSONObject {
+        guard let source = project.source(id: sourceID) else {
+            throw EditError.invalid("source \(sourceID) not found")
+        }
+        let grid = FrameGrid(project)
 
         let streams = source.tracks
         let video = streams.firstIndex { $0.type == 0 }
@@ -88,11 +102,8 @@ enum M2 {
         } else {
             duration = still
         }
-        guard duration > 0 else { throw EditError.invalid("source \(c.sourceID) is shorter than one frame") }
+        guard duration > 0 else { throw EditError.invalid("source \(sourceID) is shorter than one frame") }
 
-        let magnetic = Magnetic.isMagnetic(project, track: c.track)
-        let edits = magnetic ? tracks[c.track].track.copy()
-            : try trackForInsert(tracks[c.track].track, start: start, duration: duration, track: c.track)
         let ident = ((source.src as NSString).lastPathComponent as NSString).deletingPathExtension
         func size(_ n: Int?) -> (Double, Double) {
             if let n, let r = streams[n].object["trackRect"]?.array?.items.compactMap(\.double), r.count == 4 {
@@ -114,28 +125,26 @@ enum M2 {
         if let v = video, let a = audio {
             let id = take()
             let s = scale(v)
-            let vc = MediaJSON.videoClip(id: take(), type: videoType, src: c.sourceID, stream: v, ident: ident,
+            let vc = MediaJSON.videoClip(id: take(), type: videoType, src: sourceID, stream: v, ident: ident,
                                          scale: s, timing: timing, metadata: nil)
-            let ac = MediaJSON.audioClip(id: take(), src: c.sourceID, stream: a, ident: "",
+            let ac = MediaJSON.audioClip(id: take(), src: sourceID, stream: a, ident: "",
                                          channels: Int(streams[a].channels), timing: timing, metadata: nil)
             clip = MediaJSON.unifiedClip(id: id, video: vc, audio: ac, scale: s, timing: timing)
         } else if let v = video {
             let s = scale(v)
-            clip = MediaJSON.videoClip(id: take(), type: videoType, src: c.sourceID, stream: v, ident: ident,
+            clip = MediaJSON.videoClip(id: take(), type: videoType, src: sourceID, stream: v, ident: ident,
                                        scale: s, timing: timing, metadata: MediaJSON.metadata(defaultScale: s))
         } else if let a = audio {
-            clip = MediaJSON.audioClip(id: take(), src: c.sourceID, stream: a, ident: ident,
+            clip = MediaJSON.audioClip(id: take(), src: sourceID, stream: a, ident: ident,
                                        channels: Int(streams[a].channels), timing: timing,
                                        metadata: MediaJSON.metadata(defaultScale: nil))
         } else if let i = image {
-            clip = MediaJSON.imageClip(id: take(), src: c.sourceID, ident: ident, scale: scale(i),
+            clip = MediaJSON.imageClip(id: take(), src: sourceID, ident: ident, scale: scale(i),
                                        start: start, duration: duration)
         } else {
-            throw EditError.invalid("source \(c.sourceID) has no video, image or audio stream")
+            throw EditError.invalid("source \(sourceID) has no video, image or audio stream")
         }
-        if magnetic { Magnetic.insert(clip, into: edits, start: start) } else { try insertSorted(clip, into: edits) }
-        try c.swap.commit([(tracks[c.track].path, edits)], in: project)
-        return clip.clipID ?? -1
+        return clip
     }
 
     /// A copy of `track` after checking `[start, start + duration)` is free.
