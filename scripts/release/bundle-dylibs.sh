@@ -60,13 +60,11 @@ record_licence() {
     return
   fi
   formula=$(basename "$(dirname "$k")"); version=$(basename "$k")
-  licence="UNKNOWN"
-  if [ -f "$k/sbom.spdx.json" ]; then
-    licence=$(python3 -I -c 'import json,sys
-d=json.load(open(sys.argv[1]))
-print(next((p.get("licenseDeclared","") for p in d.get("packages",[]) if p.get("name")==sys.argv[2]), "") or "UNKNOWN")' \
-      "$k/sbom.spdx.json" "$formula" 2>/dev/null || echo UNKNOWN)
-  fi
+  # SPDX expression from the formula (Homebrew's SBOM leaves it as NOASSERTION).
+  licence=$(brew info --json=v2 "$formula" 2>/dev/null | python3 -I -c 'import json,sys
+f=json.load(sys.stdin)["formulae"]
+print((f[0].get("license") if f else None) or "UNKNOWN")' 2>/dev/null || echo UNKNOWN)
+  licence=$(echo "$licence" | tr ' ' '_')
   echo "$name $formula $version $licence" >> "$MANIFEST"
   if [ ! -d "$LIC/$formula" ]; then
     mkdir -p "$LIC/$formula"
@@ -118,9 +116,14 @@ for f in "$EXE" "$FW"/*.dylib; do
 done
 [ "$leaks" = 0 ] || exit 1
 
+# WizRec's own licence and the third-party notices travel with the binaries.
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+cp "$ROOT/LICENSE" "$LIC/WizRec-LICENSE.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$LIC/THIRD_PARTY_NOTICES.md"
+
 # Ad-hoc signatures (inside out) so the bundle runs; sign.sh replaces them.
-for f in "$FW"/*.dylib; do codesign --force --sign - "$f" >/dev/null; done
-codesign --force --sign - "$APP" >/dev/null
+for f in "$FW"/*.dylib; do codesign --force --sign - "$f" >/dev/null 2>&1; done
+codesign --force --sign - "$APP" >/dev/null 2>&1
 
 count=$(ls "$FW"/*.dylib | wc -l | tr -d ' ')
 size=$(du -sh "$FW" | cut -f1)
