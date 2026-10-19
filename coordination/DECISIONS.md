@@ -90,3 +90,9 @@ Dated log. Newest last.
   (and enclosing groups); `maxDurationAttr` untouched; adding/removing inner
   tracks keeps group timing; drops before `mediaStart` rejected; a group keeps
   ≥ 1 track. To confirm with experiment X5. (timeline, approved.)
+- **2026-10-19 · Build tooling (session 4, user):** keep SwiftPM + scripts
+  (`scripts/make-app.sh`, release scripts); no Xcode project.
+- **2026-10-19 · Fixture thumbnail (session 4, user):** strip the Camtasia
+  `metadata.ProjectThumbnail` from vendored `demo.tscproj` fixtures before
+  going public; tests that need it read the user's own project in place and
+  skip when absent.

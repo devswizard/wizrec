@@ -204,3 +204,20 @@ Developer ID or Sparkle approval (no ship agent).
 - render4: RenderPipeline + 420v output; particle shader backgrounds.
 - media4 (spawned for qa's bug): HW/SW decoder lanes byte-identical.
 - **Session 3 complete: all agents DONE, all branches merged.** Follow-ups in docs/HANDOFF.md §0.
+
+## Session 4 (2026-10-19)
+
+Main green at start (see merges). User inputs: no Camtasia references
+(0/26; golden gates stay skipped, no researcher/render/timeline/audio
+agents); whisper.cpp + model absent (no live whisper test); no GitHub remote,
+bundle ID, Developer ID or Sparkle approval. Decided: keep SwiftPM + scripts
+(no Xcode project); strip Camtasia `ProjectThumbnail` from fixtures. App
+click-through not done.
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| S4-MED-1 | media | claimed | HDR10/HLG → SDR tone mapping in PixelConversion; tests on synthesized HDR media; lanes stay byte-identical |
+| S4-MED-2 | media | claimed | vImage-vectorised SW-lane staging copy (2.7K/4K 10-bit); LaneParityTests green; gated perf numbers |
+| S4-EXP-1 | export | claimed | Audio prefetch/mix in parallel with video; A/V ≤ 1 frame + determinism tests green; gated perf numbers |
+| S4-QA-1 | qa | claimed | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
+| S4-SHIP-1 | ship | claimed | Strip `ProjectThumbnail` from all `Tests/*/Fixtures/demo.tscproj`; tests needing it read the user's project in place or skip; asset audit clean; CI workflow current |
