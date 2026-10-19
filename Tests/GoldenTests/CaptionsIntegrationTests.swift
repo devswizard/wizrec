@@ -95,9 +95,7 @@ private func same(_ a: [CaptionCue], _ b: [CaptionCue], shift: Double = 0) -> Bo
         let before = CaptionFiles.cues(in: chain.project)
         try chain.run(SplitClip(clipID: clip, at: frames(105)))  // 3.5 s, between cues 2 and 3
         let after = CaptionFiles.cues(in: chain.project)
-        withKnownIssue("captions on clip-local axis vs keyframes on media axis; reported to captions") {
-            #expect(same(before, after), "split moved captions:\nbefore \(before)\nafter  \(after)")
-        }
+        #expect(same(before, after), "split moved captions:\nbefore \(before)\nafter  \(after)")
         try chain.expectUndoRedoWalk()
     }
 
@@ -111,9 +109,7 @@ private func same(_ a: [CaptionCue], _ b: [CaptionCue], shift: Double = 0) -> Bo
         try chain.run(TrimClip(clipID: clip, edge: .start, to: frames(30)))  // cuts into cue 1
         let after = CaptionFiles.cues(in: chain.project)
         let expected = [CaptionCue(start: 1.0, end: 1.5, text: before[0].text)] + before.dropFirst()
-        withKnownIssue("captions on clip-local axis vs keyframes on media axis; reported to captions") {
-            #expect(same(expected, after), "trim moved captions:\nexpected \(expected)\nafter    \(after)")
-        }
+        #expect(same(expected, after), "trim moved captions:\nexpected \(expected)\nafter    \(after)")
     }
 
     /// Detaching audio keeps the captions (they live on the audio half).
