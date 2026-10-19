@@ -191,3 +191,4 @@ Developer ID or Sparkle approval (no ship agent).
 | S3-APP-1 | app | claimed | Export sheet confirm on window close; wire group/inspector features; make-app.sh + String Catalog current |
 | S3-CAP-1 | captions | claimed | whisper.cpp backend via `whisper-cli` subprocess, runtime-detected, gated live test; fake-binary unit tests |
 | S3-QA-1 | qa | claimed | Integration tests for every new command/feature; flaky watch; golden re-run ready for references |
+| S3-MED-1 | media | claimed | Decoded pixels independent of lane/history: VT and libav lanes identical (or pinned for offline), seek == sequential; qa's SeekDeterminismTests known issue removed |

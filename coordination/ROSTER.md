@@ -14,5 +14,6 @@ SendMessage addresses of the live agents, written by the lead after each spawn.
 | app | a3fe2bd1a7f4fc644 | `agent/app4` |
 | captions | ac6e217c9b15c480d | `agent/captions4` |
 | qa | acf56f36b7feeefb5 | `agent/qa4` |
+| media | a89deb9fdb131344a | `agent/media4` |
 
 Not spawned (inputs not delivered): researcher, audio, recorder, ship.
