@@ -75,7 +75,11 @@ let package = Package(
             name: "GoldenTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
         ),
-        .testTarget(name: "TimelineUITests", dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit"]),
+        .testTarget(
+            name: "TimelineUITests",
+            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit"],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
         .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit"]),
         .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit"]),
