@@ -14,7 +14,7 @@ import RenderEngine
 /// each layer draws the newest frame received for its stream.
 @MainActor @Observable
 public final class PlaybackEngine {
-    /// The scene being played; replace it after every edit with `replaceScene(_:)`.
+    /// The scene being played; replace it after every edit with `replaceScene(_:audioScene:)`.
     public private(set) var scene: SceneModel
     public private(set) var grid: FrameGrid
     @ObservationIgnored public let pool: MediaPool
@@ -150,8 +150,8 @@ public final class PlaybackEngine {
 
     /// Swaps in a scene rebuilt after an edit. Keeps the playhead (clamped to the new
     /// length) and the frames already on screen; playback continues from the same time.
-    /// `audioScene` feeds the audio mixer (nil = basic mix).
-    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene? = nil) {
+    /// `audioScene` feeds the audio mixer.
+    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene) {
         let wasPlaying = isPlaying
         if wasPlaying { pause() }
         let ticks = currentTicks

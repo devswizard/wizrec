@@ -9,17 +9,13 @@ import RenderEngine
 ///
 /// The timeline is mixed in fixed chunks (`chunkSeconds`) by AudioEngine's `AudioMixer`
 /// (gain, volume keyframes, fades, effects, loudness) and fed to one `AVAudioPlayerNode`
-/// about `lookaheadSeconds` ahead of what is audible. Without an `AudioScene`, or while
-/// the mixer is not implemented, chunks come from the basic `AudioMix` path
-/// (`SceneModel.audioSegments(in:)`, segment `rate` and `gain` only).
+/// about `lookaheadSeconds` ahead of what is audible.
 @MainActor
 public final class AudioPlayback {
-    /// Scene being mixed; swap with `replaceScene(_:)` after an edit.
+    /// Scene whose timebase maps output samples to ticks; swap with `replaceScene(_:audioScene:)`.
     public private(set) var scene: SceneModel
-    /// Mixer for the current `AudioScene`; nil uses the basic `AudioMix` path.
-    public private(set) var mixer: AudioMixer?
-    /// Set once the mixer reported `AudioError.notImplemented`; later chunks skip it.
-    public private(set) var mixerUnavailable = false
+    /// Mixer for the current `AudioScene`.
+    public private(set) var mixer: AudioMixer
     public let pool: MediaPool
     /// Output sample rate, Hz (the project's `audioFormatSampleRate`).
     public let sampleRate: Double
@@ -35,20 +31,20 @@ public final class AudioPlayback {
     private var scheduledFrames: Int64 = 0
     private var pumpTask: Task<Void, Never>?
     public private(set) var isPlaying = false
-    /// Source reads that failed (missing media, decode errors); those parts play as silence.
+    /// Chunks the mixer failed to render (decode errors); those play as silence.
     public private(set) var failedReads = 0
     /// Times the player ran out of scheduled audio (audible gap; cumulative).
     public private(set) var underruns = 0
     private var dry = false
 
     /// Nil when no audio output is available.
-    /// `audioScene`: the project's audio for `AudioMixer`; nil plays the basic mix.
-    public init?(scene: SceneModel, audioScene: AudioScene? = nil, pool: MediaPool, sampleRate: Double,
+    /// `audioScene`: the project's audio, mixed by `AudioMixer`.
+    public init?(scene: SceneModel, audioScene: AudioScene, pool: MediaPool, sampleRate: Double,
                  chunkSeconds: Double = 0.25, lookaheadSeconds: Double = 1.0) {
         let rate = sampleRate > 0 ? sampleRate : 44100
         guard let f = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else { return nil }
         self.scene = scene; self.pool = pool; self.sampleRate = rate; self.format = f
-        self.mixer = audioScene.map { AudioMixer(scene: $0, pool: pool, format: MixFormat(sampleRate: rate, channels: 2)) }
+        self.mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: rate, channels: 2))
         self.chunkFrames = max(256, Int(rate * chunkSeconds))
         self.lookaheadSeconds = lookaheadSeconds
         engine.attach(player)
@@ -77,12 +73,12 @@ public final class AudioPlayback {
         return true
     }
 
-    /// Uses `newScene` (and `audioScene` for the mixer; nil = basic mix) for chunks mixed
-    /// from now on. Callers restart playback (`stop` + `start`) so already scheduled audio
-    /// does not play the old mix.
-    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene? = nil) {
+    /// Uses `newScene` and a fresh mixer for `audioScene` for chunks mixed from now on.
+    /// Callers restart playback (`stop` + `start`) so already scheduled audio does not
+    /// play the old mix.
+    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene) {
         scene = newScene
-        mixer = audioScene.map { AudioMixer(scene: $0, pool: pool, format: MixFormat(sampleRate: sampleRate, channels: channels)) }
+        mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: sampleRate, channels: channels))
     }
 
     /// Stops playback and drops scheduled audio.
@@ -156,40 +152,12 @@ public final class AudioPlayback {
     func render(_ chunk: AudioChunk) async -> [[Float]] {
         let editRate = scene.timebase.editRate
         let span = AudioMix.tickRange(of: chunk, sampleRate: sampleRate, editRate: editRate)
-        if let mixer, !mixerUnavailable {
-            do {
-                let pcm = try await mixer.render(span)
-                return AudioMix.fit(pcm, frameCount: chunk.frameCount, channels: channels)
-            } catch AudioError.notImplemented {
-                mixerUnavailable = true
-            } catch {
-                failedReads += 1
-                return [[Float]](repeating: [Float](repeating: 0, count: chunk.frameCount), count: channels)
-            }
+        do {
+            let pcm = try await mixer.render(span)
+            return AudioMix.fit(pcm, frameCount: chunk.frameCount, channels: channels)
+        } catch {
+            failedReads += 1
+            return [[Float]](repeating: [Float](repeating: 0, count: chunk.frameCount), count: channels)
         }
-        return await renderBasic(chunk, span: span)
-    }
-
-    /// The pre-M8 mix: segment rate and gain only.
-    func renderBasic(_ chunk: AudioChunk, span: Range<Int64>) async -> [[Float]] {
-        let editRate = scene.timebase.editRate
-        let parts = AudioMix.parts(for: chunk, segments: scene.audioSegments(in: span),
-                                   sampleRate: sampleRate, editRate: editRate)
-        var inputs: [(AudioMixPart, PCMBuffer)] = []
-        for p in parts {
-            do {
-                let src = try await pool.source(for: p.url)
-                let pcm = try await src.audio(stream: p.stream, range: p.mediaRange,
-                                              format: PCMFormat(sampleRate: p.requestSampleRate, channels: channels))
-                inputs.append((p, pcm))
-            } catch {
-                failedReads += 1
-            }
-        }
-        let n = chunk.frameCount, ch = channels
-        let captured = inputs
-        return await Task.detached(priority: .userInitiated) {
-            AudioMix.mix(captured, frameCount: n, channels: ch)
-        }.value
     }
 }

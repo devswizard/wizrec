@@ -352,7 +352,7 @@ private func writeImage(_ url: URL) throws {
         let doc = try EditorDocumentModel.untitled(in: dir)
         _ = try await doc.importAndInsert(img, at: 0)
         let engine = doc.makeEngine(audio: false)
-        doc.onChange = { engine.replaceScene(doc.scene) }
+        doc.onChange = { engine.replaceScene(doc.scene, audioScene: doc.audioScene) }
         engine.seek(toTicks: 705_600_000 * 2)
         let frame = engine.currentFrame
         let source = try #require(doc.project.sourceBin.first?.id)
