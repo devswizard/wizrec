@@ -133,22 +133,34 @@ public struct SceneModel: Sendable {
     public let frameRate: Rational
     /// Timeline length, ticks.
     public let duration: Int64
+    /// Canvas background (`timeline.backgroundColor`).
+    let background: RGBA
+    /// Top-level tracks, bottom to top.
+    let tracks: [STrack]
 
     /// `resolve` maps a source-bin entry to its file (usually `ProjectBundle.resolve`).
+    /// Reads the project only; never mutates it.
     public init(project: Project, resolve: (SourceMedia) -> URL) {
         timebase = project.timebase
         canvasSize = CGSize(width: project.width, height: project.height)
         frameRate = project.frameRate
         duration = project.duration
+        let timeline = project.timeline
+        background = Conventions.background(timeline?.backgroundColor ?? [0, 0, 0, 255])
+        tracks = SceneBuilder(project: project, resolve: resolve)
+            .tracks(project.tracks, attributes: timeline?.trackAttributes ?? [])
     }
 
     /// The scene at timeline time `ticks`. Pure and deterministic.
     public func evaluate(at ticks: Int64) -> RenderPlan {
-        RenderPlan(time: ticks, canvasSize: canvasSize, background: RGBA(0, 0, 0), layers: [])
+        let layers = SceneEvaluator(editRate: timebase.editRate).layers(tracks, at: Rational(ticks))
+        return RenderPlan(time: ticks, canvasSize: canvasSize, background: background, layers: layers)
     }
 
     /// Audio clips overlapping `range` (ticks), clipped to it.
-    public func audioSegments(in range: Range<Int64>) -> [AudioSegment] { [] }
+    public func audioSegments(in range: Range<Int64>) -> [AudioSegment] {
+        AudioEvaluator(editRate: timebase.editRate).segments(tracks, in: range)
+    }
 }
 
 public enum RenderEngine {
