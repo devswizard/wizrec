@@ -92,7 +92,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M6-RES-1 | researcher | claimed | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
 | M4-REN-1 | render | claimed | — | effect pipeline (offscreen + passes), shader backgrounds for real, transition framework + fade |
 | M4-REN-2 | render | claimed | RES-1 | group-1 effects from published specs, golden-ready |
-| M5-REN-1 | render | claimed | M5-RES-1 | callout rendering (own vector shapes, text) |
+| M5-REN-1 | render | done | M5-RES-1 | callout rendering (own vector shapes, text) |
 | M6-REN-1 | render | claimed | M6-RES-1 | cursor layer + cursor effects |
 | M7-REC-1 | recorder | done | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
 | M7-REC-2 | recorder | done | REC-1 | mic, system audio, camera |
