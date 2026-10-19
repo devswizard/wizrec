@@ -148,14 +148,12 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
             Issue.record("pipeline over scrambled times threw \(error)"); return
         }
         let seq2 = try await sequential(bundle, ticks, format)
-        // Backward seeks switch MediaEngine between its VideoToolbox and software lanes, whose
-        // pixels differ (SeekDeterminismTests); which lane serves depends on timing.
-        withKnownIssue("MediaEngine lanes give different pixels after seeks", isIntermittent: true) {
-            let seqDiff = zip(seq, seq2).enumerated().filter { $0.element.0 != $0.element.1 }.map { ticks[$0.offset] / frameTicks }
-            #expect(seqDiff.isEmpty, "sequential vs sequential differs at frames \(seqDiff)")
-            let parDiff = zip(seq, par).enumerated().filter { $0.element.0 != $0.element.1 }.map { ticks[$0.offset] / frameTicks }
-            #expect(parDiff.isEmpty, "pipeline vs sequential differs at frames \(parDiff) (list order \(ticks.map { $0 / frameTicks }))")
-        }
+        // Backward seeks switch MediaEngine between its VideoToolbox and software lanes; both
+        // give byte-identical pixels (SeekDeterminismTests), so timing never changes a frame.
+        let seqDiff = zip(seq, seq2).enumerated().filter { $0.element.0 != $0.element.1 }.map { ticks[$0.offset] / frameTicks }
+        #expect(seqDiff.isEmpty, "sequential vs sequential differs at frames \(seqDiff)")
+        let parDiff = zip(seq, par).enumerated().filter { $0.element.0 != $0.element.1 }.map { ticks[$0.offset] / frameTicks }
+        #expect(parDiff.isEmpty, "pipeline vs sequential differs at frames \(parDiff) (list order \(ticks.map { $0 / frameTicks }))")
 
         let all = (0..<150).map { Int64($0) * frameTicks }
         let pipe = renderer(bundle).pipeline(ticks: all, maxInFlight: 4) { _ in try pixelBuffer(PW, PH, format) }
@@ -169,8 +167,7 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
 
     /// End to end: the same edited project exported twice (ProRes 422, separate pools) decodes
     /// to identical frames. Clips sharing one source at different times make the decoder seek
-    /// back and forth, so this stays an intermittent known issue until MediaEngine's lanes
-    /// agree (SeekDeterminismTests); remove the wrapper with that fix.
+    /// back and forth across both lanes, which must not change any pixel.
     @Test func twoExportsDecodeToIdenticalFrames() async throws {
         let dir = try scratchDir("pipe-export")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -191,8 +188,6 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
         let b = try await MovieFrameReader.frames(outs[1], indices: Array(0..<n))
         #expect(a.count == n && b.count == n)
         let differing = (0..<n).filter { a[$0]?.pixels != b[$0]?.pixels }
-        withKnownIssue("MediaEngine lanes give different pixels after seeks", isIntermittent: true) {
-            #expect(differing.isEmpty, "exports differ at frames \(differing)")
-        }
+        #expect(differing.isEmpty, "exports differ at frames \(differing)")
     }
 }

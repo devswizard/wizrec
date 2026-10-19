@@ -76,7 +76,7 @@ final class VTPictureDecoder {
         var ext: [CFString: Any] = [
             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms:
                 [atom: Data(bytes: ex, count: Int(par.pointee.extradata_size))] as CFDictionary,
-            kCMFormatDescriptionExtension_FullRangeVideo: par.pointee.color_range == AVCOL_RANGE_JPEG,
+            kCMFormatDescriptionExtension_FullRangeVideo: FrameConverter.isFullRange(par),
         ]
         for (k, v) in colour { ext[k] = v }
         var fd: CMVideoFormatDescription?
@@ -85,7 +85,7 @@ final class VTPictureDecoder {
               let fd else { return nil }
 
         let depthBits = av_pix_fmt_desc_get(AVPixelFormat(par.pointee.format)).map { Int($0.pointee.comp.0.depth) } ?? 8
-        let full = par.pointee.color_range == AVCOL_RANGE_JPEG
+        let full = FrameConverter.isFullRange(par)
         let pixel: OSType = depthBits > 8
             ? (full ? kCVPixelFormatType_420YpCbCr10BiPlanarFullRange : kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange)
             : (full ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
@@ -145,8 +145,21 @@ final class VTPictureDecoder {
         case AVCOL_SPC_BT2020_NCL, AVCOL_SPC_BT2020_CL: matrix = kCVImageBufferYCbCrMatrix_ITU_R_2020
         default: matrix = hd ? kCVImageBufferYCbCrMatrix_ITU_R_709_2 : kCVImageBufferYCbCrMatrix_ITU_R_601_4
         }
-        return [kCVImageBufferColorPrimariesKey: primaries, kCVImageBufferTransferFunctionKey: transfer,
-                kCVImageBufferYCbCrMatrixKey: matrix]
+        var tags = [kCVImageBufferColorPrimariesKey: primaries, kCVImageBufferTransferFunctionKey: transfer,
+                    kCVImageBufferYCbCrMatrixKey: matrix]
+        // Chroma siting; untagged streams use the H.264/HEVC/MPEG default (left, co-sited vertically centred).
+        let siting: CFString
+        switch par.pointee.chroma_location {
+        case AVCHROMA_LOC_CENTER: siting = kCVImageBufferChromaLocation_Center
+        case AVCHROMA_LOC_TOPLEFT: siting = kCVImageBufferChromaLocation_TopLeft
+        case AVCHROMA_LOC_TOP: siting = kCVImageBufferChromaLocation_Top
+        case AVCHROMA_LOC_BOTTOMLEFT: siting = kCVImageBufferChromaLocation_BottomLeft
+        case AVCHROMA_LOC_BOTTOM: siting = kCVImageBufferChromaLocation_Bottom
+        default: siting = kCVImageBufferChromaLocation_Left
+        }
+        tags[kCVImageBufferChromaLocationTopFieldKey] = siting
+        tags[kCVImageBufferChromaLocationBottomFieldKey] = siting
+        return tags
     }
 
     // MARK: - Decoding
