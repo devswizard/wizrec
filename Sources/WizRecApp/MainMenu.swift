@@ -67,6 +67,8 @@ enum MainMenu {
                          action: #selector(EditorWindowController.cancelTranscription(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Add Dynamic Captions"),
                          action: #selector(EditorWindowController.addDynamicCaptions(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Dynamic Caption Style…"),
+                         action: #selector(EditorWindowController.editDynamicCaptionStyle(_:)), keyEquivalent: "")
         captions.addItem(.separator())
         captions.addItem(withTitle: String(localized: "Import Captions…"),
                          action: #selector(EditorWindowController.importCaptions(_:)), keyEquivalent: "")

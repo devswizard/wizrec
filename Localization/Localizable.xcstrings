@@ -34,7 +34,28 @@
     "Applies to projects opened afterwards." : {
 
     },
+    "Apply" : {
+
+    },
     "Back" : {
+
+    },
+    "Background" : {
+
+    },
+    "Background behind the caption" : {
+
+    },
+    "Background color" : {
+
+    },
+    "Box behind the word" : {
+
+    },
+    "Box color" : {
+
+    },
+    "Cancel" : {
 
     },
     "Cancel Transcription" : {
@@ -69,6 +90,9 @@
     "Captions" : {
 
     },
+    "Change Caption Style" : {
+
+    },
     "Choose an SRT or WebVTT caption file." : {
 
     },
@@ -85,6 +109,9 @@
 
     },
     "Copy" : {
+
+    },
+    "Current word" : {
 
     },
     "Cut" : {
@@ -112,6 +139,12 @@
 
     },
     "Duration" : {
+
+    },
+    "Dynamic Caption Style" : {
+
+    },
+    "Dynamic Caption Style…" : {
 
     },
     "Edit" : {
@@ -169,6 +202,9 @@
 
     },
     "Hide WizRec" : {
+
+    },
+    "Highlight the word being spoken" : {
 
     },
     "Import Captions" : {
@@ -238,6 +274,12 @@
     "Open…" : {
 
     },
+    "Other words" : {
+
+    },
+    "Outline color" : {
+
+    },
     "Page %arg of %arg" : {
       "localizations" : {
         "en" : {
@@ -293,6 +335,9 @@
     "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
 
     },
+    "Reset to Defaults" : {
+
+    },
     "Ripple Delete" : {
 
     },
@@ -312,6 +357,9 @@
 
     },
     "Select All" : {
+
+    },
+    "Select a dynamic caption on the timeline." : {
 
     },
     "Select a transcribed audio clip on the timeline." : {
@@ -392,7 +440,13 @@
     "Split at Playhead  (S)" : {
 
     },
+    "Start a new block at each sentence" : {
+
+    },
     "Stitch Selected Media" : {
+
+    },
+    "Text color" : {
 
     },
     "Timeline" : {

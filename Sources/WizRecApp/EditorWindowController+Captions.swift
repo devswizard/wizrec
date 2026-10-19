@@ -1,6 +1,7 @@
 import AppKit
 import Captions
 import PlayerKit
+import SwiftUI
 import TSCProjKit
 import UniformTypeIdentifiers
 
@@ -104,6 +105,34 @@ extension EditorWindowController {
         }
     }
 
+    /// The selected dynamic-caption callout (top level) and its style.
+    private var selectedDynamicCaption: (id: Int64, style: DynamicCaptionStyle)? {
+        guard timelineModel.selection.count == 1, let id = timelineModel.selection.first,
+              let clip = model.project.tracks.flatMap(\.clips).first(where: { $0.id == id }), clip.kind == .callout,
+              let def = clip.object["def"]?.object, DynamicCaptionStyle.isDynamicCaption(def) else { return nil }
+        return (id, DynamicCaptionStyle(def: def))
+    }
+
+    /// Captions ▸ Dynamic Caption Style…: a sheet editing the selected dynamic caption.
+    @objc func editDynamicCaptionStyle(_ sender: Any?) {
+        guard let window, let (id, style) = selectedDynamicCaption else {
+            ui.show(String(localized: "Select a dynamic caption on the timeline."))
+            return
+        }
+        var sheet: NSWindow?
+        let close = { [weak window] in if let s = sheet { window?.endSheet(s) } }
+        let view = CaptionStyleView(style: style, apply: { [weak self] new in
+            close()
+            guard let self, new != style else { return }
+            self.run(String(localized: "Change Caption Style")) {
+                try self.model.perform(SetDynamicCaptionStyle(clipID: id, style: new))
+            }
+        }, cancel: close)
+        let s = NSWindow(contentViewController: NSHostingController(rootView: view))
+        sheet = s
+        window.beginSheet(s)
+    }
+
     /// Captions ▸ Import Captions…: SRT or WebVTT cues become classic captions.
     @objc func importCaptions(_ sender: Any?) {
         guard let window else { return }
@@ -165,6 +194,7 @@ extension EditorWindowController {
         case #selector(transcribeSelection(_:)): return transcription == nil && !captionTargets.isEmpty
         case #selector(cancelTranscription(_:)): return transcription != nil
         case #selector(addDynamicCaptions(_:)): return !captionTargets.isEmpty
+        case #selector(editDynamicCaptionStyle(_:)): return selectedDynamicCaption != nil
         case #selector(exportCaptionsSRT(_:)), #selector(exportCaptionsVTT(_:)):
             return !CaptionFiles.cues(in: model.project).isEmpty
         case #selector(deleteCaptions(_:)): return !ClassicCaptions.cues(in: model.project).isEmpty
