@@ -18,3 +18,16 @@ Session 3 agents all finished and their branches are merged; none is live.
 | media | a89deb9fdb131344a | `agent/media4` |
 
 Not spawned (inputs not delivered): researcher, audio, recorder, ship.
+
+## Session 4 (2026-10-19)
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` |
+| media | acf6a43ae29fd9196 | `agent/media5` |
+| export | aaf661cbc15a24d27 | `agent/export5` |
+| qa | a0472a8d717a91f63 | `agent/qa5` |
+| ship | a163280e28495aa41 | `agent/ship5` |
+
+Not spawned (inputs not delivered): researcher, render, timeline, audio,
+captions, app.
