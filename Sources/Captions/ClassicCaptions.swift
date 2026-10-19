@@ -168,6 +168,126 @@ public enum ClassicCaptions {
     }
 }
 
+/// Removes classic captions inside a timeline range (seconds; nil = everything), trimming captions
+/// that cross its edges, on `clipID` only when given. A clip left without captions loses its
+/// `captions` parameter. Throws when no caption is touched. Revert is byte-identical.
+@MainActor public final class RemoveCaptions: EditCommand {
+    public let name = "Delete Captions"
+    public let range: ClosedRange<Double>?
+    public let clipID: Int64?
+    private var swap = Swap()
+
+    public init(range: ClosedRange<Double>? = nil, clipID: Int64? = nil) { self.range = range; self.clipID = clipID }
+
+    public func apply(to project: Project) throws {
+        var edits: [(path: TreePath, new: JSON)] = []
+        for c in ClassicCaptions.carriers(project) where clipID == nil || c.clip.clip.id == clipID {
+            let segs = ClassicCaptions.segments(c)
+            guard !segs.isEmpty else { continue }
+            let cut = range.map {
+                ClassicCaptions.Segment(start: ClassicCaptions.localTicks(Tree.ticks($0.lowerBound, project), c),
+                                        end: ClassicCaptions.localTicks(Tree.ticks($0.upperBound, project), c), value: .null)
+            } ?? .init(start: Int64.min / 2, end: Int64.max / 2, value: .null)
+            guard segs.contains(where: { $0.start < cut.end && $0.end > cut.start }) else { continue }
+            let kept = AddCaptions.merge(existing: segs, added: [cut]).filter { !$0.value.isNull }
+            let params = c.owner["parameters"]?.object?.copy() ?? JSONObject()
+            if kept.isEmpty {
+                params["captions"] = nil
+            } else {
+                params["captions"] = J.obj([("type", J.str("caption")),
+                                            ("keyframes", J.arr(ClassicCaptions.keyframes(kept, duration: c.duration)))])
+            }
+            edits.append((c.parametersPath, .object(params)))
+        }
+        guard !edits.isEmpty else { throw EditError.invalid("no captions in range") }
+        try swap.commit(edits, in: project)
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
+}
+
+/// Classic caption style: `timeline.captionAttributes` (`docs/specs/captions.md` §1). Nil fields are
+/// left as they are. Colours are RGBA 0–255; `fontSize` px at canvas resolution [inf].
+public struct CaptionStyle: Sendable, Equatable {
+    public var enabled: Bool?
+    public var fontName: String?
+    public var fontSize: Double?
+    /// `defaultFontSize`: the size is automatic [inf].
+    public var defaultFontSize: Bool?
+    public var foregroundColor: [Int]?
+    public var backgroundColor: [Int]?
+    public var backgroundEnabled: Bool?
+    public var backgroundOnlyAroundText: Bool?
+    /// 0 = centre [inf]; other values [?].
+    public var alignment: Int?
+    /// ISO 639-1, e.g. `"en"`, `"bn"`.
+    public var lang: String?
+
+    public init(enabled: Bool? = nil, fontName: String? = nil, fontSize: Double? = nil, defaultFontSize: Bool? = nil,
+                foregroundColor: [Int]? = nil, backgroundColor: [Int]? = nil, backgroundEnabled: Bool? = nil,
+                backgroundOnlyAroundText: Bool? = nil, alignment: Int? = nil, lang: String? = nil) {
+        self.enabled = enabled; self.fontName = fontName; self.fontSize = fontSize; self.defaultFontSize = defaultFontSize
+        self.foregroundColor = foregroundColor; self.backgroundColor = backgroundColor
+        self.backgroundEnabled = backgroundEnabled; self.backgroundOnlyAroundText = backgroundOnlyAroundText
+        self.alignment = alignment; self.lang = lang
+    }
+
+    /// The project's style; missing keys stay nil.
+    @MainActor public init(project: Project) {
+        let o = project.root["timeline"]?.object?["captionAttributes"]?.object
+        func ints(_ k: String) -> [Int]? { o?[k]?.array?.items.compactMap { $0.int.map(Int.init) } }
+        self.init(enabled: o?["enabled"]?.bool, fontName: o?["fontName"]?.string, fontSize: o?["fontSize"]?.double,
+                  defaultFontSize: o?["defaultFontSize"]?.bool, foregroundColor: ints("foregroundColor"),
+                  backgroundColor: ints("backgroundColor"), backgroundEnabled: o?["backgroundEnabled"]?.bool,
+                  backgroundOnlyAroundText: o?["backgroundOnlyAroundText"]?.bool,
+                  alignment: o?["alignment"]?.int.map(Int.init), lang: o?["lang"]?.string)
+    }
+
+    /// Non-nil fields as `(key, value)` in Camtasia's key order [obs].
+    var entries: [(String, JSON)] {
+        func num(_ v: Double) -> JSON { v == v.rounded() && abs(v) < 1e15 ? J.int(Int64(v)) : J.dbl(v) }
+        func rgba(_ v: [Int]) -> JSON { J.arr(v.map { J.int(Int64(min(max($0, 0), 255))) }) }
+        var e: [(String, JSON?)] = [
+            ("enabled", enabled.map(JSON.bool)), ("fontName", fontName.map(J.str)), ("fontSize", fontSize.map(num)),
+            ("backgroundColor", backgroundColor.map(rgba)), ("foregroundColor", foregroundColor.map(rgba)),
+            ("lang", lang.map(J.str)), ("alignment", alignment.map { J.int(Int64($0)) }),
+            ("defaultFontSize", defaultFontSize.map(JSON.bool)),
+        ]
+        e += [("backgroundEnabled", backgroundEnabled.map(JSON.bool)),
+              ("backgroundOnlyAroundText", backgroundOnlyAroundText.map(JSON.bool))]
+        return e.compactMap { k, v in v.map { (k, $0) } }
+    }
+}
+
+/// Sets `timeline.captionAttributes` fields (creating the object, after `parameters` [obs order],
+/// when missing). Unchanged values keep their lexemes; new keys are appended. Revert is byte-identical.
+@MainActor public final class SetCaptionStyle: EditCommand {
+    public let name = "Change Caption Style"
+    public let style: CaptionStyle
+    private var swap = Swap()
+
+    public init(_ style: CaptionStyle) { self.style = style }
+
+    public func apply(to project: Project) throws {
+        guard let timeline = project.root["timeline"]?.object else { throw EditError.invalid("no timeline") }
+        let attrs = timeline["captionAttributes"]?.object?.copy() ?? JSONObject()
+        for (k, v) in style.entries where !(attrs[k] == v || (attrs[k]?.double != nil && attrs[k]?.double == v.double)) {
+            attrs[k] = v
+        }
+        let path = TreePath(steps: [.key("timeline"), .key("captionAttributes")])
+        if let old = timeline["captionAttributes"], old == .object(attrs) { throw EditError.invalid("style unchanged") }
+        if timeline["captionAttributes"] == nil {
+            let next = timeline.keys.firstIndex(of: "parameters").flatMap { timeline.keys.indices.contains($0 + 1) ? timeline.keys[$0 + 1] : nil }
+            let new = withKey(timeline, setting: "captionAttributes", to: .object(attrs), before: next)
+            try swap.commit([(TreePath(steps: [.key("timeline")]), .object(new))], in: project)
+        } else {
+            try swap.commit([(path, .object(attrs))], in: project)
+        }
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
+}
+
 /// Subtitle files ↔ project captions.
 @MainActor
 public enum CaptionFiles {

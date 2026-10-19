@@ -80,6 +80,46 @@ import TimelineEngine
         #expect(throws: CaptionsError.self) { try CaptionFiles.importCommand("garbage") }
     }
 
+    @Test func removeCaptionsTrimsAndDeletes() throws {
+        let p = try makeProject(tracks: [amFile(10, start: 0, dur: s(10))])
+        try AddCaptions(cues: [CaptionCue(start: 1, end: 4, text: "A"), CaptionCue(start: 6, end: 8, text: "B")]).apply(to: p)
+        let cut = RemoveCaptions(range: 3...7)
+        try expectReversible(cut, on: p)
+        try cut.apply(to: p)
+        #expect(ClassicCaptions.cues(in: p) == [CaptionCue(start: 1, end: 3, text: "A"), CaptionCue(start: 7, end: 8, text: "B")])
+        let all = RemoveCaptions()
+        try expectReversible(all, on: p)
+        try all.apply(to: p)
+        try expectJSON(p, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0/parameters", "{}")
+        expectRejected(RemoveCaptions(), on: p)
+        expectRejected(RemoveCaptions(range: 0...1, clipID: 99), on: p)
+    }
+
+    @Test func captionStyleSetsKeysInPlace() throws {
+        let text = """
+        {"title" : "t", "editRate" : 705600000, "sourceBin" : [], "timeline" : {"id" : 1, "sceneTrack" : {"scenes" : []},
+         "trackAttributes" : [], "parameters" : {}, "captionAttributes" : {"enabled" : true, "fontName" : "Arial",
+         "fontSize" : 32, "backgroundColor" : [0, 0, 0, 204], "lang" : "en", "opacity" : 0.5}, "gain" : 1.0}}
+        """
+        let p = try Project(data: Data(text.utf8))
+        #expect(CaptionStyle(project: p) == CaptionStyle(enabled: true, fontName: "Arial", fontSize: 32,
+                                                          backgroundColor: [0, 0, 0, 204], lang: "en"))
+        let cmd = SetCaptionStyle(CaptionStyle(fontSize: 48, foregroundColor: [255, 255, 0, 300], lang: "bn"))
+        try expectReversible(cmd, on: p)
+        try cmd.apply(to: p)
+        try expectJSON(p, "timeline/captionAttributes", """
+        {"enabled" : true, "fontName" : "Arial", "fontSize" : 48, "backgroundColor" : [0, 0, 0, 204], "lang" : "bn",
+         "opacity" : 0.5, "foregroundColor" : [255, 255, 0, 255]}
+        """)
+        expectRejected(SetCaptionStyle(CaptionStyle(fontSize: 48.0)), on: p) // unchanged
+
+        let bare = try Project(data: Data(#"{"timeline" : {"id" : 1, "parameters" : {}, "gain" : 1.0}}"#.utf8))
+        let create = SetCaptionStyle(CaptionStyle(enabled: true, lang: "en"))
+        try expectReversible(create, on: bare)
+        try create.apply(to: bare)
+        #expect(bare.root["timeline"]?.object?.keys == ["id", "parameters", "captionAttributes", "gain"])
+    }
+
     @Test func readsTimesClippedToClipAndSkipsEmpty() throws {
         // A hand-written captions parameter whose last caption runs past the clip end.
         let params = """
