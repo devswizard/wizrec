@@ -293,25 +293,51 @@ public final class EditorDocumentModel {
     /// Imports `file` and places it at `ticks` (track preference as in `insertSource`), as one undo step.
     @discardableResult
     public func importAndInsert(_ file: URL, at ticks: Int64, track: Int? = nil) async throws -> Int64 {
-        let info: MediaInfo
-        do { info = try await thumbnailPool.probe(file) } catch {
-            throw DocumentError.unsupportedMedia(file.lastPathComponent)
+        guard let id = try await importAndPlace([file], at: ticks, track: track, name: "Add to Timeline").first else {
+            throw EditError.invalid("no clip id")
         }
-        let src = try bundle.importFile(file)
-        let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-        let descriptor = SourceDescriptor(info: info, src: src, lastModified: date)
-        let duration = descriptor.naturalDuration(editRate: project.timebase.editRate)
-        let place = Placement.find(in: project, start: ticks, duration: duration, preferred: track)
-        var builders: [CompoundCommand.Builder] = [{ _, _ in AddSource(descriptor) }]
-        if place.needsNewTrack { builders.append { _, _ in AddTrack(at: place.track) } }
-        builders.append { _, done in
-            guard let id = (done.first as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
-            return InsertClip(sourceID: id, track: place.track, start: ticks)
-        }
-        let c = CompoundCommand(name: "Add to Timeline", builders)
-        try perform(c)
-        guard let clip = c.steps.last as? InsertClip, let id = clip.clipID else { throw EditError.invalid("no clip id") }
         return id
+    }
+
+    /// Imports `files` and places them all at `ticks`, each on the next free track (the first
+    /// on `track` when free), stacking upward: e.g. a recording's screen, camera and audio.
+    /// One undo step named `name`. Returns the clip ids in `files` order. Files already inside
+    /// the bundle (a recording written to `recordings/<ts>/`) are referenced, not copied.
+    @discardableResult
+    public func importAndPlace(_ files: [URL], at ticks: Int64, track: Int? = nil,
+                               name: String) async throws -> [Int64] {
+        var descriptors: [SourceDescriptor] = []
+        for file in files {
+            let info: MediaInfo
+            do { info = try await thumbnailPool.probe(file) } catch {
+                throw DocumentError.unsupportedMedia(file.lastPathComponent)
+            }
+            let src = try bundle.importFile(file)
+            let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+            descriptors.append(SourceDescriptor(info: info, src: src, lastModified: date))
+        }
+        let editRate = project.timebase.editRate
+        var builders: [CompoundCommand.Builder] = []
+        for (i, d) in descriptors.enumerated() {
+            let addIndex = builders.count
+            builders.append { _, _ in AddSource(d) }
+            builders.append { project, done in
+                guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
+                // Placement is decided when the step is first applied, after earlier files took their tracks.
+                let place = Placement.find(in: project, start: ticks, duration: d.naturalDuration(editRate: editRate),
+                                           preferred: i == 0 ? track : nil)
+                var steps: [CompoundCommand.Builder] = []
+                if place.needsNewTrack { steps.append { _, _ in AddTrack(at: place.track) } }
+                steps.append { _, _ in InsertClip(sourceID: id, track: place.track, start: ticks) }
+                return CompoundCommand(name: name, steps)
+            }
+        }
+        let c = CompoundCommand(name: name, builders)
+        try perform(c)
+        return try c.steps.compactMap { $0 as? CompoundCommand }.map { place in
+            guard let id = (place.steps.last as? InsertClip)?.clipID else { throw EditError.invalid("no clip id") }
+            return id
+        }
     }
 
     /// Places source `sourceID` at `ticks`: on `track` when free there, else the lowest free

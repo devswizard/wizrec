@@ -2,6 +2,7 @@ import AppKit
 import MetalKit
 import PlayerKit
 import QuartzCore
+import Recorder
 import SwiftUI
 import TimelineEngine
 import TimelineUI
@@ -37,6 +38,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var lastTimelineError: String?
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
+    private var recorderHUD: RecorderHUDController?
+    /// Playhead (ticks) when the current recording started; the result is placed there.
+    private var recordingStart: Int64 = 0
 
     init(document: ProjectDocument, model: EditorDocumentModel, options: LaunchOptions) {
         self.model = model
@@ -371,6 +375,48 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
+    // MARK: Recording
+
+    /// File ▸ New Recording: shows the recorder panel. Each recording is written to the
+    /// project's `recordings/<unix-ts>/` and, when it stops, placed at the playhead where it
+    /// started (screen, camera and audio stacked on free tracks) as one undo step.
+    @objc func newRecording(_ sender: Any?) {
+        if let hud = recorderHUD { hud.present(); return }
+        let hud = RecorderHUDController(
+            outputDirectory: { [weak self] in self?.nextRecordingFolder() ?? RecorderHUDModel.defaultOutputDirectory() },
+            onFinish: { [weak self] result in self?.recordingFinished(result) })
+        recorderHUD = hud
+        hud.present()
+    }
+
+    private func nextRecordingFolder() -> URL {
+        recordingStart = engine.currentTicks
+        let stamp = String(format: "%.6f", Date().timeIntervalSince1970)
+        return model.bundle.directory.appendingPathComponent("recordings", isDirectory: true)
+            .appendingPathComponent(stamp, isDirectory: true)
+    }
+
+    private func recordingFinished(_ result: Result<RecordingResult, Error>) {
+        switch result {
+        case .failure(let e):
+            ui.show("Recording failed: \(Self.describe(e))", seconds: 10)
+        case .success(let r):
+            let files = [r.screen] + (r.camera.map { [$0] } ?? []) + r.audio
+            let start = recordingStart
+            window?.makeKeyAndOrderFront(nil)
+            Task {
+                do {
+                    let ids = try await model.importAndPlace(files, at: start, name: "Add Recording")
+                    select(ids.first.map { [$0] } ?? [])
+                    engine.seek(toTicks: start)
+                } catch {
+                    ui.show("Cannot add the recording: \(Self.describe(error)). Its files are in \(r.screen.deletingLastPathComponent().path).",
+                            seconds: 12)
+                }
+            }
+        }
+    }
+
     // MARK: Relink
 
     @objc func showRelink(_ sender: Any?) {
@@ -620,6 +666,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let m = keyMonitor { NSEvent.removeMonitor(m) }
         keyMonitor = nil
         engine.shutdown()
+        if recorderHUD?.model.state == .idle { recorderHUD?.close() }
         let thumbs = model.thumbnailPool
         Task { await thumbs.purge() }
     }

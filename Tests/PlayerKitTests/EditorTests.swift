@@ -289,6 +289,30 @@ private func writeImage(_ url: URL) throws {
         #expect(doc.project.tracks[0].clips.map(\.id).contains(third))
     }
 
+    @Test func severalFilesStackInOneStep() async throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let clip = dir.appendingPathComponent("screen.mp4"), img = dir.appendingPathComponent("cam.png")
+        try writeClip(clip)
+        try writeImage(img)
+        let doc = try EditorDocumentModel.untitled(in: dir)
+        // A file already inside the bundle (as the recorder writes it) is referenced, not copied.
+        let rec = doc.bundle.directory.appendingPathComponent("recordings/1792384811.000000", isDirectory: true)
+        try FileManager.default.createDirectory(at: rec, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: clip, to: rec.appendingPathComponent("screen.mp4"))
+        let ids = try await doc.importAndPlace([rec.appendingPathComponent("screen.mp4"), img], at: 0, name: "Add Recording")
+        #expect(ids.count == 2)
+        #expect(doc.project.sourceBin.map(\.src).first == "./recordings/1792384811.000000/screen.mp4")
+        #expect(doc.project.tracks.count == 2)
+        #expect(doc.project.tracks[0].clips.map(\.id) == [ids[0]])
+        #expect(doc.project.tracks[1].clips.map(\.id) == [ids[1]])
+        #expect(doc.undo.undoName == "Add Recording")
+        try doc.undoLast()
+        #expect(doc.project.sourceBin.isEmpty && doc.project.tracks.count == 1)
+        try doc.redoLast()
+        #expect(doc.project.tracks.flatMap(\.clips).map(\.id).sorted() == ids.sorted())
+    }
+
     @Test func relinkAllFromFolder() async throws {
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

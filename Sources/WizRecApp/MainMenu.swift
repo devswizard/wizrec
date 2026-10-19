@@ -29,6 +29,7 @@ enum MainMenu {
         file.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         file.addItem(withTitle: "Save As…", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "S")
         file.addItem(.separator())
+        file.addItem(withTitle: "New Recording…", action: #selector(EditorWindowController.newRecording(_:)), keyEquivalent: "r")
         file.addItem(withTitle: "Import Media…", action: #selector(EditorWindowController.importMedia(_:)), keyEquivalent: "i")
         file.addItem(withTitle: "Relink Missing Media…", action: #selector(EditorWindowController.showRelink(_:)),
                      keyEquivalent: "")
