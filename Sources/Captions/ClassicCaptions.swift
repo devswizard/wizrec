@@ -7,13 +7,15 @@ import TimelineEngine
 /// A caption runs from its keyframe to the next one; `text: ""` means no caption.
 ///
 /// Carriers: top-level `AMFile` clips, and the `audio` child of top-level `UnifiedMedia` clips [inf].
-/// Keyframe time axis: **clip-local** ticks (timeline time − clip `start`), as the spec reads the
-/// one observed instance [?, experiment CA1]; `localTicks`/`timelineTicks` are the only places
-/// that encode this choice.
+/// Keyframe time axis: the clip's **media time** in ticks (`mediaStart + (t − start) / scalar`), like
+/// every other keyframed clip parameter (time-mapping.md §6), so split, trim, move and speed changes
+/// keep captions on the right words with no rewrite [inf; the one observed instance has mediaStart
+/// 1.117 s with keyframes from 0, consistent with captions made before a trim; experiment CA1].
+/// `localTicks`/`timelineTicks` are the only places that encode this choice.
 @MainActor
 public enum ClassicCaptions {
     /// A clip that can carry captions.
-    struct Carrier {
+    @MainActor struct Carrier {
         let clip: TopClip
         /// Path of the `parameters` object that holds `captions`.
         let parametersPath: TreePath
@@ -21,13 +23,21 @@ public enum ClassicCaptions {
         let owner: JSONObject
         var start: Int64 { clip.clip.start }
         var duration: Int64 { clip.clip.duration }
+        /// The clip's span on the caption axis (media ticks).
+        var mediaLo: Int64 { ClassicCaptions.localTicks(start, self) }
+        var mediaHi: Int64 { ClassicCaptions.localTicks(start + duration, self) }
     }
 
-    /// Caption segment in clip-local ticks.
+    /// Caption segment in caption-axis (media) ticks.
     struct Segment { var start: Int64; var end: Int64; var value: JSON }
 
-    static func localTicks(_ timeline: Int64, _ c: Carrier) -> Int64 { timeline - c.start }
-    static func timelineTicks(_ local: Int64, _ c: Carrier) -> Int64 { c.start + local }
+    static func localTicks(_ timeline: Int64, _ c: Carrier) -> Int64 {
+        Int64(c.clip.clip.mediaTime(atTimeline: timeline).double.rounded())
+    }
+    static func timelineTicks(_ local: Int64, _ c: Carrier) -> Int64 {
+        let k = c.clip.clip
+        return c.start + Int64(((Double(local) - k.mediaStart.double) * k.scalar.double).rounded())
+    }
 
     static func carriers(_ project: Project) -> [Carrier] {
         Tree.topClips(project).compactMap { tc in
@@ -50,7 +60,7 @@ public enum ClassicCaptions {
             }
             .sorted { $0.0 < $1.0 }
         return kfs.enumerated().compactMap { i, kv in
-            let end = i + 1 < kfs.count ? kfs[i + 1].0 : max(c.duration, kv.0)
+            let end = i + 1 < kfs.count ? kfs[i + 1].0 : max(c.mediaHi, kv.0)
             guard let text = kv.1.object?["text"]?.string, !text.isEmpty, end > kv.0 else { return nil }
             return Segment(start: kv.0, end: end, value: kv.1)
         }
@@ -62,7 +72,7 @@ public enum ClassicCaptions {
         let tb = project.timebase
         return carriers(project).flatMap { c in
             segments(c).compactMap { s -> CaptionCue? in
-                let a = max(s.start, 0), b = min(s.end, c.duration)
+                let a = max(s.start, c.mediaLo), b = min(s.end, c.mediaHi)
                 guard b > a else { return nil }
                 return CaptionCue(start: tb.seconds(timelineTicks(a, c)), end: tb.seconds(timelineTicks(b, c)),
                                   text: s.value.object?["text"]?.string ?? "")
@@ -76,7 +86,7 @@ public enum ClassicCaptions {
     /// Keyframes for sorted, non-overlapping segments: `""` at 0 when the first caption starts
     /// later (the observed list starts at 0 [obs]), `""` in gaps and after the last caption when it
     /// ends before the clip does.
-    static func keyframes(_ segs: [Segment], duration: Int64) -> [JSON] {
+    static func keyframes(_ segs: [Segment], end: Int64) -> [JSON] {
         var out: [JSON] = []
         func kf(_ t: Int64, _ v: JSON) {
             out.append(J.obj([("endTime", J.int(t)), ("time", J.int(t)), ("value", v), ("duration", J.int(0))]))
@@ -87,7 +97,7 @@ public enum ClassicCaptions {
             kf(s.start, s.value)
             cursor = s.end
         }
-        if !segs.isEmpty, cursor < duration { kf(cursor, value("")) }
+        if !segs.isEmpty, cursor < end { kf(cursor, value("")) }
         return out
     }
 }
@@ -135,7 +145,7 @@ public enum ClassicCaptions {
             let c = carriers[ci]
             let segs = Self.merge(existing: ClassicCaptions.segments(c), added: added)
             let captions = J.obj([("type", J.str("caption")),
-                                  ("keyframes", J.arr(ClassicCaptions.keyframes(segs, duration: c.duration)))])
+                                  ("keyframes", J.arr(ClassicCaptions.keyframes(segs, end: c.mediaHi)))])
             let params = c.owner["parameters"]?.object?.copy() ?? JSONObject()
             params["captions"] = captions
             edits.append((c.parametersPath, .object(params)))
@@ -195,7 +205,7 @@ public enum ClassicCaptions {
                 params["captions"] = nil
             } else {
                 params["captions"] = J.obj([("type", J.str("caption")),
-                                            ("keyframes", J.arr(ClassicCaptions.keyframes(kept, duration: c.duration)))])
+                                            ("keyframes", J.arr(ClassicCaptions.keyframes(kept, end: c.mediaHi)))])
             }
             edits.append((c.parametersPath, .object(params)))
         }

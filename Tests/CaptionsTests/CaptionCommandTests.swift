@@ -80,6 +80,34 @@ import TimelineEngine
         #expect(throws: CaptionsError.self) { try CaptionFiles.importCommand("garbage") }
     }
 
+    /// Captions sit on the media axis, so split, trim and speed keep them on the same audio.
+    @Test func captionsSurviveSplitTrimAndSpeed() throws {
+        let cues = [CaptionCue(start: 0.5, end: 1.5, text: "Hello"), CaptionCue(start: 2, end: 3.2, text: "Zweite"),
+                    CaptionCue(start: 4, end: 5, text: "Third")]
+        let p = try makeProject(tracks: [unified(20, start: 0, dur: s(6))])
+        try AddCaptions(cues: cues).apply(to: p)
+        let split = SplitClip(clipID: 20, at: s(3.5))
+        try split.apply(to: p)
+        #expect(ClassicCaptions.cues(in: p) == [CaptionCue(start: 0.5, end: 1.5, text: "Hello"),
+                                                 CaptionCue(start: 2, end: 3.2, text: "Zweite"),
+                                                 CaptionCue(start: 4, end: 5, text: "Third")])
+        try split.revert(on: p)
+
+        try TrimClip(clipID: 20, edge: .start, to: s(1)).apply(to: p)
+        #expect(ClassicCaptions.cues(in: p) == [CaptionCue(start: 1, end: 1.5, text: "Hello"),
+                                                 CaptionCue(start: 2, end: 3.2, text: "Zweite"),
+                                                 CaptionCue(start: 4, end: 5, text: "Third")])
+
+        // A 2× clip from media 0: media 2 s plays at timeline 1 s.
+        let fast = try makeProject(tracks: [amFile(10, start: 0, dur: s(3))])
+        let clip = try #require(at(fast, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0")?.object)
+        clip["scalar"] = .string("1/2"); clip["mediaDuration"] = .number(JSONNumber(s(6)))
+        try AddCaptions(cues: [CaptionCue(start: 1, end: 2, text: "x")]).apply(to: fast)
+        let kfs = at(fast, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0/parameters/captions/keyframes")?.array?.items ?? []
+        #expect(kfs.compactMap { $0.object?["time"]?.int } == [0, s(2), s(4)])
+        #expect(ClassicCaptions.cues(in: fast) == [CaptionCue(start: 1, end: 2, text: "x")])
+    }
+
     @Test func removeCaptionsTrimsAndDeletes() throws {
         let p = try makeProject(tracks: [amFile(10, start: 0, dur: s(10))])
         try AddCaptions(cues: [CaptionCue(start: 1, end: 4, text: "A"), CaptionCue(start: 6, end: 8, text: "B")]).apply(to: p)
