@@ -17,12 +17,12 @@ public enum BackendStatus: Sendable, Equatable {
     case unavailable(String)
 }
 
-/// A pluggable local speech-to-text engine: Apple Speech (`AppleSpeechRecognizer`) now, whisper.cpp
-/// later. `Transcriber` feeds it mono PCM in `preferredFormat`, at most `maxChunkSeconds` per call,
+/// A pluggable local speech-to-text engine: Apple Speech (`AppleSpeechRecognizer`) or whisper.cpp
+/// (`WhisperCppRecognizer`). `Transcriber` feeds it mono PCM in `preferredFormat`, at most `maxChunkSeconds` per call,
 /// and shifts the returned word times (seconds from the start of the buffer) onto the stream.
 ///
-/// A whisper.cpp backend would be `id` `"whisper.cpp"`, 16 kHz mono, `maxChunkSeconds` 30, and
-/// report `.modelMissing` until a ggml model exists in the models directory.
+/// The whisper.cpp backend (`WhisperCppRecognizer`) is `id` `"whisper.cpp"`, 16 kHz mono, and
+/// reports `.modelMissing` until a ggml model exists in the models directory.
 public protocol TranscriptionBackend: SpeechRecognizer {
     /// Stable identifier for preferences, e.g. `"apple-speech"`, `"whisper.cpp"`.
     var id: String { get }
@@ -40,7 +40,15 @@ public protocol TranscriptionBackend: SpeechRecognizer {
 
 /// The backends built into this build, most preferred first.
 public enum TranscriptionBackends {
-    public static var all: [any TranscriptionBackend] { [AppleSpeechRecognizer()] }
+    /// Apple Speech, then whisper.cpp configured from preferences (`WhisperSettings`). Check
+    /// `status(language:)` before use: whisper.cpp reports `.unavailable`/`.modelMissing` when its
+    /// executable or model is absent.
+    public static var all: [any TranscriptionBackend] { [AppleSpeechRecognizer(), WhisperCppRecognizer.fromDefaults()] }
+
+    /// The backend chosen in preferences (`WhisperSettings.backendKey`), Apple Speech when unset or unknown.
+    public static func preferred(_ defaults: UserDefaults = .standard) -> any TranscriptionBackend {
+        defaults.string(forKey: WhisperSettings.backendKey).flatMap { backend(id: $0) } ?? AppleSpeechRecognizer()
+    }
 
     /// The backend with `id`, if built in.
     public static func backend(id: String) -> (any TranscriptionBackend)? { all.first { $0.id == id } }
@@ -89,7 +97,13 @@ public struct Transcriber: Sendable {
             let buf = PCMBuffer(format: PCMFormat(sampleRate: rate, channels: 1), startTime: .zero,
                                 frameCount: c.count, channels: [Array(mono[c])])
             let offset = origin + Double(c.lowerBound) / rate
-            let words = try await backend.transcribe(buf, language: language)
+            let words: [TranscriptWord]
+            if let b = backend as? any ProgressReportingBackend, let progress {
+                let n = Double(chunks.count), done = Double(i)
+                words = try await b.transcribe(buf, language: language) { p in progress((done + p) / n) }
+            } else {
+                words = try await backend.transcribe(buf, language: language)
+            }
             out += words.map { w in
                 var w = w; w.end = max(w.end, w.start) + offset; w.start += offset; return w
             }

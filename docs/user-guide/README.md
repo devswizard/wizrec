@@ -8,7 +8,8 @@ saves Camtasia projects.
 3. [Editing](editing.md): timeline, clips, groups, speed, markers, undo
 4. [Library](library.md): transitions, effects, backgrounds, callouts, cursors, fonts
 5. [Camtasia projects](camtasia-projects.md): what carries over, moving projects between machines
-6. [Keyboard shortcuts](keyboard-shortcuts.md)
+6. [Captions](captions.md): transcription (Apple Speech, whisper.cpp), dynamic captions, SRT/VTT
+7. [Keyboard shortcuts](keyboard-shortcuts.md)
 
 Features still in progress are marked ⏳. Export and the caption editor exist in the engine
 and arrive in the app in an upcoming version.
