@@ -199,13 +199,20 @@ Each entry in `effects[]` looks like this:
   `ColorAdjustment`, `BlendModeEffect`, `MediaMatte`.
 - **Cursor:** `CursorPath`, `CursorColor`, `CursorShadow`, `CursorMotionBlur`,
   `CursorPhysics`, `LeftClickScaling`.
-- **Animated shader backgrounds:** `SourceEffect`.
+- **Animated shader backgrounds:** `SourceEffect`. It is stored in the clip's
+  own `sourceEffect` key (a single object), not in `effects[]` [obs].
 - **Audio:** `VSTEffect-<name>`, e.g. `VSTEffect-DFN3NoiseRemoval`.
-- **Behaviours:** `GenericBehaviorEffect` (with `in`, `center` and `out`
-  phases).
+- **Behaviours:** entries with `_type: "GenericBehaviorEffect"`. Their
+  `effectName` is the preset id (e.g. `flyIn`), and they carry `in`,
+  `center` and `out` phases instead of `parameters` [obs].
 - **Placeholders:** `dummy`, which carries only `start` and `duration`.
 
-The parameter names for each effect are listed by the survey script.
+On a `UnifiedMedia`, the parent's `effects[]` mirrors the children's,
+tied together by `metadata.effectIndex` [obs]. Some effects carry
+`leftEdgeMods`/`rightEdgeMods` (edge fades of a parameter). Parameters,
+units and maths per effect are in `docs/specs/effects/`,
+`docs/specs/behaviors.md`, `docs/specs/cursor-effects.md`,
+`docs/specs/shader-backgrounds.md` and `docs/specs/audio.md`.
 
 ### Transitions
 
@@ -289,8 +296,10 @@ Rich text can also be stored as RTF, in `metadata.default-text`. For the
 - [~] Transition names: catalogued in `docs/specs/transitions.md`. How a
   project names a shader transition, and the window placement between two
   clips, are still [?].
-- [?] The rendering maths for each effect (shadow, rounded corners, motion
-  blur, cursor physics).
+- [~] The rendering maths for each effect. DropShadow (angle convention,
+  opacity, an approximate blur), RoundCorners (radius in layer px) and Mask
+  (shape 0 = ellipse) are measured from the demo thumbnail. The rest wait on
+  experiments EF0–EF9 (`docs/specs/effects/README.md`).
 - ✅ **Camtasia accepts our rewritten files** [obs, 2026-10-19].
   - We rewrote the demo project with `tscproj roundtrip -o`. The rewrite
     re-indents the file and drops jsoncpp's trailing spaces.
