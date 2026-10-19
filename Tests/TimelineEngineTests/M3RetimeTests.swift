@@ -1,0 +1,126 @@
+import Foundation
+import Testing
+import TSCProjKit
+@testable import TimelineEngine
+
+// MARK: - RippleTrim
+
+@MainActor @Test func rippleTrimEndShiftsLaterClips() throws {
+    let p = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100, md: "100"), leaf(11, start: 100, dur: 50),
+                                                 leaf(12, start: 200, dur: 50)])])
+    let grow = RippleTrim(clipID: 10, edge: .end, to: 130)  // no neighbour limit
+    try expectReversible(grow, on: p)
+    try grow.apply(to: p)
+    try expectTracks(p, tracks(track(0, [leaf(10, start: 0, dur: 130, md: "130"), leaf(11, start: 130, dur: 50),
+                                         leaf(12, start: 230, dur: 50)])))
+    try grow.revert(on: p)
+    // Plain TrimClip still stops at the neighbour.
+    let plain = TrimClip(clipID: 10, edge: .end, to: 130)
+    try plain.apply(to: p)
+    #expect(plain.appliedEdge == 100)
+}
+
+@MainActor @Test func rippleTrimStartKeepsClipStart() throws {
+    let p = try projectWithAttributes([track(0, [leaf(10, start: 50, dur: 100, ms: "20"), leaf(11, start: 150, dur: 50)])])
+    let cut = RippleTrim(clipID: 10, edge: .start, to: 80)  // trims 30 off the in-point
+    try expectReversible(cut, on: p)
+    try cut.apply(to: p)
+    #expect(cut.appliedEdge == 80)
+    try expectTracks(p, tracks(track(0, [leaf(10, start: 50, dur: 70, ms: "50", md: "70"), leaf(11, start: 120, dur: 50)])))
+    try cut.revert(on: p)
+    // Extending the in-point is limited by the media (mediaStart 20 → 0) and pushes later clips right.
+    let ext = RippleTrim(clipID: 10, edge: .start, to: 0)
+    try ext.apply(to: p)
+    #expect(ext.appliedEdge == 30)
+    try expectTracks(p, tracks(track(0, [leaf(10, start: 50, dur: 120, ms: "0", md: "120"), leaf(11, start: 170, dur: 50)])))
+}
+
+@MainActor @Test func trimOnMagneticTrackRipples() throws {
+    let p = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100, md: "100"), leaf(11, start: 100, dur: 50)])],
+                                      magnetic: [0])
+    let trim = TrimClip(clipID: 10, edge: .end, to: 60)
+    try expectReversible(trim, on: p)
+    try trim.apply(to: p)
+    try expectTracks(p, tracks(track(0, [leaf(10, start: 0, dur: 60, md: "60"), leaf(11, start: 60, dur: 50)])))
+}
+
+// MARK: - RippleMove
+
+@MainActor @Test func rippleMoveClosesAndOpensGaps() throws {
+    let p = try projectWithAttributes([
+        track(0, [leaf(10, start: 0, dur: 100), leaf(11, start: 100, dur: 50), leaf(12, start: 150, dur: 50)],
+              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}, {"name" : "Cube", "duration" : 5, "leftMedia" : 11, "rightMedia" : 12}]"#),
+        track(1, [leaf(20, start: 0, dur: 30), leaf(21, start: 30, dur: 30)]),
+    ])
+    let move = RippleMove(clipID: 11, toTrack: 1, start: 30)
+    try expectReversible(move, on: p)
+    try move.apply(to: p)
+    try expectTracks(p, tracks(
+        track(0, [leaf(10, start: 0, dur: 100), leaf(12, start: 100, dur: 50)], transitions: "[]"),
+        track(1, [leaf(20, start: 0, dur: 30), leaf(11, start: 30, dur: 50), leaf(21, start: 80, dur: 30)],
+              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}]"#)))
+    try move.revert(on: p)
+    expectRejected(RippleMove(clipID: 11, toTrack: 1, start: 10), on: p, .invalid(""))  // inside clip 20
+    // Same track: start is read after the gap closes.
+    let same = RippleMove(clipID: 10, toTrack: 0, start: 100)
+    try expectReversible(same, on: p)
+    try same.apply(to: p)
+    #expect(p.tracks[0].clips.map { [$0.id, $0.start] } == [[11, 0], [12, 50], [10, 100]])
+}
+
+// MARK: - Clip speed
+
+@MainActor @Test func clipSpeedFollowsScalarRule() throws {
+    let unified = """
+    {"id" : 13, "_type" : "UnifiedMedia", "video" : \(leaf(14, start: 0, dur: 100)), \
+    "audio" : \(leaf(15, type: "AMFile", start: 0, dur: 100)), "start" : 0, "duration" : 100, \
+    "mediaStart" : 0, "mediaDuration" : 100, "scalar" : 1, \
+    "metadata" : {"clipSpeedAttribute" : {"type" : "bool", "value" : false}, "effectApplied" : "none"}}
+    """
+    let p = try projectWithAttributes([track(0, [unified, leaf(20, start: 200, dur: 10)])])
+    let fast = SetClipSpeed(clipID: 13, speed: Rational(3, 2))
+    try expectReversible(fast, on: p)
+    try fast.apply(to: p)
+    // 100 / 1.5 = 66.67 → 66 frames; mediaDuration = 66 / (2/3) = 99.
+    let clip = try #require(p.tracks[0].clips.first)
+    for part in [clip, try #require(clip.video), try #require(clip.audio)] {
+        #expect(part.scalar == Rational(2, 3) && part.duration == 66 && part.mediaDuration == Rational(99))
+        #expect(part.object["scalar"] == .string("2/3"))
+    }
+    #expect(clip.metadata?["clipSpeedAttribute"]?.object?["value"]?.bool == true)
+    #expect(clip.metadata?["effectApplied"]?.string == "Clip Speed")
+
+    let odd = SetClipSpeed(clipID: 20, speed: Rational(7, 3))  // 10 × 3/7 = 4.28 → 4; md = 4 × 7/3
+    try odd.apply(to: p)
+    #expect(p.tracks[0].clips[1].object["mediaDuration"] == .string("28/3"))
+
+    // Slowing down into the neighbour throws unless rippled.
+    try fast.revert(on: p)
+    let q = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100), leaf(11, start: 120, dur: 10)])])
+    expectRejected(SetClipSpeed(clipID: 10, speed: Rational(1, 2)), on: q, .invalid(""))
+    let slow = SetClipSpeed(clipID: 10, speed: Rational(1, 2), ripple: true)
+    try expectReversible(slow, on: q)
+    try slow.apply(to: q)
+    #expect(q.tracks[0].clips.map(\.start) == [0, 220])
+    #expect(q.tracks[0].clips[0].object["scalar"]?.int == 2)
+    expectRejected(SetClipSpeed(clipID: 10, speed: Rational(0)), on: q, .invalid(""))
+}
+
+// MARK: - Extend frame
+
+@MainActor @Test func extendFrameInsertsSlowedLastFrame() throws {
+    let p = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100, ms: "20", md: "100"),
+                                                 leaf(11, start: 100, dur: 10)])])
+    let hold = ExtendFrame(clipID: 10, duration: 60)
+    try expectReversible(hold, on: p)
+    try hold.apply(to: p)
+    #expect(hold.freezeID == 12)
+    try expectTracks(p, tracks(track(0, [
+        leaf(10, start: 0, dur: 100, ms: "20", md: "100"),
+        leaf(12, start: 100, dur: 60, ms: "119", md: "1", scalar: "60"),
+        leaf(11, start: 160, dur: 10),
+    ])))
+    expectRejected(ExtendFrame(clipID: 10, duration: 0), on: p, .invalid(""))
+    let audio = try projectWithAttributes([track(0, [leaf(10, type: "AMFile", start: 0, dur: 100)])])
+    expectRejected(ExtendFrame(clipID: 10, duration: 10), on: audio, .invalid(""))
+}
