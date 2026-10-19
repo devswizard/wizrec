@@ -1,0 +1,58 @@
+# Build and test on Apple silicon. Golden-frame tests skip (no REFS_DIR on CI)
+# and perf tests skip (no WIZREC_PERF=1).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: swift build + test (macOS arm64)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          set -euo pipefail
+          # Newest non-beta Xcode on the image (Xcode_<version>.app).
+          xcode="$( (ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|rc' | sort -V | tail -n 1) || true)"
+          xcode="${xcode:-/Applications/Xcode.app}"
+          echo "Using $xcode"
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+          swift --version
+          uname -m
+
+      - name: Install FFmpeg and pkg-config
+        run: |
+          brew update --quiet || true
+          brew install ffmpeg pkg-config
+          pkg-config --modversion libavcodec
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        env:
+          REFS_DIR: ""
+          WIZREC_PERF: ""
+        run: swift test
