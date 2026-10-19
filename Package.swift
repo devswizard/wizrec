@@ -40,7 +40,11 @@ let package = Package(
             dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "TimelineEngineTests", dependencies: ["TimelineEngine", "TSCProjKit"]),
+        .testTarget(
+            name: "TimelineEngineTests",
+            dependencies: ["TimelineEngine", "TSCProjKit"],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(
             name: "GoldenTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit"]
