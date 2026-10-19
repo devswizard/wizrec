@@ -9,6 +9,8 @@ enum MainMenu {
         let app = NSMenu(title: "WizRec")
         app.addItem(withTitle: "About WizRec", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
         app.addItem(.separator())
+        app.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        app.addItem(.separator())
         app.addItem(withTitle: "Hide WizRec", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)),
                     keyEquivalent: "h").keyEquivalentModifierMask = [.command, .option]
@@ -102,6 +104,12 @@ enum MainMenu {
         window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         add(window, to: main)
         NSApplication.shared.windowsMenu = window
+
+        let help = NSMenu(title: "Help")
+        help.addItem(withTitle: "Welcome to WizRec", action: #selector(AppDelegate.showWelcome(_:)), keyEquivalent: "")
+        help.addItem(withTitle: "Show Crash Reports", action: #selector(AppDelegate.showCrashReports(_:)), keyEquivalent: "")
+        add(help, to: main)
+        NSApplication.shared.helpMenu = help
 
         return main
     }

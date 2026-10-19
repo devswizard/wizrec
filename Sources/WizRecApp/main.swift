@@ -3,7 +3,10 @@
 import AppKit
 import PlayerKit
 
-AppEnvironment.options = LaunchOptions(arguments: Array(CommandLine.arguments.dropFirst()))
+AppEnvironment.preferences = AppPreferences.load(from: .standard)
+AppEnvironment.options = AppEnvironment.preferences.launchOptions(arguments: Array(CommandLine.arguments.dropFirst()))
+// Opt-in, local-only crash reports (Settings ▸ Privacy).
+if AppEnvironment.preferences.crashLogsEnabled { CrashLog.setEnabled(true) }
 
 // We open command-line paths ourselves; stop AppKit from treating every argument
 // (option values included) as a file to open.
