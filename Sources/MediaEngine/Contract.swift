@@ -191,21 +191,45 @@ public struct CacheStats: Sendable, Equatable {
 public actor MediaPool {
     public let cacheLimitBytes: Int
 
-    private var sources: [URL: Task<any MediaSource, Error>] = [:]
-    private var cache: FrameCache
+    var sources: [URL: Task<any MediaSource, Error>] = [:]
+    var cache: FrameCache
 
     /// One pre-roll lane per stream: pending requests (in order) and the task draining them.
-    private struct LaneKey: Hashable { let url: URL; let stream: Int }
+    struct LaneKey: Hashable { let url: URL; let stream: Int }
     private var prefetchQueue: [LaneKey: [FrameRequest]] = [:]
     private var prefetchWorkers: [LaneKey: Task<Void, Never>] = [:]
 
-    private(set) var cacheHits = 0
-    private(set) var cacheMisses = 0
+    var cacheHits = 0
+    var cacheMisses = 0
 
-    /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU).
-    public init(cacheLimitBytes: Int = 512 << 20) {
+    // M2 state (Pool+M2.swift).
+    /// Directory of the on-disk waveform-peak cache; nil = memory only. Created on first write.
+    public nonisolated let diskCacheDirectory: URL?
+    struct PeakKey: Hashable { let url: URL; let stream: Int }
+    var peakMemory: [PeakKey: (peaks: BasePeaks, lastUse: UInt64)] = [:]
+    var peakTasks: [PeakKey: Task<BasePeaks, Error>] = [:]
+    var peakClock: UInt64 = 0
+    /// Memory budget for cached waveform envelopes (base resolution).
+    let peakLimitBytes = 64 << 20
+    /// Filmstrip decoders + cache, separate from playback decoders.
+    let thumbnails = ThumbnailService(limitBytes: 64 << 20)
+    /// `.nearestDecoded` catch-up decode per stream: the running task, the newest target asked
+    /// for while it runs, and the last target started (targets only move forward).
+    var catchUpTasks: [LaneKey: Task<Void, Never>] = [:]
+    var catchUpWanted: [LaneKey: FrameRequest] = [:]
+    var catchUpLast: [LaneKey: CMTime] = [:]
+    /// Stream times of decodes in flight per stream (any caller), for `.nearestDecoded`.
+    var inFlight: [LaneKey: [CMTime]] = [:]
+
+    /// `~/Library/Caches/WizRec/peaks`, the default `diskCacheDirectory`.
+    public static let defaultDiskCacheDirectory: URL? = PeakDiskCache.defaultDirectory
+
+    /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU). `diskCacheDirectory`: where
+    /// waveform peaks persist between launches (nil = memory only; never inside a project bundle).
+    public init(cacheLimitBytes: Int = 512 << 20, diskCacheDirectory: URL? = MediaPool.defaultDiskCacheDirectory) {
         self.cacheLimitBytes = cacheLimitBytes
         self.cache = FrameCache(limitBytes: cacheLimitBytes)
+        self.diskCacheDirectory = diskCacheDirectory
     }
 
     /// Reads stream metadata without decoding frames.
@@ -230,7 +254,7 @@ public actor MediaPool {
     }
 
     /// Stream time used for cache lookups: clamped to ≥ 0.
-    private static func lookupTime(_ t: CMTime) -> CMTime {
+    static func lookupTime(_ t: CMTime) -> CMTime {
         t.isNumeric ? max(.zero, t) : (t == .positiveInfinity ? .positiveInfinity : .zero)
     }
 
@@ -244,7 +268,15 @@ public actor MediaPool {
         return try await decode(request)
     }
 
-    private func decode(_ request: FrameRequest) async throws -> VideoFrame {
+    func decode(_ request: FrameRequest) async throws -> VideoFrame {
+        let key = LaneKey(url: request.url, stream: request.stream)
+        inFlight[key, default: []].append(request.time)
+        defer {
+            if var a = inFlight[key], let i = a.firstIndex(of: request.time) {
+                a.remove(at: i)
+                inFlight[key] = a.isEmpty ? nil : a
+            }
+        }
         let src = try await source(for: request.url)
         let f = try await src.frame(stream: request.stream, at: request.time)
         cache.insert(url: request.url, stream: request.stream, frame: f)
@@ -289,6 +321,12 @@ public actor MediaPool {
         sources.removeAll()
         cacheHits = 0
         cacheMisses = 0
+        for t in catchUpTasks.values { t.cancel() }
+        catchUpTasks.removeAll(); catchUpWanted.removeAll(); catchUpLast.removeAll()
+        for t in peakTasks.values { t.cancel() }
+        peakTasks.removeAll(); peakMemory.removeAll()
+        let thumbs = thumbnails
+        Task { await thumbs.purge() }
     }
 
     /// Frame-cache counters since creation or the last `purge()`.

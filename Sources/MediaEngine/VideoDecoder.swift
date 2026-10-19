@@ -119,6 +119,7 @@ actor VideoStreamDecoder {
         hardwareServed += 1
         let r = try await hw.measuredFrame(at: time)
         if r.decoded > 0 { hwCost = Self.smooth(hwCost, r.ms / Double(r.decoded)) }
+        recordRate(r.decoded, r.ms)
         return r.frame
     }
 
@@ -126,8 +127,22 @@ actor VideoStreamDecoder {
         softwareServed += 1
         let r = try await sw.measuredFrame(at: time)
         if r.decoded > 0 { swCost = Self.smooth(swCost, r.ms / Double(r.decoded)) }
+        recordRate(r.decoded, r.ms)
         return r.frame
     }
+
+    /// Decayed sums of pictures decoded and busy time (ms) over recent requests that decoded.
+    private var rateFrames = 0.0
+    private var rateMs = 0.0
+
+    private func recordRate(_ decoded: Int, _ ms: Double) {
+        guard decoded > 0 else { return }
+        rateFrames = 0.9 * rateFrames + Double(decoded)
+        rateMs = 0.9 * rateMs + ms
+    }
+
+    /// Decoded pictures per second of busy time, smoothed; nil until measured.
+    var decodeRate: Double? { rateMs > 0 ? rateFrames / rateMs * 1000 : nil }
 
     func frame(at time: CMTime) async throws -> VideoFrame {
         guard let hw else { return try await softwareLane().frame(at: time) }
@@ -636,5 +651,44 @@ final class VideoDecodeCore {
         let out = VideoFrame(pixelBuffer: buf, presentationTime: pts, duration: duration)
         currentOutput = out
         return out
+    }
+}
+
+// MARK: - Thumbnails
+
+extension VideoDecodeCore {
+    /// A small BGRA picture for a filmstrip: the exact frame at `time` (`exact`), or the first
+    /// picture decoded after seeking to the keyframe at or before `time` (cheap: one GOP start).
+    /// Returns the buffer and the picture's stream time.
+    func thumbnailFrame(at time: CMTime, exact: Bool, maxPixelSize: Int) throws -> (CVPixelBuffer, CMTime) {
+        do {
+            return try thumbnailFrameOnce(at: time, exact: exact, maxPixelSize: maxPixelSize)
+        } catch where usingHardware {
+            try switchToSoftware()
+            return try thumbnailFrameOnce(at: time, exact: exact, maxPixelSize: maxPixelSize)
+        }
+    }
+
+    private func thumbnailFrameOnce(at time: CMTime, exact: Bool, maxPixelSize: Int) throws -> (CVPixelBuffer, CMTime) {
+        var target = clock.ticksFloor(time)
+        if target < clock.origin { target = clock.origin }
+        if exact || covers(target) {
+            _ = try locate(target)
+        } else {
+            try seek(to: target)
+            current = try decodeNext()
+            if current == nil {
+                // Nothing decodes from that keyframe (index gap): use the exact path.
+                _ = try locate(target)
+            }
+        }
+        guard let cur = current else { throw MediaError.decodeFailed("no frame for thumbnail") }
+        let buf = try converter.convertScaled(cur.frame, maxPixelSize: maxPixelSize)
+        return (buf, clock.time(ofTicks: cur.pts))
+    }
+
+    /// Index of the keyframe at or before `time` (container index), for thumbnail cache keys.
+    func keyframeOrdinal(at time: CMTime) -> Int? {
+        keyframeIndex(atOrBefore: max(clock.origin, clock.ticksFloor(time)))
     }
 }

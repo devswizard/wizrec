@@ -54,6 +54,19 @@ struct FrameCache {
         return entries[i].frame
     }
 
+    /// The cached frame with the latest start ≤ `t` (the newest decoded frame not after `t`).
+    mutating func latest(url: URL, stream: Int, atOrBefore t: CMTime) -> VideoFrame? {
+        let key = StreamKey(url: url, stream: stream)
+        guard var entries = streams[key] else { return nil }
+        let s = Self.search(entries, t)
+        let i = s.found ?? (s.insert - 1)
+        guard i >= 0, i < entries.count else { return nil }
+        clock &+= 1
+        entries[i].lastUse = clock
+        streams[key] = entries
+        return entries[i].frame
+    }
+
     mutating func insert(url: URL, stream: Int, frame: VideoFrame) {
         let start = frame.presentationTime.isNumeric ? frame.presentationTime : .zero
         var end = CMTime.positiveInfinity

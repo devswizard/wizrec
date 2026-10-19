@@ -178,7 +178,9 @@ private func assertBGRA(_ buf: CVPixelBuffer) {
         let pool = MediaPool()
         let info = try await pool.probe(url)
         #expect(info.kind == .shader)
-        #expect(info.streams.isEmpty)
+        // One metadata-only track (sourceTracks type 0, M2); no decodable frames.
+        #expect(info.streams.count == 1)
+        #expect(info.streams.first?.length == Int64.max)
         let src = try await pool.source(for: url)
         await #expect(throws: MediaError.self) { try await src.frame(stream: 0, at: .zero) }
     }
