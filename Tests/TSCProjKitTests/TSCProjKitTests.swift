@@ -134,11 +134,13 @@ func installedSampleProjectsRoundTrip() throws {
     #expect(Timebase(editRate: 30).seconds(172) == 172.0 / 30)
 }
 
+/// Observed in the user's vlog: `mediaDuration × scalar == duration` (scalar = 1/speed).
 @Test func clipSpeedMapsTimelineToMedia() throws {
     let clip = Clip(try #require(JSON.parse(
-        #"{"_type": "VMFile", "start": 100, "duration": 457, "mediaStart": 10, "scalar": "304/457"}"#).object))
+        #"{"_type": "VMFile", "start": 100, "duration": 304, "mediaStart": 10, "mediaDuration": 457, "scalar": "304/457"}"#).object))
     #expect(clip.mediaTime(atTimeline: 100) == Rational(10))
-    #expect(clip.mediaTime(atTimeline: 557) == Rational(314))
+    #expect(clip.mediaTime(atTimeline: 404) == Rational(467))
+    #expect(clip.mediaDuration * clip.scalar == Rational(clip.duration))
 }
 
 // MARK: - Keyframes

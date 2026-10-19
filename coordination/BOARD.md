@@ -20,22 +20,22 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 
 | id | owner | status | depends-on | acceptance |
 |---|---|---|---|---|
-| M1-MED-1 | media | todo | — | `probe` + `source(for:)` for mp4/mov/m4a/wav/png/jpg/`.trec`/`.tscshadervid`; tests on synthesized media |
-| M1-MED-2 | media | todo | MED-1 | `.trec` tscc2 decode via libavcodec, VFR hold rule, frame-accurate seek; demo-project test (skips if absent) |
-| M1-MED-3 | media | todo | MED-1 | AVFoundation h264/hevc decode, frame-accurate seek, test: seek(n) == sequential(n) |
-| M1-MED-4 | media | todo | MED-2,3 | `MediaPool` LRU frame cache (PTS-snapped keys) + `prefetch`; perf test 1080p ≥ 120 fps decode |
-| M1-MED-5 | media | todo | MED-1 | `audio(stream:range:format:)` PCM + resample; `thumbnail` |
-| M1-REN-1 | render | todo | — | `SceneModel` + `evaluate`: transform, crops, opacity, keyframes; UnifiedMedia, StitchedMedia, Group, scalar; unit tests on hand-built JSON + demo fixture |
-| M1-REN-2 | render | todo | REN-1 | `audioSegments(in:)` with nested scalars and gains |
-| M1-REN-3 | render | todo | REN-1 | `Compositor`: transform, crops, opacity, offscreen groups, shader fallback; GPU tests on synthetic frames (pixel probes) |
-| M1-REN-4 | render | todo | REN-3, MED-4 | `OfflineRenderer.image`; renders demo frame 0/mid/end to PNG |
-| M1-TL-1 | timeline | todo | — | `UndoStack` tests (perform/undo/redo/limit/redo-clear) |
-| M1-TL-2 | timeline | todo | TL-1 | `SplitClip`, `TrimClip`, `MoveClip` with expected-JSON tests; undo restores byte-identical serialisation; id allocation above `maxID` |
-| M1-QA-1 | qa | todo | — | Golden harness: SSIM + PSNR, frame extraction from reference MP4, skips without `REFS_DIR` |
-| M1-QA-2 | qa | todo | — | Generator for small effect-free test projects (built with TSCProjKit) + list of exports needed from the user |
-| M1-QA-3 | qa | todo | — | `.github/workflows/ci.yml` macOS runner: brew ffmpeg, `swift build`, `swift test` |
-| M1-QA-4 | qa | todo | REN-4 | Perf tests: decode + composite throughput 1080p/4K |
-| M1-FMT-1 | format | todo | — | `docs/specs/time-mapping.md`: groups, stitched, scalar, keyframe time base, `mediaStart` floats/rationals |
-| M1-FMT-2 | format | todo | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
-| M1-FMT-3 | format | todo | — | `docs/specs/media-streams.md`: `trackNumber` ↔ stream, stream time origin, `sourceTracks.range`, VFR in `.trec` |
+| M1-MED-1 | media | claimed | — | `probe` + `source(for:)` for mp4/mov/m4a/wav/png/jpg/`.trec`/`.tscshadervid`; tests on synthesized media |
+| M1-MED-2 | media | claimed | MED-1 | `.trec` tscc2 decode via libavcodec, VFR hold rule, frame-accurate seek; demo-project test (skips if absent) |
+| M1-MED-3 | media | claimed | MED-1 | AVFoundation h264/hevc decode, frame-accurate seek, test: seek(n) == sequential(n) |
+| M1-MED-4 | media | claimed | MED-2,3 | `MediaPool` LRU frame cache (PTS-snapped keys) + `prefetch`; perf test 1080p ≥ 120 fps decode |
+| M1-MED-5 | media | claimed | MED-1 | `audio(stream:range:format:)` PCM + resample; `thumbnail` |
+| M1-REN-1 | render | claimed | — | `SceneModel` + `evaluate`: transform, crops, opacity, keyframes; UnifiedMedia, StitchedMedia, Group, scalar; unit tests on hand-built JSON + demo fixture |
+| M1-REN-2 | render | claimed | REN-1 | `audioSegments(in:)` with nested scalars and gains |
+| M1-REN-3 | render | claimed | REN-1 | `Compositor`: transform, crops, opacity, offscreen groups, shader fallback; GPU tests on synthetic frames (pixel probes) |
+| M1-REN-4 | render | claimed | REN-3, MED-4 | `OfflineRenderer.image`; renders demo frame 0/mid/end to PNG |
+| M1-TL-1 | timeline | claimed | — | `UndoStack` tests (perform/undo/redo/limit/redo-clear) |
+| M1-TL-2 | timeline | claimed | TL-1 | `SplitClip`, `TrimClip`, `MoveClip` with expected-JSON tests; undo restores byte-identical serialisation; id allocation above `maxID` |
+| M1-QA-1 | qa | claimed | — | Golden harness: SSIM + PSNR, frame extraction from reference MP4, skips without `REFS_DIR` |
+| M1-QA-2 | qa | claimed | — | Generator for small effect-free test projects (built with TSCProjKit) + list of exports needed from the user |
+| M1-QA-3 | qa | claimed | — | `.github/workflows/ci.yml` macOS runner: brew ffmpeg, `swift build`, `swift test` |
+| M1-QA-4 | qa | claimed | REN-4 | Perf tests: decode + composite throughput 1080p/4K |
+| M1-FMT-1 | format | claimed | — | `docs/specs/time-mapping.md`: groups, stitched, scalar, keyframe time base, `mediaStart` floats/rationals |
+| M1-FMT-2 | format | claimed | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
+| M1-FMT-3 | format | claimed | — | `docs/specs/media-streams.md`: `trackNumber` ↔ stream, stream time origin, `sourceTracks.range`, VFR in `.trec` |
 | M1-APP-1 | app | todo | MED-4, REN-3 | Player window: open `.cmproj`, canvas, play/pause/scrub, 60 fps at 1080p, audio clock |

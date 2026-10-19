@@ -95,8 +95,9 @@ public struct Clip {
         nonmutating set { object["mediaDuration"] = newValue.json }
     }
 
-    /// Timeline-to-media speed factor: `duration * scalar == mediaDuration`.
-    /// `1` normally; a fraction like `"304/457"` after a clip-speed change.
+    /// Media-to-timeline factor: `mediaDuration * scalar == duration`, so
+    /// `scalar = 1 / speed` (a 2× clip has scalar `1/2`). `1` normally; a
+    /// fraction like `"304/457"` (≈1.5× speed) after a clip-speed change.
     public var scalar: Rational {
         get { Rational(object["scalar"]) ?? Rational(1) }
         nonmutating set { object["scalar"] = newValue.json }
@@ -105,7 +106,7 @@ public struct Clip {
     /// Source time (ticks) for a timeline time inside this clip.
     public func mediaTime(atTimeline t: Int64) -> Rational {
         let local = Rational(t - start)
-        let m = local * scalar
+        let m = local / scalar
         return Rational(m.num * mediaStart.den + mediaStart.num * m.den, m.den * mediaStart.den)
     }
 

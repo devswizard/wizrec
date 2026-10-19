@@ -58,9 +58,11 @@ holds the file [inf].
   uses, also in project ticks. These are usually integers. After a speed
   change they can be floats or exact rational strings such as
   `"13771788800000/113"` [obs].
-- **`scalar`.** The clip's speed factor, where
-  `duration × scalar = mediaDuration`. It is `1` at normal speed, or a rational
-  string such as `"304/457"` [obs + inf].
+- **`scalar`.** Media-to-timeline factor, where
+  `mediaDuration × scalar = duration`, i.e. `scalar = 1 / speed`: a clip
+  played at 2× has scalar `1/2`. It is `1` at normal speed, or a rational
+  string such as `"304/457"` (≈1.5× speed) [obs: both non-unit scalars in the
+  user's vlog satisfy this exactly; the reverse relation holds for neither].
 - **Keyframes.** Keyframe times are relative to the clip's own start [inf].
 
 ## Top level

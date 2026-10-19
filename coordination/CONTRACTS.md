@@ -62,7 +62,9 @@ types once (rebuild after each edit). **`evaluate(at:)`** is pure.
 Time mapping, per clip, from the parent's time *t* (ticks):
 
 - Visible when `start ≤ t < start + duration`.
-- Local media time `m = mediaStart + (t − start) × scalar` (exact `Rational`).
+- Local media time `m = mediaStart + (t − start) / scalar` (exact `Rational`).
+  `scalar = 1/speed`: `mediaDuration × scalar = duration` [obs, vlog; fixed
+  2026-10-19, see DECISIONS]. `Clip.mediaTime(atTimeline:)` implements this.
 - `Group`: children are evaluated at `m` on the group's inner timeline.
 - `StitchedMedia`: the segment containing `m` (segment `start` relative to the
   stitched clip's inner timeline, per FORMAT.md) is evaluated with the same

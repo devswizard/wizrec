@@ -33,3 +33,9 @@ Dated log. Newest last.
   rule 4 only (the user's project/media files, ffprobe, the user's reference
   exports). No REA tools and no running Camtasia without explicit user
   approval routed through the lead.
+- **2026-10-19 · `scalar` direction corrected:** `mediaDuration × scalar =
+  duration` (scalar = 1/speed), so media time is
+  `mediaStart + (t − start) / scalar`. Found independently by `qa` and
+  `timeline` from the user's vlog (both non-unit scalars match exactly; the M0
+  assumption matched neither). Fixed in `Clip.mediaTime`, its test, FORMAT.md
+  and CONTRACTS.md.
