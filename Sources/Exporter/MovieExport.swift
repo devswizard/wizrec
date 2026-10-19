@@ -101,13 +101,6 @@ struct StallWatch {
     }
 }
 
-/// A rendered output frame handed between pipeline stages.
-// @unchecked: each buffer is owned by exactly one stage at a time (allocated by the session,
-// filled by one render call, then appended to the writer); nothing touches it concurrently.
-struct PixelBox: @unchecked Sendable {
-    let buffer: CVPixelBuffer
-}
-
 extension ExportSession {
     /// Frames rendered ahead of the writer (render n+1, n+2 while n is encoded).
     static let pipelineDepth = 6
@@ -160,30 +153,22 @@ extension ExportSession {
         var finished = false
         defer { if !finished { writer.cancelWriting() } }
 
+        // Frames render in order with `pipelineDepth` in flight (fetch n+1 while the GPU draws n
+        // and the writer encodes n-1); RenderPipeline fetches strictly in frame order.
         let renderer = OfflineRenderer(scene: scene, pool: pool)
-        var inFlight: [Task<PixelBox, any Error>] = []
-        defer { for t in inFlight { t.cancel() } }
-        var nextToSchedule = 0
-
-        func schedule() throws {
-            while inFlight.count < Self.pipelineDepth, nextToSchedule < frameCount {
-                guard let pool = adaptor.pixelBufferPool else { throw ExportError.failed("no pixel buffer pool") }
-                var out: CVPixelBuffer?
-                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out)
-                guard let pb = out else { throw ExportError.failed("pixel buffer allocation") }
-                Self.tagBT709(pb)
-                let box = PixelBox(buffer: pb)
-                let ticks = timing.ticks(frame: nextToSchedule)
-                let straight = codec.hasAlpha
-                inFlight.append(Task {
-                    nonisolated(unsafe) let target = box.buffer
-                    try await renderer.render(at: ticks, into: target)
-                    if straight { Self.unpremultiply(target) }
-                    return box
-                })
-                nextToSchedule += 1
-            }
+        nonisolated(unsafe) let bufferPool = adaptor.pixelBufferPool
+        let pipe = renderer.pipeline(ticks: (0..<frameCount).map { timing.ticks(frame: $0) },
+                                     maxInFlight: Self.pipelineDepth) { _ in
+            guard let bufferPool else { throw ExportError.failed("no pixel buffer pool") }
+            var out: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, bufferPool, &out)
+            guard let pb = out else { throw ExportError.failed("pixel buffer allocation") }
+            Self.tagBT709(pb)
+            return pb
         }
+        var pipeDone = false
+        defer { if !pipeDone { Task { await pipe.cancel() } } }
+        let straight = codec.hasAlpha
 
         // AVAssetWriter interleaves its inputs: an input stops being ready while the other lags
         // (or is not marked finished). So never block on one input: feed whichever is ready, keep
@@ -193,9 +178,8 @@ extension ExportSession {
 
         for n in 0..<frameCount {
             if isCancelled { throw ExportError.cancelled }
-            try schedule()
-            let box = try await inFlight.removeFirst().value
-            try schedule()
+            guard let frame = try await pipe.next() else { throw ExportError.failed("render pipeline ended at frame \(n)") }
+            if straight { Self.unpremultiply(frame.pixelBuffer) }
             let pts = timing.presentationTime(frame: n)
             while true {
                 try checkWriter(writer)
@@ -206,13 +190,13 @@ extension ExportSession {
                 try stall.check()
                 try await pause()
             }
-            nonisolated(unsafe) let buffer = box.buffer
-            guard adaptor.append(buffer, withPresentationTime: pts) else {
+            guard adaptor.append(frame.pixelBuffer, withPresentationTime: pts) else {
                 throw ExportError.failed(writer.error.map { "\($0)" } ?? "append frame \(n)")
             }
             stall.progressed()
             report(Double(n + 1) / Double(frameCount) * 0.99)
         }
+        pipeDone = true
         video.markAsFinished()
         while !pump.done {
             try checkWriter(writer)

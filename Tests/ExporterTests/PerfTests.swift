@@ -12,7 +12,8 @@ let perfEnabled = ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"
     && FileManager.default.fileExists(atPath: demoBundle.path)
 
 /// Export speed on the user's demo project (read only; output in a temp dir).
-/// Runs only with `WIZREC_PERF=1`; target: 1080p30 H.264 ≥ 2× real time.
+/// Runs only with `WIZREC_PERF=1`; target: 1080p30 H.264 ≥ 4× real time (S3-EXP-3). Needs a quiet
+/// machine: under heavy load (load average > 30) exports drop to 2.5–3×.
 @Suite(.enabled(if: perfEnabled && hasGPU), .serialized) struct ExportPerfTests {
     @MainActor private func demo() throws -> (SceneModel, AudioScene) {
         let bundle = try ProjectBundle(url: demoBundle)
@@ -42,7 +43,7 @@ let perfEnabled = ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"
         print(String(format: "export perf %@: %.2f s of video in %.2f s = %.2f× real time, %.1f MB",
                      "\(format)", length, elapsed, speed, Double(bytes) / 1e6))
         if case .mp4(let codec, _) = format, codec == "h264" {
-            #expect(speed >= 2, "1080p30 H.264 export at \(speed)× real time")
+            #expect(speed >= 4, "1080p30 H.264 export at \(speed)× real time")
         }
     }
 }
