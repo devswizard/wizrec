@@ -20,9 +20,9 @@ Camtasia on another Mac or PC can be edited here.
 | `TSCProjKit`: project read/write | ✅ lossless round-trip for format 2.0–10.0, Mac + Windows projects |
 | `tscproj` CLI | ✅ `info`, `roundtrip` |
 | App icon | ✅ `Design/AppIcon` |
-| Media decode (`.trec`, mp4, images) | ⏳ via AVFoundation + FFmpeg (`tscc2`) |
-| Compositor / preview | ⏳ |
-| Timeline UI | ⏳ |
+| Media decode (`.trec`, mp4, images, PDF) | ✅ FFmpeg + VideoToolbox, frame-accurate seek |
+| Compositor / preview | ✅ Metal; read-only player plays `.cmproj` (effects from M4) |
+| Timeline edits (split/trim/move, undo) | ✅ engine; UI ⏳ |
 | Screen + webcam + mic recorder | ⏳ ScreenCaptureKit |
 | Export | ⏳ |
 
@@ -34,6 +34,7 @@ swift test
 swift run tscproj info "~/Documents/demo project.cmproj"
 swift run tscproj roundtrip path/to/project.tscproj -o /tmp/copy.tscproj
 Design/AppIcon/build-icon.sh        # → Design/AppIcon/build/AppIcon.icns
+scripts/run-demo.sh --autoplay --overlay   # build WizRec.app, play the demo project
 ```
 
 ## Layout

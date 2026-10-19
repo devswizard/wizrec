@@ -64,7 +64,20 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (M0 complete — 2026-10-19)
+## Current state (M1 complete — 2026-10-19)
+
+- **M1 (read-only playback) done** by the agent team; see
+  `coordination/BOARD.md`, `CONTRACTS.md`, `DECISIONS.md` and
+  `docs/specs/*.md`. `MediaEngine` (libav + VideoToolbox), `RenderEngine`
+  (`SceneModel`/`evaluate`, Metal `Compositor`, `OfflineRenderer`),
+  `TimelineEngine` (undo, split/trim/move), `PlayerKit` + `WizRecApp`
+  (`scripts/run-demo.sh`), `TestGenKit`/`wizrec-testgen`, golden + perf tests,
+  CI workflow. ~190 tests.
+- **Pending on the user:** `docs/testing/camtasia-session-1.md` (reference
+  exports + experiments X1–X7).
+
+### M0 (2026-10-19)
+
 
 - **`Sources/TSCProjKit`**: lossless JSON tree (`JSON.swift`); exact rational
   time (`Time.swift`); parameters and keyframes (`Parameter.swift`); clip
