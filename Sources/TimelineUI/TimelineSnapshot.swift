@@ -70,6 +70,17 @@ public struct TimelineClipItem: Sendable, Equatable, Identifiable {
     public var minStart: Int64? = nil
     /// Latest end edge the available media allows; nil when unbounded.
     public var maxEnd: Int64? = nil
+    /// Non-placeholder effects in the clip's combined effect order (`UnifiedMedia`: the video
+    /// part's effects, then the parent's), with the index `RemoveEffect` takes.
+    public var effects: [TimelineEffectRef] = []
+}
+
+/// One effect of a clip: `effectName` and its index in the clip's combined effect list
+/// (TimelineEngine `Effects`; placeholders count but are not listed).
+public struct TimelineEffectRef: Sendable, Equatable {
+    public var name: String
+    public var index: Int
+    public init(name: String, index: Int) { self.name = name; self.index = index }
 }
 
 /// A transition drawn as an overlay. `start`/`end` in track ticks.
@@ -298,10 +309,17 @@ private struct SnapshotBuilder {
             leafOrUnified(c, window: window, video: &video, audio: &audio)
         }
         let (lo, hi) = limits(c)
+        let fx = effects(of: c)
         return TimelineClipItem(
             id: c.id, style: style, name: name(of: c), start: c.start, duration: c.duration,
-            speed: 1 / scalar, effectCount: c.effects.filter { !$0.isPlaceholder }.count,
-            videoSpans: video, audioSpans: audio, cuts: cuts, lanes: lanes, minStart: lo, maxEnd: hi)
+            speed: 1 / scalar, effectCount: fx.count,
+            videoSpans: video, audioSpans: audio, cuts: cuts, lanes: lanes, minStart: lo, maxEnd: hi, effects: fx)
+    }
+
+    /// Effects in TimelineEngine's combined order: `UnifiedMedia` = video part, then parent.
+    func effects(of c: Clip) -> [TimelineEffectRef] {
+        let all = c.kind == .unified ? (c.video?.effects ?? []) + c.effects : c.effects
+        return all.enumerated().compactMap { i, e in e.isPlaceholder ? nil : TimelineEffectRef(name: e.name, index: i) }
     }
 
     /// Edge limits from the available media, like `TrimClip`: for each timed part,
