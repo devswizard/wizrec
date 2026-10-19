@@ -1,3 +1,4 @@
+import AudioEngine
 import Foundation
 import MediaEngine
 import Observation
@@ -43,6 +44,8 @@ public final class EditorDocumentModel {
     public let undo: UndoStack
     /// Immutable projection of the project for rendering; rebuilt after every change.
     public private(set) var scene: SceneModel
+    /// The project's audio for the player's `AudioMixer`; rebuilt with `scene`.
+    public private(set) var audioScene: AudioScene
     public private(set) var missing: [MissingMedia]
     /// Dirty state relative to the last save.
     public private(set) var tracker = ChangeTracker()
@@ -66,6 +69,7 @@ public final class EditorDocumentModel {
         self.bundle = bundle
         undo = UndoStack(project: bundle.project)
         scene = SceneModel(project: bundle.project, resolve: bundle.resolve)
+        audioScene = AudioScene(project: bundle.project, resolve: bundle.resolve)
         missing = Self.findMissing(bundle)
         pool = MediaPool(cacheLimitBytes: cacheLimitBytes)
         thumbnailPool = MediaPool(cacheLimitBytes: 64 << 20)
@@ -105,9 +109,9 @@ public final class EditorDocumentModel {
     }
 
     /// A playback engine for this document; `audio` false plays silently on the host clock.
-    /// Swap its scene with `engine.replaceScene(model.scene)` from `onChange`.
+    /// Swap its scene with `engine.replaceScene(model.scene, audioScene: model.audioScene)` from `onChange`.
     public func makeEngine(audio: Bool = true) -> PlaybackEngine {
-        let player = audio ? AudioPlayback(scene: scene, pool: pool, sampleRate: audioSampleRate) : nil
+        let player = audio ? AudioPlayback(scene: scene, audioScene: audioScene, pool: pool, sampleRate: audioSampleRate) : nil
         return PlaybackEngine(scene: scene, pool: pool, audio: player)
     }
 
@@ -228,6 +232,7 @@ public final class EditorDocumentModel {
 
     private func projectChanged(light: Bool = false) {
         scene = SceneModel(project: project, resolve: bundle.resolve)
+        audioScene = AudioScene(project: project, resolve: bundle.resolve)
         if !light { missing = Self.findMissing(bundle) }
         revision += 1
         onChange?()

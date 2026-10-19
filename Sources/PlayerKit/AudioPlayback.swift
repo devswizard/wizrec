@@ -1,3 +1,4 @@
+import AudioEngine
 import AVFoundation
 import Foundation
 import MediaEngine
@@ -6,14 +7,15 @@ import RenderEngine
 /// Plays the project's audio through `AVAudioEngine` and serves as the master
 /// clock while it runs.
 ///
-/// The timeline is mixed in fixed chunks (`chunkSeconds`) from
-/// `SceneModel.audioSegments(in:)` and `MediaSource.audio`, honouring each
-/// segment's `rate` and `gain`, and fed to one `AVAudioPlayerNode` about
-/// `lookaheadSeconds` ahead of what is audible.
+/// The timeline is mixed in fixed chunks (`chunkSeconds`) by AudioEngine's `AudioMixer`
+/// (gain, volume keyframes, fades, effects, loudness) and fed to one `AVAudioPlayerNode`
+/// about `lookaheadSeconds` ahead of what is audible.
 @MainActor
 public final class AudioPlayback {
-    /// Scene being mixed; swap with `replaceScene(_:)` after an edit.
+    /// Scene whose timebase maps output samples to ticks; swap with `replaceScene(_:audioScene:)`.
     public private(set) var scene: SceneModel
+    /// Mixer for the current `AudioScene`.
+    public private(set) var mixer: AudioMixer
     public let pool: MediaPool
     /// Output sample rate, Hz (the project's `audioFormatSampleRate`).
     public let sampleRate: Double
@@ -29,18 +31,20 @@ public final class AudioPlayback {
     private var scheduledFrames: Int64 = 0
     private var pumpTask: Task<Void, Never>?
     public private(set) var isPlaying = false
-    /// Source reads that failed (missing media, decode errors); those parts play as silence.
+    /// Chunks the mixer failed to render (decode errors); those play as silence.
     public private(set) var failedReads = 0
     /// Times the player ran out of scheduled audio (audible gap; cumulative).
     public private(set) var underruns = 0
     private var dry = false
 
     /// Nil when no audio output is available.
-    public init?(scene: SceneModel, pool: MediaPool, sampleRate: Double,
+    /// `audioScene`: the project's audio, mixed by `AudioMixer`.
+    public init?(scene: SceneModel, audioScene: AudioScene, pool: MediaPool, sampleRate: Double,
                  chunkSeconds: Double = 0.25, lookaheadSeconds: Double = 1.0) {
         let rate = sampleRate > 0 ? sampleRate : 44100
         guard let f = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else { return nil }
         self.scene = scene; self.pool = pool; self.sampleRate = rate; self.format = f
+        self.mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: rate, channels: 2))
         self.chunkFrames = max(256, Int(rate * chunkSeconds))
         self.lookaheadSeconds = lookaheadSeconds
         engine.attach(player)
@@ -53,7 +57,8 @@ public final class AudioPlayback {
     public func start(at ticks: Int64) async -> Bool {
         stop()
         let gen = generation
-        originTicks = ticks
+        // On the mixer's sample grid (sample k at tick k · editRate / rate), so chunks abut exactly.
+        originTicks = AudioMix.alignedTicks(ticks, sampleRate: sampleRate, editRate: scene.timebase.editRate)
         scheduledFrames = 0
         do {
             if !engine.isRunning { try engine.start() }
@@ -68,9 +73,13 @@ public final class AudioPlayback {
         return true
     }
 
-    /// Uses `newScene` for chunks mixed from now on. Callers restart playback
-    /// (`stop` + `start`) so already scheduled audio does not play the old mix.
-    public func replaceScene(_ newScene: SceneModel) { scene = newScene }
+    /// Uses `newScene` and a fresh mixer for `audioScene` for chunks mixed from now on.
+    /// Callers restart playback (`stop` + `start`) so already scheduled audio does not
+    /// play the old mix.
+    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene) {
+        scene = newScene
+        mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: sampleRate, channels: channels))
+    }
 
     /// Stops playback and drops scheduled audio.
     public func stop() {
@@ -143,23 +152,12 @@ public final class AudioPlayback {
     func render(_ chunk: AudioChunk) async -> [[Float]] {
         let editRate = scene.timebase.editRate
         let span = AudioMix.tickRange(of: chunk, sampleRate: sampleRate, editRate: editRate)
-        let parts = AudioMix.parts(for: chunk, segments: scene.audioSegments(in: span),
-                                   sampleRate: sampleRate, editRate: editRate)
-        var inputs: [(AudioMixPart, PCMBuffer)] = []
-        for p in parts {
-            do {
-                let src = try await pool.source(for: p.url)
-                let pcm = try await src.audio(stream: p.stream, range: p.mediaRange,
-                                              format: PCMFormat(sampleRate: p.requestSampleRate, channels: channels))
-                inputs.append((p, pcm))
-            } catch {
-                failedReads += 1
-            }
+        do {
+            let pcm = try await mixer.render(span)
+            return AudioMix.fit(pcm, frameCount: chunk.frameCount, channels: channels)
+        } catch {
+            failedReads += 1
+            return [[Float]](repeating: [Float](repeating: 0, count: chunk.frameCount), count: channels)
         }
-        let n = chunk.frameCount, ch = channels
-        let captured = inputs
-        return await Task.detached(priority: .userInitiated) {
-            AudioMix.mix(captured, frameCount: n, channels: ch)
-        }.value
     }
 }
