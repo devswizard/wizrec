@@ -205,16 +205,6 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
             let out = dir.appendingPathComponent(name)
             let session = ExportSession(scene: scene, audio: audio, pool: MediaPool(diskCacheDirectory: nil),
                                         settings: ExportSettings(format: format), output: out)
-            // Known bug (reported to export, S3-QA-1): AAC at 22.05 kHz fails with
-            // "audio append failed"; AudioFeed asks for 192 kb/s stereo, above what the AAC
-            // encoder takes at that rate. Remove this wrapper when fixed (it then fails).
-            if expected == 22_050, name != "out.wav" {
-                await withKnownIssue("AAC at 22.05 kHz: bitrate not scaled to the sample rate") {
-                    try await session.run()
-                    #expect(try await audioRate(out) == expected, "\(name) at \(lexeme)")
-                }
-                continue
-            }
             do {
                 try await session.run()
             } catch {
