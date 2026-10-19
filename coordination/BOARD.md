@@ -78,14 +78,14 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 |---|---|---|---|---|
 | M2-TL-1 | timeline | done | — | `ProjectBundle.create/importFile/saveWithBackup`; new project opens in our app; round-trip tests |
 | M2-TL-2 | timeline | done | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
-| M3-TL-1 | timeline | claimed | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
+| M3-TL-1 | timeline | done | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
 | M2-MED-1 | media | done | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
 | M2-MED-2 | media | claimed | — | high-speed playback throughput (async VT) + nearest-frame policy |
 | M2-TUI-1 | timelineui | done | — | ruler, tracks, headers, clips, playhead, zoom/scroll; view tests on hand-built projects |
 | M2-TUI-2 | timelineui | done | TL-2 | select/move/trim/split/delete/ripple, track flags, snapping, thumbnails + waveforms |
-| M2-APP-1 | app | claimed | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
-| M2-APP-2 | app | claimed | TL-1 | new/open/save/save-as (backup), import (drag-drop + menu), relink missing media |
-| M2-APP-3 | app | claimed | — | inspector edits via `SetParameter`; cacheStats in overlay; high-speed frame policy |
+| M2-APP-1 | app | done | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
+| M2-APP-2 | app | done | TL-1 | new/open/save/save-as (backup), import (drag-drop + menu), relink missing media |
+| M2-APP-3 | app | done | — | inspector edits via `SetParameter`; cacheStats in overlay; high-speed frame policy |
 | M4-RES-1 | researcher | done | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
 | M4-RES-2 | researcher | claimed | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
 | M5-RES-1 | researcher | claimed | — | spec: callouts (shapes, text, fills, strokes, tails) |
@@ -114,6 +114,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M9-EXP-1 | export | claimed | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
 | M9-EXP-2 | export | claimed | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
 | M9-EXP-3 | export | claimed | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
-| M10-CAP-1 | captions | todo | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
-| M10-CAP-2 | captions | todo | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
+| M10-CAP-1 | captions | claimed | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
+| M10-CAP-2 | captions | claimed | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
 | M3-TUI-1 | timelineui | claimed | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
+| M2-APP-4 | app | claimed | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
