@@ -107,8 +107,8 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 
 | id | owner | status | depends-on | acceptance |
 |---|---|---|---|---|
-| M8-AUD-1 | audio | claimed | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
-| M8-AUD-2 | audio | claimed | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
+| M8-AUD-1 | audio | done | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
+| M8-AUD-2 | audio | done | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
 | M8-AUD-3 | audio | claimed | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
 | M8-AUD-4 | audio | claimed | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
 | M9-EXP-1 | export | claimed | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
@@ -142,3 +142,10 @@ worktrees removed; branches kept.
 | app | `agent/app3` | `agent/app2` 45b8b3a | M2-APP-4, AUD-4 app side, export sheet, M11-APP-1 |
 | ship | `agent/ship3` | `agent/ship` dec60fa | M11-SHIP-1..3 |
 | qa | `agent/qa3` | `main` | QA-7, QA-8, wave-B integration, timing audit |
+
+## Session 2 merges
+
+- timelineui3-perf: TimelineUI timing asserts gated (486 green).
+- app3 slice 1: library panel (search, double-click effects, a11y), Open Recent, M key (490 green). M2-APP-4 remaining: export sheet.
+- audio3 slice 1: AUD-1 AudioMixer + AUD-2 BS.1770 loudness/normalisation (512 green).
+- Decision: MP3 via libmp3lame.
