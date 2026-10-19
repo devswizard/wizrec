@@ -100,27 +100,14 @@ extension ExportSession {
         }
     }
 
-    /// The project mix, or nil when `includeAudio` is off or the mixer is not available yet.
-    func makeMixer() async throws -> AudioMixer? {
-        guard settings.includeAudio else { return nil }
-        let mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat())
-        do {
-            _ = try await mixer.render(0..<1)
-        } catch AudioError.notImplemented {
-            return nil
-        }
-        return mixer
+    /// The project mix (48 kHz stereo), or nil when `includeAudio` is off.
+    func makeMixer() -> AudioMixer? {
+        settings.includeAudio ? requireMixer() : nil
     }
 
-    /// Like `makeMixer`, but audio-only formats cannot do without one.
-    func requireMixer() async throws -> AudioMixer {
-        let mixer = AudioMixer(scene: audioScene, pool: pool, format: MixFormat())
-        do {
-            _ = try await mixer.render(0..<1)
-        } catch AudioError.notImplemented {
-            throw ExportError.notImplemented
-        }
-        return mixer
+    /// The project mix for audio-only formats (they ignore `includeAudio`).
+    func requireMixer() -> AudioMixer {
+        AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: 48_000, channels: 2))
     }
 
     /// Sleeps briefly while the writer drains (AVAssetWriter has no async readiness API).

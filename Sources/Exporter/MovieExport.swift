@@ -141,7 +141,7 @@ extension ExportSession {
 
         var feed: AudioFeed?
         var audio: AVAssetWriterInput?
-        if let mixer = try await makeMixer() {
+        if let mixer = makeMixer() {
             let f = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: r.range, format: await mixer.format)
             let settings = codec.isProRes
                 ? AudioFeed.pcmSettings(sampleRate: f.sampleRate, channels: f.channels, bits: 24)

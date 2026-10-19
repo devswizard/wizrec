@@ -171,7 +171,7 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         try await export(p, ExportSettings(format: .mov(profile: "422")), to: out)
         let f = try await movieFacts(out)
         #expect(f.codec == fourCC("apcn") && f.frames == 6)
-        #expect(f.hasAudio == mixerAvailable)
+        #expect(f.hasAudio)
     }
 
     @Test func cancelRemovesPartialFileAndKeepsExistingOutput() async throws {

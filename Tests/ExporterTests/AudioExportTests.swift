@@ -123,7 +123,7 @@ func onsets(_ x: [Float], rate: Double) -> [Int] {
 
 let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
 
-@Suite(.enabled(if: mixerAvailable), .serialized) struct AudioExportTests {
+@Suite(.serialized) struct AudioExportTests {
     @Test func wavIsSampleExact() async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject()
@@ -202,14 +202,3 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
     }
 }
 
-/// Without the mixer (stub), audio-only formats report `notImplemented` and leave nothing behind.
-@Suite(.enabled(if: !mixerAvailable)) struct AudioStubTests {
-    @Test func audioOnlyNeedsMixer() async throws {
-        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
-        let p = try await avProject()
-        await #expect(throws: ExportError.notImplemented) {
-            try await export(p, ExportSettings(format: .audio(container: "wav")), to: dir.appendingPathComponent("a.wav"))
-        }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
-    }
-}

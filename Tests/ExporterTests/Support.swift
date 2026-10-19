@@ -146,17 +146,3 @@ func export(_ project: TestProject, _ settings: ExportSettings, to url: URL, poo
     try await session.run()
 }
 
-/// True when agent "audio"'s AudioMixer is merged (the stub throws `notImplemented`).
-let mixerAvailable: Bool = {
-    let sem = DispatchSemaphore(value: 0)
-    nonisolated(unsafe) var ok = false
-    Task.detached {
-        let p = ProjectBuilder(title: "probe").build()
-        let scene = AudioScene(project: p, resolve: { _ in URL(fileURLWithPath: "/dev/null") })
-        let mixer = AudioMixer(scene: scene, pool: MediaPool())
-        do { _ = try await mixer.render(0..<1); ok = true } catch { ok = false }
-        sem.signal()
-    }
-    sem.wait()
-    return ok
-}()

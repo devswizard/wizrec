@@ -14,7 +14,7 @@ enum AudioFileKind {
 extension ExportSession {
     /// Writes the project mix over `range` as m4a (AAC) or wav (16-bit PCM).
     func writeAudioFile(to url: URL, kind: AudioFileKind, range: Range<Int64>) async throws {
-        let mixer = try await requireMixer()
+        let mixer = requireMixer()
         var feed = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: range, format: await mixer.format)
         let fileType: AVFileType = kind == .m4a ? .m4a : .wav
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
@@ -49,7 +49,7 @@ extension ExportSession {
     /// Writes the project mix over `range` as MP3 (libavcodec `libmp3lame`, 192 kbit/s CBR,
     /// libavformat mp3 muxer with a Xing/LAME header for exact length and gapless delay).
     func writeMP3(to url: URL, range: Range<Int64>) async throws {
-        let mixer = try await requireMixer()
+        let mixer = requireMixer()
         var feed = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: range, format: await mixer.format)
         let enc = try MP3Encoder(url: url, sampleRate: feed.sampleRate, channels: feed.channels, bitrate: 192_000)
         let total = Double(max(feed.totalSamples, 1))

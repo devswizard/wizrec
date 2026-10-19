@@ -18,7 +18,7 @@ struct AudioFeed {
     let totalSamples: Int64
     /// Next sample to fetch.
     private(set) var next: Int64 = 0
-    /// Samples per chunk (≈ 0.25 s).
+    /// Samples per chunk (0.5 s).
     let chunk: Int64
 
     init(mixer: AudioMixer, editRate: Int64, range: Range<Int64>, format: MixFormat) {
@@ -26,7 +26,7 @@ struct AudioFeed {
         sampleRate = max(1, Int(format.sampleRate.rounded()))
         channels = max(1, format.channels)
         totalSamples = FrameTiming.mulDiv(range.upperBound - range.lowerBound, Int64(sampleRate), self.editRate)
-        chunk = Int64(max(1, sampleRate / 4))
+        chunk = Int64(max(1, sampleRate / 2))
     }
 
     var isFinished: Bool { next >= totalSamples }
