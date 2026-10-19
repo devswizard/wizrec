@@ -66,6 +66,9 @@ enum MainMenu {
                          keyEquivalent: String(Character(UnicodeScalar(NSBackspaceCharacter) ?? "\u{8}")))
             .keyEquivalentModifierMask = [.shift]
         timeline.addItem(.separator())
+        timeline.addItem(withTitle: "Add Marker  (M)", action: #selector(TimelineView.addMarker(_:)), keyEquivalent: "")
+        timeline.addItem(withTitle: "Extend Frame", action: #selector(TimelineView.extendFrame(_:)), keyEquivalent: "")
+        timeline.addItem(.separator())
         timeline.addItem(withTitle: "Add Track", action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
         timeline.addItem(withTitle: "Snapping", action: #selector(TimelineView.toggleSnapping(_:)), keyEquivalent: "")
         timeline.addItem(.separator())

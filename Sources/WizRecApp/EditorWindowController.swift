@@ -130,7 +130,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         center.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
 
-        let bin = NSHostingView(rootView: MediaBinView(model: model, thumbnails: thumbnails, actions: BinActions(
+        let bin = NSHostingView(rootView: SidebarView(model: model, thumbnails: thumbnails, actions: BinActions(
             importMedia: { [weak self] in self?.importMedia(nil) },
             importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
             insert: { [weak self] id in self?.insertSource(id) },
@@ -618,6 +618,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case (115, []), (123, [.command]): engine.goToStart()
         case (119, []), (124, [.command]): engine.goToEnd()
         case (1, []): timelineView.splitAtPlayhead(nil)       // S
+        case (46, []): timelineView.addMarker(nil)            // M
         default: return false
         }
         return true
@@ -733,11 +734,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     @objc func zoomOut(_ sender: Any?) { timelineView.zoomOut(sender) }
     @objc func zoomToFit(_ sender: Any?) { timelineView.zoomToFit(sender) }
     @objc func deselectAll(_ sender: Any?) { select([]) }
+    @objc func addMarker(_ sender: Any?) { timelineView.addMarker(sender) }
+    @objc func extendFrame(_ sender: Any?) { timelineView.extendFrame(sender) }
 
     private static let forwarded: Set<Selector> = [
         #selector(splitAtPlayhead(_:)), #selector(rippleDelete(_:)), #selector(addTrack(_:)),
         #selector(toggleSnapping(_:)), #selector(zoomIn(_:)), #selector(zoomOut(_:)), #selector(zoomToFit(_:)),
-        #selector(deselectAll(_:)),
+        #selector(deselectAll(_:)), #selector(addMarker(_:)), #selector(extendFrame(_:)),
     ]
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
