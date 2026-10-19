@@ -25,14 +25,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private let options: LaunchOptions
     private let canvas: EditorCanvasView
     private let selectionOverlay = SelectionOverlayView()
-    private let timelineArea: TimelineAreaView
+    private let timelineView: TimelineUI.TimelineView
+    private var providerDirectory: URL?
     private let thumbnails: ThumbnailStore
     private var renderer: CanvasRenderer?
     private var link: CADisplayLink?
     private var keyMonitor: Any?
     private var didAnnounce = false
     private var lastPlayheadSync: Int64 = -1
-    private var lastTimelineRedraw: CFTimeInterval = 0
+    private var lastSelection: Set<Int64> = []
+    private var lastTimelineError: String?
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
 
@@ -45,7 +47,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         thumbnails = ThumbnailStore(pool: model.thumbnailPool)
         ui.showOverlay = options.overlay
         canvas = EditorCanvasView(frame: NSRect(x: 0, y: 0, width: 960, height: 540), device: MTLCreateSystemDefaultDevice())
-        timelineArea = TimelineAreaView(timeline: TimelineView(model: timelineModel))
+        timelineView = TimelineUI.TimelineView(model: timelineModel)
 
         let window = EditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -58,7 +60,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.delegate = self
         canvas.editor = self
         selectionOverlay.editor = self
-        timelineArea.editor = self
         canvas.registerForDraggedTypes(MediaDrop.types)
 
         renderer = CanvasRenderer(view: canvas)
@@ -69,6 +70,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         windowFrameAutosaveName = "WizRec.EditorWindow"
 
         timelineModel.onSeek = { [weak self] t in self?.engine.seek(toTicks: t) }
+        timelineModel.onDrop = { [weak self] payload, track, ticks in
+            guard let self else { return false }
+            switch payload {
+            case .files(let urls): self.place(.files(urls), track: track, at: ticks)
+            case .sources(let ids): self.place(.sources(ids), track: track, at: ticks)
+            }
+            return true
+        }
+        updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
         inspector.timebase = model.project.timebase
 
@@ -141,8 +151,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let root = EditorSplitView()
         root.isVertical = false
         root.dividerStyle = .thick
-        timelineArea.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
-        for v in [top, timelineArea] as [NSView] { root.addArrangedSubview(v) }
+        timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        for v in [top, timelineView] as [NSView] { root.addArrangedSubview(v) }
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
         root.defaultSizes = { size in [max(360, size.height - 230)] }
@@ -161,6 +171,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             root.layoutSubtreeIfNeeded()
             (root.arrangedSubviews.first as? EditorSplitView)?.applyDefaultsIfNeeded()
         }
+        timelineView.zoomToFit(nil)
         startDisplayLink()
         installKeys()
         print("WizRec: opened \(model.bundle.directory.lastPathComponent) window=\(window.windowNumber) "
@@ -192,28 +203,40 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             selectionOverlay.needsDisplay = true
             if let e = renderer?.compositorError, ui.compositorError != e { ui.compositorError = e }
         }
+        if timelineModel.selection != lastSelection {
+            lastSelection = timelineModel.selection
+            refreshInspector()
+            selectionOverlay.needsDisplay = true
+        }
+        if timelineModel.lastError != lastTimelineError {
+            lastTimelineError = timelineModel.lastError
+            if let e = lastTimelineError { ui.show(e) }
+        }
         let t = engine.currentTicks
         if t != lastPlayheadSync {
             lastPlayheadSync = t
             timelineModel.playhead = t
-            // The fallback overview redraws every clip: ~10 Hz while playing is plenty.
-            if !engine.isPlaying || link.timestamp - lastTimelineRedraw > 0.1 {
-                lastTimelineRedraw = link.timestamp
-                timelineArea.needsDisplay = true
-            }
             if !engine.isPlaying { refreshInspector() }
         }
     }
 
     // MARK: Project changes
 
+    /// Timeline thumbnails/waveforms resolve media against the bundle folder, which moves on Save As.
+    private func updateMediaProvider() {
+        let dir = model.bundle.directory
+        guard dir != providerDirectory else { return }
+        providerDirectory = dir
+        timelineView.mediaProvider = MediaPoolTimelineProvider(pool: model.thumbnailPool, bundleDirectory: dir)
+    }
+
     private func projectDidChange() {
         engine.replaceScene(model.scene)
+        updateMediaProvider()
         projectDocument?.refreshEditedState()
         let kept = timelineModel.selection.filter { ClipInspection.make(project: model.project, clipID: $0, playhead: 0) != nil }
         if kept != timelineModel.selection { timelineModel.selection = kept }
         refreshInspector()
-        timelineArea.needsDisplay = true
         selectionOverlay.needsDisplay = true
         window?.title = windowTitle(forDocumentDisplayName: projectDocument?.displayName ?? "")
     }
@@ -221,7 +244,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     func select(_ ids: Set<Int64>) {
         timelineModel.selection = ids
         refreshInspector()
-        timelineArea.needsDisplay = true
         selectionOverlay.needsDisplay = true
     }
 
@@ -464,8 +486,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             canvas.draw()
             try? await Task.sleep(nanoseconds: 300_000_000)
             refreshInspector()
-            timelineArea.needsDisplay = true
-            try? await Task.sleep(nanoseconds: 100_000_000)
+                try? await Task.sleep(nanoseconds: 100_000_000)
             writeSnapshot(to: out.appendingPathComponent(String(format: "frame-%06.2fs.png", t)),
                           note: settled ? "" : " (frames still decoding)")
         }
@@ -536,6 +557,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case (124, [.shift]): engine.step(by: fps)
         case (115, []), (123, [.command]): engine.goToStart()
         case (119, []), (124, [.command]): engine.goToEnd()
+        case (1, []): timelineView.splitAtPlayhead(nil)       // S
         default: return false
         }
         return true
@@ -557,7 +579,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         run("Delete") { try model.perform(DeleteClips(clipIDs: ids)) }
     }
 
+    // Timeline actions arriving here (the timeline is not first responder): forward them.
+    @objc func splitAtPlayhead(_ sender: Any?) { timelineView.splitAtPlayhead(sender) }
+    @objc func rippleDelete(_ sender: Any?) { timelineView.rippleDelete(sender) }
+    @objc func addTrack(_ sender: Any?) { timelineView.addTrack(sender) }
+    @objc func toggleSnapping(_ sender: Any?) { timelineView.toggleSnapping(sender) }
+    @objc func zoomIn(_ sender: Any?) { timelineView.zoomIn(sender) }
+    @objc func zoomOut(_ sender: Any?) { timelineView.zoomOut(sender) }
+    @objc func zoomToFit(_ sender: Any?) { timelineView.zoomToFit(sender) }
+    @objc func deselectAll(_ sender: Any?) { select([]) }
+
+    private static let forwarded: Set<Selector> = [
+        #selector(splitAtPlayhead(_:)), #selector(rippleDelete(_:)), #selector(addTrack(_:)),
+        #selector(toggleSnapping(_:)), #selector(zoomIn(_:)), #selector(zoomOut(_:)), #selector(zoomToFit(_:)),
+        #selector(deselectAll(_:)),
+    ]
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let a = item.action, Self.forwarded.contains(a) { return timelineView.validateMenuItem(item) }
         switch item.action {
         case #selector(togglePerformanceOverlay(_:)):
             item.title = ui.showOverlay ? "Hide Performance Overlay" : "Show Performance Overlay"

@@ -1,4 +1,5 @@
 import AppKit
+import TimelineUI
 
 @MainActor
 enum MainMenu {
@@ -45,6 +46,24 @@ enum MainMenu {
         del.keyEquivalentModifierMask = []
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         add(edit, to: main)
+
+        // Sent to the first responder: TimelineView implements and validates these; the
+        // editor window forwards them to the timeline when it is not focused.
+        let timeline = NSMenu(title: "Timeline")
+        timeline.addItem(withTitle: "Split at Playhead  (S)", action: #selector(TimelineView.splitAtPlayhead(_:)), keyEquivalent: "")
+        timeline.addItem(withTitle: "Ripple Delete", action: #selector(TimelineView.rippleDelete(_:)),
+                         keyEquivalent: String(Character(UnicodeScalar(NSBackspaceCharacter) ?? "\u{8}")))
+            .keyEquivalentModifierMask = [.shift]
+        timeline.addItem(.separator())
+        timeline.addItem(withTitle: "Add Track", action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
+        timeline.addItem(withTitle: "Snapping", action: #selector(TimelineView.toggleSnapping(_:)), keyEquivalent: "")
+        timeline.addItem(.separator())
+        timeline.addItem(withTitle: "Zoom In", action: #selector(TimelineView.zoomIn(_:)), keyEquivalent: "=")
+        timeline.addItem(withTitle: "Zoom Out", action: #selector(TimelineView.zoomOut(_:)), keyEquivalent: "-")
+        timeline.addItem(withTitle: "Zoom to Fit", action: #selector(TimelineView.zoomToFit(_:)), keyEquivalent: "0")
+        timeline.addItem(.separator())
+        timeline.addItem(withTitle: "Deselect All", action: #selector(TimelineView.deselectAll(_:)), keyEquivalent: "A")
+        add(timeline, to: main)
 
         let view = NSMenu(title: "View")
         view.addItem(withTitle: "Show Performance Overlay",
