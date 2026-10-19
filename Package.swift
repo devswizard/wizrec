@@ -45,8 +45,11 @@ let package = Package(
         .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
         // qa: synthetic test media + golden test-project generator (library shared with the tests).
-        .target(name: "TestGenKit", dependencies: ["TSCProjKit"]),
-        .executableTarget(name: "wizrec-testgen", dependencies: ["TestGenKit"]),
+        .target(name: "TestGenKit", dependencies: ["TSCProjKit", "TimelineEngine"]),
+        .executableTarget(
+            name: "wizrec-testgen",
+            dependencies: ["TestGenKit", "TSCProjKit", "TimelineEngine", "MediaEngine", "PlayerKit"]
+        ),
         // Player logic (clock, frame snapping, audio mix, playback pipeline), testable without UI.
         .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]),
         .executableTarget(
@@ -76,7 +79,7 @@ let package = Package(
         ),
         .testTarget(
             name: "GoldenTests",
-            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
+            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "TimelineEngine"]
         ),
         .testTarget(
             name: "TimelineUITests",
