@@ -7,7 +7,9 @@ import TSCProjKit
 /// - `toTrack` is the index in the scene's `tracks` array (0 = bottom).
 /// - The clip must not overlap any other clip on the destination track; if it
 ///   would, `apply` throws `.invalid` and nothing changes. (Ripple and
-///   magnetic tracks come in M3.)
+///   magnetic tracks come in M3.) On a magnetic destination track the clip
+///   is inserted at the nearest clip boundary instead and the track is packed
+///   (`Magnetic`); a magnetic source track closes the gap.
 /// - The clip object moves unchanged except `start` (and the `start` of
 ///   `UnifiedMedia` halves, which mirror the parent's); it is inserted into the
 ///   destination `medias` in start order.
@@ -58,8 +60,9 @@ public final class MoveClip: EditCommand {
         }
         srcMedias.items.remove(at: loc.index)
 
+        let destMagnetic = Magnetic.isMagnetic(project, track: toTrack)
         let destClips = trackClips(dest)
-        for o in destClips {
+        for o in destClips where !destMagnetic {
             let s = o["start"]?.int ?? 0, e = s + (o["duration"]?.int ?? 0)
             if s < end && start < e {
                 throw EditError.invalid("clip \(clipID) would overlap clip \(o.clipID ?? -1) on track \(toTrack)")
@@ -70,10 +73,15 @@ public final class MoveClip: EditCommand {
         for part in TrimClip.timedParts(clip) {
             TimeWriter.set(start + ((part["start"]?.int ?? oldStart) - oldStart), "start", in: part)
         }
-        if dest["medias"]?.array == nil { dest["medias"] = .array(JSONArray()) }
-        guard let destMedias = dest["medias"]?.array else { throw EditError.trackNotFound(toTrack) }
-        let at = destMedias.items.firstIndex { ($0.object?["start"]?.int ?? 0) > start } ?? destMedias.count
-        destMedias.items.insert(.object(clip), at: at)
+        if destMagnetic {
+            Magnetic.insert(clip, into: dest, start: start)
+        } else {
+            if dest["medias"]?.array == nil { dest["medias"] = .array(JSONArray()) }
+            guard let destMedias = dest["medias"]?.array else { throw EditError.trackNotFound(toTrack) }
+            let at = destMedias.items.firstIndex { ($0.object?["start"]?.int ?? 0) > start } ?? destMedias.count
+            destMedias.items.insert(.object(clip), at: at)
+        }
+        if !sameTrack && Magnetic.isMagnetic(project, track: fromTrack) { Magnetic.pack(source) }
 
         if let transitions = source["transitions"]?.array {
             var travelling: [JSON] = []

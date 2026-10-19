@@ -21,11 +21,14 @@ import TSCProjKit
 ///   each later clip on the same track moves left by the total duration of
 ///   the deleted clips that end at or before its start (other tracks are not
 ///   moved) [inf].
+/// - **Magnetic tracks** (`Magnetic`): InsertClip never fails for overlap on
+///   them; InsertClip and DeleteClips pack them afterwards.
 /// - **AddTrack / RemoveTrack**: `trackIndex` is renumbered to the array
 ///   position; the `trackAttributes` entry is inserted/removed at the same
 ///   index. Removing the only track throws [inf].
 /// - **SetTrackFlag**: `locked` is `trackAttributes[i].metadata.IsLocked`
-///   (`"True"`/`"False"` strings) [obs]; the others are booleans.
+///   (`"True"`/`"False"` strings) [obs]; the others are booleans. Turning
+///   `magnetic` on packs the track in the same command.
 /// - **SetParameter**: on a `UnifiedMedia`, `volume` goes to the `audio`
 ///   child and everything else to `video` (geometry lives there [obs]).
 ///   Keyframe times snap to the frame grid. See `ParamWriter` for the
@@ -87,7 +90,9 @@ enum M2 {
         }
         guard duration > 0 else { throw EditError.invalid("source \(c.sourceID) is shorter than one frame") }
 
-        let edits = try trackForInsert(tracks[c.track].track, start: start, duration: duration, track: c.track)
+        let magnetic = Magnetic.isMagnetic(project, track: c.track)
+        let edits = magnetic ? tracks[c.track].track.copy()
+            : try trackForInsert(tracks[c.track].track, start: start, duration: duration, track: c.track)
         let ident = ((source.src as NSString).lastPathComponent as NSString).deletingPathExtension
         func size(_ n: Int?) -> (Double, Double) {
             if let n, let r = streams[n].object["trackRect"]?.array?.items.compactMap(\.double), r.count == 4 {
@@ -128,7 +133,7 @@ enum M2 {
         } else {
             throw EditError.invalid("source \(c.sourceID) has no video, image or audio stream")
         }
-        try insertSorted(clip, into: edits)
+        if magnetic { Magnetic.insert(clip, into: edits, start: start) } else { try insertSorted(clip, into: edits) }
         try c.swap.commit([(tracks[c.track].path, edits)], in: project)
         return clip.clipID ?? -1
     }
@@ -173,6 +178,7 @@ enum M2 {
                 try removeClips(at: Set(here.map(\.index)), from: track, ripple: c.ripple)
             }
         }
+        try edits.packMagnetic()
         try edits.commit(&c.swap)
     }
 
@@ -263,7 +269,16 @@ enum M2 {
         default:
             a[c.flag.rawValue] = .bool(c.value)
         }
-        try c.swap.commit([(trackAttributesPath.appending(.index(c.index)), .object(a))], in: project)
+        var edits: [(path: JSONPath, new: JSON)] = [(trackAttributesPath.appending(.index(c.index)), .object(a))]
+        // Turning magnetic on closes the track's gaps at once [inf].
+        if c.flag == .magnetic, c.value, let t = JSONPath.sceneTracks.appending(.index(c.index)).resolve(in: project.root)?.object {
+            let packed = t.copy()
+            Magnetic.pack(packed)
+            if JSON.object(packed) != JSON.object(t) {
+                edits.append((JSONPath.sceneTracks.appending(.index(c.index)), .object(packed)))
+            }
+        }
+        try c.swap.commit(edits, in: project)
     }
 
     // MARK: SetParameter
