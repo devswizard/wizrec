@@ -29,6 +29,7 @@ struct SNode: Sendable {
         case group(tracks: [STrack], size: CGSize)
         case unified(video: SNode?, audio: SNode?)
         case stitched(segments: [SNode])
+        case callout(SCallout, size: CGSize)
         case unsupported(type: String, size: CGSize)
     }
 
@@ -189,7 +190,8 @@ struct SceneBuilder {
             let d = c.callout
             let size = (d?.width ?? 0) > 0 && (d?.height ?? 0) > 0
                 ? CGSize(width: d?.width ?? 0, height: d?.height ?? 0) : canvas
-            return .unsupported(type: "Callout", size: size)
+            guard let def = c.object["def"]?.object else { return .unsupported(type: "Callout", size: size) }
+            return .callout(SCallout(def), size: size)
         case .other(let t):
             return .unsupported(type: t, size: canvas)
         }
@@ -274,6 +276,8 @@ struct SceneEvaluator {
             l.opacity *= inner.opacity
             l.effects += inner.effects
             return l
+        case .callout(let c, let size):
+            return make(.callout(c.content(at: kt, size: size)), size)
         case .unsupported(let type, let size):
             return make(.unsupported(type: type), size)
         }
@@ -333,7 +337,7 @@ struct AudioEvaluator {
             for s in segments where Q.lt(Rational(s.start), mhi) && Q.lt(mlo, Rational(s.end)) {
                 node(s, map: m, lo: mlo, hi: mhi, gain: g, into: &out)
             }
-        case .video, .image, .shader, .unsupported:
+        case .video, .image, .shader, .callout, .unsupported:
             return
         }
     }

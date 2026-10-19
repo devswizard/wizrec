@@ -296,7 +296,8 @@ private func children(_ l: Layer?) -> [Layer] {
     #expect(url.lastPathComponent == "bg.tscshadervid")
     #expect(params == ["Color0-red": 0.25, "Speed": 2])
     #expect(time == 0)
-    #expect(plan.layers[1].content == .unsupported(type: "Callout"))
+    guard case .callout(let c) = plan.layers[1].content else { Issue.record("not callout"); return }
+    #expect(c.shape == "text" && c.size == CGSize(width: 300, height: 100))
     #expect(plan.layers[1].size == CGSize(width: 300, height: 100))
     #expect(plan.frameRequests.isEmpty)
 }

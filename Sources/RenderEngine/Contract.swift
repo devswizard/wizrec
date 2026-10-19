@@ -50,8 +50,97 @@ public enum LayerContent: Sendable, Equatable {
     /// the parent's coordinate space; `nil` on one side = a fade in or out at a clip edge.
     /// The carrying layer has the parent's size and an identity transform.
     indirect case transition(TransitionInstance, from: Layer?, to: Layer?)
-    /// A clip type the engine does not draw yet (e.g. `"Callout"` before M5).
+    /// A callout (annotation) evaluated at the plan time (`docs/specs/callouts.md`).
+    case callout(CalloutContent)
+    /// A clip type the engine does not draw.
     case unsupported(type: String)
+}
+
+/// One rich-text run of a callout: attributes for UTF-16 range `range` of `CalloutContent.text`.
+/// Nil fields inherit the callout's base font.
+public struct CalloutTextRun: Sendable, Equatable {
+    public var range: Range<Int>
+    public var fontName: String?
+    /// Points = callout px at scale 1.
+    public var fontSize: Double?
+    /// CSS-style weight, 100–900.
+    public var fontWeight: Int?
+    public var italic: Bool?
+    public var underline: Bool?
+    public var strikethrough: Bool?
+    public var color: RGBA?
+    /// Extra letter spacing, points.
+    public var kerning: Double?
+
+    public init(range: Range<Int>, fontName: String? = nil, fontSize: Double? = nil, fontWeight: Int? = nil,
+                italic: Bool? = nil, underline: Bool? = nil, strikethrough: Bool? = nil, color: RGBA? = nil,
+                kerning: Double? = nil) {
+        self.range = range; self.fontName = fontName; self.fontSize = fontSize; self.fontWeight = fontWeight
+        self.italic = italic; self.underline = underline; self.strikethrough = strikethrough; self.color = color
+        self.kerning = kerning
+    }
+}
+
+/// A callout's `def`, evaluated. Units: callout px (= layer px), origin at the box centre, +y up.
+public struct CalloutContent: Sendable, Equatable {
+    /// `remix`, `TypeWinBlur`, `TypeWinPixelate`, `TypeWinHighlighter`, `TypeWinSpotlight`, …
+    public var kind: String
+    /// Geometry id for `remix`, e.g. `shape-rectangle`, `speech-bubble2`, `arrow`, `text`.
+    public var shape: String
+    public var style: String
+    /// Box size, callout px.
+    public var size: CGSize
+    public var fill: RGBA
+    public var stroke: RGBA
+    public var strokeWidth: Double
+    /// `solid`, `dash`, `dot`, `dashdot`, `dashdotdot`.
+    public var strokeStyle: String
+    public var cornerRadius: Double
+    /// Tail tip (bubbles, text arrows) or arrow end, relative to the box centre, +y up.
+    public var tail: CGPoint
+    /// Arrow end caps: `shape-anchor` and `shape-tail`.
+    public var anchorCap: String
+    public var tailCap: String
+    public var text: String
+    public var runs: [CalloutTextRun]
+    public var fontName: String
+    public var fontWeight: String
+    /// Base size, points; runs' `fontSize` overrides it.
+    public var fontSize: Double
+    public var textColor: RGBA
+    /// `left`, `center`, `right`.
+    public var horizontalAlignment: String
+    /// `top`, `center`, `bottom`.
+    public var verticalAlignment: String
+    public var wordWrap: Bool
+    public var lineSpacing: Double
+    public var tracking: Double
+    public var textStrokeWidth: Double
+    public var textStrokeColor: RGBA
+    /// Region kinds: strength (blur, pixelate, spotlight), 0–1.
+    public var intensity: Double
+    /// Region kinds: `blur-invert` / `fill-invert`.
+    public var invert: Bool
+
+    public init(kind: String = "remix", shape: String = "shape-rectangle", style: String = "",
+                size: CGSize, fill: RGBA = RGBA(1, 1, 1, 1), stroke: RGBA = RGBA(0, 0, 0, 1),
+                strokeWidth: Double = 0, strokeStyle: String = "solid", cornerRadius: Double = 0,
+                tail: CGPoint = .zero, anchorCap: String = "none", tailCap: String = "arrow",
+                text: String = "", runs: [CalloutTextRun] = [], fontName: String = "Helvetica",
+                fontWeight: String = "Regular", fontSize: Double = 64, textColor: RGBA = RGBA(0, 0, 0, 1),
+                horizontalAlignment: String = "center", verticalAlignment: String = "center",
+                wordWrap: Bool = true, lineSpacing: Double = 0, tracking: Double = 0,
+                textStrokeWidth: Double = 0, textStrokeColor: RGBA = RGBA(0, 0, 0, 1),
+                intensity: Double = 0.5, invert: Bool = false) {
+        self.kind = kind; self.shape = shape; self.style = style; self.size = size; self.fill = fill
+        self.stroke = stroke; self.strokeWidth = strokeWidth; self.strokeStyle = strokeStyle
+        self.cornerRadius = cornerRadius; self.tail = tail; self.anchorCap = anchorCap; self.tailCap = tailCap
+        self.text = text; self.runs = runs; self.fontName = fontName; self.fontWeight = fontWeight
+        self.fontSize = fontSize; self.textColor = textColor; self.horizontalAlignment = horizontalAlignment
+        self.verticalAlignment = verticalAlignment; self.wordWrap = wordWrap; self.lineSpacing = lineSpacing
+        self.tracking = tracking; self.textStrokeWidth = textStrokeWidth; self.textStrokeColor = textStrokeColor
+        self.intensity = intensity; self.invert = invert
+    }
 }
 
 /// A track transition evaluated at the plan time.

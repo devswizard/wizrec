@@ -31,6 +31,7 @@ final class CompositorCore {
     private var failedImages: Set<URL> = []
     let fx: EffectGPU
     let shaders: ShaderBackgrounds
+    let callouts = CalloutRasterizer()
 
     init(device: any MTLDevice) throws {
         self.device = device
@@ -225,6 +226,10 @@ final class CompositorCore {
                 let rect = CGRect(x: -layer.size.width / 2, y: -layer.size.height / 2,
                                   width: layer.size.width, height: layer.size.height)
                 items.append(Item(fill: .texture(out), quad: Self.rectQuad(rect, m: toNDC, opacity: layer.opacity)))
+            case .callout(let c):
+                guard layer.opacity > 0, Self.drawsItself(c),
+                      let r = callouts.texture(c, scale: space.pxPerUnit * Self.scale(of: m), device: device) else { continue }
+                items.append(Item(fill: .texture(r.texture), quad: Self.rectQuad(r.rect, m: toNDC, opacity: layer.opacity)))
             case .unsupported:
                 continue
             }
@@ -276,7 +281,8 @@ final class CompositorCore {
         let toCanvas = m.concatenating(space.canvas)
         let layerScale = Self.scale(of: toCanvas)
         let rotation = atan2(toCanvas.b, toCanvas.a)
-        let content = region.rect
+        var content = region.rect
+        if case .callout(let c) = layer.content { content = CalloutGeometry.bounds(c) }
         let mctx = MarginContext(layerScale: layerScale, rotation: rotation, contentSize: content.size)
         let margin = effects.reduce(Margin.zero) { $0 + $1.1.margin($1.0, ctx: mctx) }
         let r = CGRect(x: content.minX - margin.left, y: content.minY - margin.bottom,
@@ -302,6 +308,12 @@ final class CompositorCore {
         var tex: any MTLTexture = base
         for (e, renderer) in effects { tex = try renderer.encode(e, input: tex, ctx: &ctx) }
         return (tex, r)
+    }
+
+    /// Region callouts (blur, pixelate, spotlight) work on the pixels below and are drawn by the
+    /// backdrop pass; the rest rasterise themselves. Crops do not apply to callouts [?].
+    static func drawsItself(_ c: CalloutContent) -> Bool {
+        !["TypeWinBlur", "TypeWinPixelate", "TypeWinSpotlight"].contains(c.kind)
     }
 
     // MARK: Geometry
