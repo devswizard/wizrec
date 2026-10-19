@@ -1,0 +1,99 @@
+# Release build: app bundle with FFmpeg inside, signature, optional notarization, DMG.
+# Runs on version tags and by hand. Signs and notarizes only when the repository secrets
+# exist; otherwise produces an ad-hoc signed DMG artifact. See docs/RELEASING.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version (default: tag without the leading v, or 0.0.0-dev)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build DMG (macOS arm64)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # make-app.sh numbers builds with `git rev-list --count HEAD`
+
+      - name: Select newest Xcode
+        run: |
+          set -euo pipefail
+          xcode="$( (ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|rc' | sort -V | tail -n 1) || true)"
+          sudo xcode-select -s "${xcode:-/Applications/Xcode.app}/Contents/Developer"
+          swift --version
+
+      - name: Install FFmpeg and pkg-config
+        run: brew install ffmpeg pkg-config
+
+      - name: Version
+        id: version
+        run: |
+          v="${{ github.event.inputs.version }}"
+          if [ -z "$v" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; fi
+          echo "version=${v:-0.0.0-dev}" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate (only when secrets exist)
+        id: signing
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CERT_P12" ] || [ -z "$SIGN_IDENTITY" ]; then
+            echo "No signing secrets: ad-hoc build."
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/wizrec.keychain-db"
+          kcpass="$(uuidgen)"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpass" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "identity=$SIGN_IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Notary profile (only when secrets exist)
+        id: notary
+        env:
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_ID" ] || [ -z "${{ steps.signing.outputs.identity }}" ]; then exit 0; fi
+          xcrun notarytool store-credentials wizrec-ci --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
+            --password "$PASSWORD" --keychain "$RUNNER_TEMP/wizrec.keychain-db"
+          echo "profile=wizrec-ci" >> "$GITHUB_OUTPUT"
+
+      - name: Build release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          WIZREC_SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          WIZREC_NOTARY_PROFILE: ${{ steps.notary.outputs.profile }}
+          NOTARIZE: ${{ steps.notary.outputs.profile != '' && '1' || '0' }}
+        run: scripts/release.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: WizRec-${{ steps.version.outputs.version }}
+          path: build/WizRec-*.dmg
+          if-no-files-found: error
+
+      - name: Remove temporary keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/wizrec.keychain-db" 2>/dev/null || true
