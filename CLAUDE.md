@@ -64,17 +64,18 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (M1 complete — 2026-10-19)
+## Current state (2026-10-19, end of build session 1)
 
-- **M1 (read-only playback) done** by the agent team; see
-  `coordination/BOARD.md`, `CONTRACTS.md`, `DECISIONS.md` and
-  `docs/specs/*.md`. `MediaEngine` (libav + VideoToolbox), `RenderEngine`
-  (`SceneModel`/`evaluate`, Metal `Compositor`, `OfflineRenderer`),
-  `TimelineEngine` (undo, split/trim/move), `PlayerKit` + `WizRecApp`
-  (`scripts/run-demo.sh`), `TestGenKit`/`wizrec-testgen`, golden + perf tests,
-  CI workflow. ~190 tests.
-- **Pending on the user:** `docs/testing/camtasia-session-1.md` (reference
-  exports + experiments X1–X7).
+- **Resume from `docs/HANDOFF.md`**: it has a module map, the WIP branch
+  per interrupted agent, the user's pending items and how to restart the team.
+- Done and merged: M0, M1, M2 editor shell, M3 editing engine, M7 recorder,
+  most of M4–M6 rendering, all research specs, fast decoding.
+  ~486 tests green.
+- In flight (WIP branches): M8 audio, M9 export, M10 captions, M3 timeline UI
+  (nested groups), app library panel, M11 assets/release (ship).
+- Pending on the user: recorder permission check, Camtasia sessions 1 and 2
+  (`docs/testing/`), optional whisper.cpp, GitHub remote, bundle ID,
+  Developer ID.
 
 ### M0 (2026-10-19)
 

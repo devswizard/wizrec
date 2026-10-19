@@ -90,16 +90,16 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M4-RES-2 | researcher | done | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
 | M5-RES-1 | researcher | done | — | spec: callouts (shapes, text, fills, strokes, tails) |
 | M6-RES-1 | researcher | done | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
-| M4-REN-1 | render | claimed | — | effect pipeline (offscreen + passes), shader backgrounds for real, transition framework + fade |
-| M4-REN-2 | render | claimed | RES-1 | group-1 effects from published specs, golden-ready |
+| M4-REN-1 | render | done | — | effect pipeline (offscreen + passes), shader backgrounds for real, transition framework + fade |
+| M4-REN-2 | render | claimed (Border/Reflection/BlendMode enums wait on EF0–EF9) | RES-1 | group-1 effects from published specs, golden-ready |
 | M5-REN-1 | render | done | M5-RES-1 | callout rendering (own vector shapes, text) |
-| M6-REN-1 | render | claimed | M6-RES-1 | cursor layer + cursor effects |
+| M6-REN-1 | render | done | M6-RES-1 | cursor layer + cursor effects |
 | M7-REC-1 | recorder | done | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
 | M7-REC-2 | recorder | done | REC-1 | mic, system audio, camera |
 | M7-REC-3 | recorder | done | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
 | M7-REC-4 | recorder | done | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
-| QA-5 | qa | claimed | RES-1 | EF1–EF9 effect test projects (+ CO1/CO2) in camtasia_rea_refs/effects/ |
-| QA-6 | qa | claimed | — | `docs/testing/camtasia-session-2.md` |
+| QA-5 | qa | done | RES-1 | EF1–EF9 effect test projects (+ CO1/CO2) in camtasia_rea_refs/effects/ |
+| QA-6 | qa | done | — | `docs/testing/camtasia-session-2.md` |
 | QA-7 | qa | claimed | REN-2 | golden effects harness + ProjectThumbnail extractor |
 | QA-8 | qa | claimed | TL-2 | M2 editing integration tests (command sequences, save/reopen, byte-identical undo) |
 
