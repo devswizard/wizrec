@@ -130,6 +130,7 @@ struct TruePeakMeter: Sendable {
     /// Polyphase taps: `phases[p][j]` weights input `x[n − j]` for output phase p.
     private let phases: [[Float]]
     private let taps: Int
+    /// Last `taps` input samples per channel, oldest first.
     private var history: [[Float]]
     private(set) var peak: Float = 0
 
@@ -157,26 +158,33 @@ struct TruePeakMeter: Sendable {
     }
 
     mutating func feed(_ chans: [[Float]], count: Int) {
+        guard count > 0 else { return }
         for c in 0..<min(chans.count, history.count) {
-            var h = history[c]
+            // ext = the last `taps` inputs (oldest first) followed by this chunk; output phase p at
+            // input i is Σ_j phases[p][j] · x[i − j], i.e. a dot product over ext[i+1 … i+taps]
+            // with the taps reversed.
+            var ext = history[c]
+            ext.append(contentsOf: chans[c].prefix(count))
             var pk = peak
-            chans[c].withUnsafeBufferPointer { p in
-                for i in 0..<count {
-                    let x = p[i]
-                    pk = max(pk, abs(x))
-                    // Shift history (newest first).
-                    for j in stride(from: taps - 1, to: 0, by: -1) { h[j] = h[j - 1] }
-                    h[0] = x
-                    if factor > 1 {
-                        for ph in phases {
-                            var y: Float = 0
-                            for j in 0..<taps { y += ph[j] * h[j] }
-                            pk = max(pk, abs(y))
+            for x in chans[c].prefix(count) { pk = max(pk, abs(x)) }
+            if factor > 1 {
+                let rev = phases.map { Array($0.reversed()) }
+                ext.withUnsafeBufferPointer { e in
+                    guard let eb = e.baseAddress else { return }
+                    for r in rev {
+                        r.withUnsafeBufferPointer { rp in
+                            guard let rb = rp.baseAddress else { return }
+                            for i in 0..<count {
+                                let w = eb + i + 1
+                                var y: Float = 0
+                                for j in 0..<taps { y += rb[j] * w[j] }
+                                pk = max(pk, abs(y))
+                            }
                         }
                     }
                 }
             }
-            history[c] = h
+            history[c] = Array(ext.suffix(taps))
             peak = pk
         }
     }
