@@ -53,7 +53,11 @@ public struct LaunchOptions: Sendable, Equatable {
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
     /// / `-AppleKey value` pairs and `-psn_…` are skipped.
-    public init(arguments: [String]) {
+    public init(arguments: [String]) { self.init(arguments: arguments, base: LaunchOptions()) }
+
+    /// Parses `arguments` on top of `base` (e.g. values from `AppPreferences`).
+    public init(arguments: [String], base: LaunchOptions) {
+        self = base
         var i = 0
         func value() -> String? {
             i += 1
