@@ -86,7 +86,9 @@ struct GroupTrackUITests {
         m.openGroups = [50]
         let e = editor(m)
         #expect(e.groupDropTarget(track: 1, ticks: 140) == GroupDropTarget(group: 50, groupPath: [50], track: 1, ticks: 60))
-        #expect(e.groupDropTarget(track: 0, ticks: 30)?.ticks == 0)  // before the inner origin: clamped
+        // Clamped to the visible window root 100…220 = inner 20…140.
+        #expect(e.groupDropTarget(track: 0, ticks: 30)?.ticks == 20)
+        #expect(e.groupDropTarget(track: 0, ticks: 400)?.ticks == 140)
         #expect(e.groupDropTarget(track: 7, ticks: 140) == nil)
     }
 
