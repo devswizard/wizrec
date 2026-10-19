@@ -28,6 +28,9 @@ struct StreamClock: Sendable, Equatable {
     /// Tick value (in the stream time base) of stream time 0.
     var origin: Int64
 
+    /// The time base as an `AVRational`.
+    var avTimeBase: AVRational { AVRational(num: Int32(clamping: num), den: Int32(clamping: den)) }
+
     init(timeBase: AVRational, origin: Int64) {
         num = max(1, Int64(timeBase.num))
         den = max(1, Int64(timeBase.den))
@@ -114,10 +117,4 @@ final class FormatContext {
 func codecName(_ id: AVCodecID) -> String {
     guard let c = avcodec_get_name(id) else { return "unknown" }
     return String(cString: c)
-}
-
-/// Tick value of stream time 0: the stream's first presentation timestamp.
-func streamOrigin(_ st: UnsafeMutablePointer<AVStream>) -> Int64 {
-    let s = st.pointee.start_time
-    return s == avNoPTS ? 0 : s
 }

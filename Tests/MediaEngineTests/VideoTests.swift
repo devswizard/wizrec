@@ -94,6 +94,33 @@ private func assertBGRA(_ buf: CVPixelBuffer) {
         }
     }
 
+    /// Scrub (software lane), then play: the hardware lane takes over ahead of the playhead
+    /// and every frame stays exact across the switch.
+    @Test(arguments: [AVVideoCodecType.h264, .hevc])
+    func laneHandoverKeepsFramesExact(codec: AVVideoCodecType) async throws {
+        let dir = try Synth.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("lanes.mp4")
+        let n = 150, fps = 30.0
+        try await Synth.writeMovie(to: url, times: (0..<n).map { Double($0) / fps }, codec: codec, keyInterval: 20)
+        let src = try #require(try await MediaPool().source(for: url) as? FFMediaSource)
+        let hw = try await src.isHardwareAccelerated(stream: 0)
+        for i in [100, 37] {
+            let f = try await src.frame(stream: 0, at: secs((Double(i) + 0.5) / fps))
+            #expect(Synth.index(of: f.pixelBuffer) == i)
+        }
+        for i in 37..<n {
+            let f = try await src.frame(stream: 0, at: secs((Double(i) + 0.5) / fps))
+            #expect(Synth.index(of: f.pixelBuffer) == i, "frame \(i)")
+            if i == 50 { try await Task.sleep(nanoseconds: 300_000_000) } // let the handover land
+        }
+        let lanes = try await src.laneCounts(stream: 0)
+        if hw {
+            #expect(lanes.software > 0)
+            #expect(lanes.hardware > 50, "hardware lane served \(lanes.hardware)")
+        }
+    }
+
     @Test func missingFileAndBadStream() async throws {
         let pool = MediaPool()
         let missing = URL(fileURLWithPath: "/nonexistent/x.mp4")

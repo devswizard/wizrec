@@ -151,7 +151,14 @@ public actor MediaPool {
 
     private var sources: [URL: Task<any MediaSource, Error>] = [:]
     private var cache: FrameCache
-    private var prefetchTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// One pre-roll lane per stream: pending requests (in order) and the task draining them.
+    private struct LaneKey: Hashable { let url: URL; let stream: Int }
+    private var prefetchQueue: [LaneKey: [FrameRequest]] = [:]
+    private var prefetchWorkers: [LaneKey: Task<Void, Never>] = [:]
+
+    private(set) var cacheHits = 0
+    private(set) var cacheMisses = 0
 
     /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU).
     public init(cacheLimitBytes: Int = 512 << 20) {
@@ -169,7 +176,7 @@ public actor MediaPool {
     public func source(for url: URL) async throws -> any MediaSource {
         if let t = sources[url] { return try await t.value }
         let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
-            try openSource(try Prober.probe(url))
+            try openSource(try Prober.probeDetailed(url))
         }
         sources[url] = t
         do {
@@ -180,10 +187,22 @@ public actor MediaPool {
         }
     }
 
+    /// Stream time used for cache lookups: clamped to ≥ 0.
+    private static func lookupTime(_ t: CMTime) -> CMTime {
+        t.isNumeric ? max(.zero, t) : (t == .positiveInfinity ? .positiveInfinity : .zero)
+    }
+
     /// Cached frame lookup; decodes on a miss.
     public func frame(_ request: FrameRequest) async throws -> VideoFrame {
-        let t = request.time.isNumeric ? max(0, request.time.seconds) : (request.time == .positiveInfinity ? .infinity : 0)
-        if let f = cache.lookup(url: request.url, stream: request.stream, seconds: t) { return f }
+        if let f = cache.lookup(url: request.url, stream: request.stream, time: Self.lookupTime(request.time)) {
+            cacheHits += 1
+            return f
+        }
+        cacheMisses += 1
+        return try await decode(request)
+    }
+
+    private func decode(_ request: FrameRequest) async throws -> VideoFrame {
         let src = try await source(for: request.url)
         let f = try await src.frame(stream: request.stream, at: request.time)
         cache.insert(url: request.url, stream: request.stream, frame: f)
@@ -192,35 +211,38 @@ public actor MediaPool {
 
     /// Starts decoding `requests` ahead of need (playback pre-roll). Returns immediately.
     ///
-    /// Requests for the same stream are decoded in the given order (so sequential pre-roll
-    /// never makes the decoder seek backwards); different streams decode in parallel.
+    /// Each stream has one pre-roll lane that decodes its requests in the given order, one at
+    /// a time, so the decoder only moves forward. A new call *replaces* the stream's requests
+    /// that have not started yet (the latest call describes what playback needs next), so
+    /// successive batches never interleave and a seek drops stale pre-roll. Different streams
+    /// decode in parallel.
     public func prefetch(_ requests: [FrameRequest]) {
-        var groups: [String: [FrameRequest]] = [:]
-        var order: [String] = []
-        for r in requests {
-            let k = "\(r.stream)|\(r.url.absoluteString)"
-            if groups[k] == nil { order.append(k) }
-            groups[k, default: []].append(r)
-        }
-        for k in order {
-            guard let group = groups[k] else { continue }
-            let id = UUID()
-            prefetchTasks[id] = Task { [weak self] in
-                for r in group {
-                    if Task.isCancelled { break }
-                    _ = try? await self?.frame(r)
-                }
-                await self?.prefetchFinished(id)
+        var groups: [LaneKey: [FrameRequest]] = [:]
+        for r in requests { groups[LaneKey(url: r.url, stream: r.stream), default: []].append(r) }
+        for (key, group) in groups {
+            prefetchQueue[key] = group
+            if prefetchWorkers[key] == nil {
+                prefetchWorkers[key] = Task { [weak self] in await self?.drainPrefetch(key) }
             }
         }
     }
 
-    private func prefetchFinished(_ id: UUID) { prefetchTasks[id] = nil }
+    private func drainPrefetch(_ key: LaneKey) async {
+        while !Task.isCancelled, var queue = prefetchQueue[key], !queue.isEmpty {
+            let r = queue.removeFirst()
+            prefetchQueue[key] = queue
+            if cache.lookup(url: r.url, stream: r.stream, time: Self.lookupTime(r.time)) != nil { continue }
+            _ = try? await decode(r)
+        }
+        prefetchQueue[key] = nil
+        prefetchWorkers[key] = nil
+    }
 
     /// Drops all cached frames and closes sources.
     public func purge() {
-        for t in prefetchTasks.values { t.cancel() }
-        prefetchTasks.removeAll()
+        for t in prefetchWorkers.values { t.cancel() }
+        prefetchWorkers.removeAll()
+        prefetchQueue.removeAll()
         cache.removeAll()
         sources.removeAll()
     }
@@ -229,4 +251,8 @@ public actor MediaPool {
     var cachedBytes: Int { cache.totalBytes }
     /// Number of cached frames.
     var cachedFrameCount: Int { cache.count }
+    /// Cached on-screen intervals of one stream.
+    func cachedIntervals(url: URL, stream: Int) -> [(start: CMTime, end: CMTime)] { cache.intervals(url: url, stream: stream) }
+    /// True while a pre-roll lane is working.
+    var isPrefetching: Bool { !prefetchWorkers.isEmpty }
 }
