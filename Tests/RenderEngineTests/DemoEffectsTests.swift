@@ -26,6 +26,28 @@ struct DemoEffectsTests {
         #expect(screen.effects.first?.name == "DropShadow")
     }
 
+    /// The `.trec` cursor at the thumbnail's playhead (12.1 s): held sample (930, 520) pt × 2 → (1860, 1040)
+    /// video px, arrow hotspot top-down [trec.md §2–§3]. Counts only; record contents are never printed.
+    @Test func trecCursorAtThumbnailTime() throws {
+        let bundle = try ProjectBundle(url: demoBundleURL)
+        let plan = SceneModel(project: bundle.project, resolve: bundle.resolve).evaluate(at: 8_537_760_000)
+        func all(_ ls: [Layer]) -> [Layer] {
+            ls.flatMap { l -> [Layer] in
+                if case .group(let c) = l.content { return [l] + all(c) }
+                return [l]
+            }
+        }
+        let layers = all(plan.layers)
+        let screen = try #require(layers.first { $0.clipID == 6 })
+        let c = try #require(screen.cursor)
+        #expect(c.position == CGPoint(x: 1860, y: 1040))
+        #expect(c.sourceSize == CGSize(width: 3024, height: 1964))
+        #expect(c.imageSize == CGSize(width: 56, height: 80) && c.hotspot == CGPoint(x: 10, y: 10))
+        #expect(c.scale == 2.25)
+        // The camera stream of the same .trec has no cursor.
+        #expect(layers.first { $0.clipID == 8 }?.cursor == nil)
+    }
+
     /// The translated shader background matches Camtasia's own render of the demo: the
     /// `ProjectThumbnail` (640×360, playhead 8537760000 ticks = 12.1 s) in the strips where only
     /// the background shows [shader-backgrounds.md S2].
@@ -53,6 +75,8 @@ struct DemoEffectsTests {
         let rms = (sum / n).squareRoot()
         if let dir = ProcessInfo.processInfo.environment["WIZREC_RENDER_OUT"] {
             try writePNG(img, to: URL(fileURLWithPath: dir).appendingPathComponent("demo-thumb-ours.png"))
+            try writePNG(try await renderer.image(at: 8_537_760_000),
+                         to: URL(fileURLWithPath: dir).appendingPathComponent("demo-12.1s-full.png"))
         }
         print("demo background vs ProjectThumbnail: RMS \(rms), max \(worst) (0–255)")
         #expect(rms < 2.0)

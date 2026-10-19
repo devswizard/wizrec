@@ -255,7 +255,9 @@ final class CompositorCore {
                 guard let frame = frames[req], let tex = texture(for: frame.pixelBuffer, pass: pass),
                       let q = quad(layer, m: toNDC) else { continue }
                 items.append(Item(fill: .texture(tex), quad: q))
-                if let c = layer.cursor, let item = cursorItem(c, layer: layer, m: toNDC) { items.append(item) }
+                if let c = layer.cursor, let cl = cursorLayer(c, over: layer) {
+                    items += try collect([cl], parent: m, space: space, frames: frames, pass: pass)
+                }
             case .image(let url):
                 guard let tex = image(url), let q = quad(layer, m: toNDC) else { continue }
                 items.append(Item(fill: .texture(tex), quad: q))
@@ -478,26 +480,28 @@ final class CompositorCore {
             opacity: Float(layer.opacity))
     }
 
-    /// The cursor image over `layer`, in its local space, clipped to the layer's visible rect.
-    private func cursorItem(_ c: CursorOverlay, layer: Layer, m: CGAffineTransform) -> Item? {
-        guard c.opacity > 0, c.sourceSize.width > 0, c.sourceSize.height > 0, let tex = image(c.image),
+    /// The cursor as a small image layer in `layer`'s local space: scaled about its hot spot, carrying the
+    /// cursor effects and motion samples. Hidden while the hot spot is outside the visible (cropped) rect.
+    private func cursorLayer(_ c: CursorOverlay, over layer: Layer) -> Layer? {
+        guard c.opacity > 0, c.scale > 0, c.sourceSize.width > 0, c.sourceSize.height > 0,
               let region = Conventions.visibleRegion(size: layer.size, sourceCrop: layer.sourceCrop,
                                                      geometryCrop: layer.geometryCrop) else { return nil }
         let kx = layer.size.width / c.sourceSize.width, ky = layer.size.height / c.sourceSize.height
-        let left = c.position.x - c.hotspot.x * c.scale, top = c.position.y - c.hotspot.y * c.scale
-        let w = c.imageSize.width * c.scale, h = c.imageSize.height * c.scale
-        // Source px (top-left, y down) → layer local px (centre, y up).
-        let full = CGRect(x: left * kx - layer.size.width / 2, y: layer.size.height / 2 - (top + h) * ky,
-                          width: w * kx, height: h * ky)
-        let r = full.intersection(region.rect)
-        guard !r.isNull, r.width > 0, r.height > 0, full.width > 0, full.height > 0 else { return nil }
-        let u0 = (r.minX - full.minX) / full.width, u1 = (r.maxX - full.minX) / full.width
-        let vTop = (full.maxY - r.maxY) / full.height, vBottom = (full.maxY - r.minY) / full.height
-        let q = Shaders.Quad(m: Self.matrix(m), rect: SIMD4(Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY)),
-                             uv: SIMD4(Float(u0), Float(vBottom), Float(u1), Float(vTop)),
-                             full: SIMD4(Float(full.minX), Float(full.minY), Float(full.maxX), Float(full.maxY)),
-                             opacity: Float(Conventions.clamp01(c.opacity * layer.opacity)))
-        return Item(fill: .texture(tex), quad: q)
+        func local(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: p.x * kx - layer.size.width / 2, y: layer.size.height / 2 - p.y * ky)
+        }
+        let hot = local(c.position)
+        guard region.rect.insetBy(dx: -0.5, dy: -0.5).contains(hot) else { return nil }
+        // Image centre relative to the hot spot, layer px (y up), before the cursor scale.
+        let off = CGPoint(x: (c.imageSize.width / 2 - c.hotspot.x) * kx, y: -(c.imageSize.height / 2 - c.hotspot.y) * ky)
+        func place(_ h: CGPoint) -> CGAffineTransform {
+            CGAffineTransform(scaleX: c.scale, y: c.scale)
+                .concatenating(CGAffineTransform(translationX: h.x + off.x * c.scale, y: h.y + off.y * c.scale))
+        }
+        return Layer(clipID: layer.clipID, content: .image(c.image),
+                     size: CGSize(width: c.imageSize.width * kx, height: c.imageSize.height * ky),
+                     transform: place(hot), opacity: c.opacity * layer.opacity, effects: c.effects,
+                     motion: c.motion.count > 1 ? c.motion.map { place(local($0)) } : [])
     }
 
     /// A quad showing a whole texture over local `rect`.
@@ -544,7 +548,10 @@ final class CompositorCore {
     private func image(_ url: URL) -> (any MTLTexture)? {
         if let t = images[url] { return t }
         if failedImages.contains(url) { return nil }
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+        let source: CGImageSource? = url.scheme == "wizrec-cursor"
+            ? CursorImageStore.shared.get(url).flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
+            : CGImageSourceCreateWithURL(url as CFURL, nil)
+        guard let src = source,
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
               let tex = Self.makeTexture(img, device: device) else {
             failedImages.insert(url)

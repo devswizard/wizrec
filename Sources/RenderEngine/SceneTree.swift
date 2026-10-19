@@ -174,8 +174,15 @@ struct SceneBuilder {
                 let p = SParams(c.object["sourceEffect"]?.object?["parameters"]?.object)
                 return .shader(url: src.url, parameters: p, size: size)
             }
-            return .video(url: src.url, stream: stream, size: size,
-                          cursor: Conventions.hasCursorSidecar(src.url) ? CursorTrack.sidecar(for: src.url) : nil)
+            var cursor: CursorTrack?
+            if Conventions.hasCursorSidecar(src.url) {
+                cursor = CursorTrack.sidecar(for: src.url)
+            } else if Conventions.hasTrecCursor(src.url, stream: stream) {
+                let tr = src.media.tracks.first
+                let seconds = tr.map { $0.durationSeconds }
+                cursor = TrecCursor.cached(src.url, duration: seconds.flatMap { $0 > 0 && $0.isFinite ? $0 : nil })
+            }
+            return .video(url: src.url, stream: stream, size: size, cursor: cursor)
         case .image:
             guard let src else { return .unsupported(type: c.kind.typeName, size: canvas) }
             return .image(url: src.url, size: Conventions.leafSize(source: src.media, trackNumber: stream,
@@ -232,6 +239,33 @@ struct SceneEvaluator {
                      size: space)
     }
 
+    /// The cursor over a recording clip at recording time `rt` seconds: clip-level `cursorScale`/`cursorOpacity`
+    /// (missing → 1, 1), click scaling, cursor effects and motion samples [cursor-effects.md §1–§2].
+    func cursorOverlay(_ n: SNode, _ track: CursorTrack, _ c: (position: CGPoint, image: CursorTrack.Image),
+                       at rt: Double, kt: Double) -> CursorOverlay {
+        let fx = n.effects.filter { $0.isActive(at: kt) && CursorEffects.isCursorEffect($0.name) && !$0.bypassed }
+            .map { $0.instance(at: kt) }
+        let click = CursorEffects.clickScale(fx.first { $0.name == "LeftClickScaling" }, leftDowns: track.leftDowns, at: rt)
+        var motion: [CGPoint] = []
+        if let mb = fx.first(where: { $0.name == "CursorMotionBlur" }), mb.value("intensity", 1) > 0 {
+            let shutter = mb.value("intensity", 1) * CursorEffects.Spec.motionShutterFrames / max(frameRate.double, 1)
+            if let a = track.position(at: rt - shutter / 2), let b = track.position(at: rt + shutter / 2) {
+                let d = ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).squareRoot()
+                if d >= 1 {
+                    let count = min(max(Int((d / 2).rounded(.up)), 2), 32)
+                    motion = (0..<count).compactMap { k in
+                        track.position(at: rt + (Double(k) / Double(count - 1) - 0.5) * shutter)
+                    }
+                }
+            }
+        }
+        return CursorOverlay(image: c.image.url, imageSize: c.image.size, hotspot: c.image.hotspot,
+                             position: c.position, sourceSize: track.videoSize,
+                             scale: max(n.params.value("cursorScale", at: kt, default: 1), 0) * click,
+                             opacity: Conventions.clamp01(n.params.value("cursorOpacity", at: kt, default: 1)),
+                             effects: CursorEffects.layerEffects(fx), motion: motion)
+    }
+
     /// Motion-blur transforms for `n` at keyframe time `kt` (`docs/specs/effects/MotionBlur.md`): the
     /// clip's own transform sampled over a shutter of `intensity` output frames centred on `kt` [inf].
     /// Only transform motion blurs; a static transform gives none.
@@ -268,7 +302,9 @@ struct SceneEvaluator {
         func make(_ content: LayerContent, _ size: CGSize) -> Layer {
             let phase = Conventions.behaviorPhaseSeconds * Double(editRate)
             let behave = n.behaviors.reduce(1.0) { $0 * $1.opacity(at: kt, span: span, phase: phase) }
-            let effects = n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt, span: span) }
+            // Cursor and click effects never touch the clip's pixels [cursor-effects.md].
+            let effects = n.effects.filter { $0.isActive(at: kt) && !CursorEffects.isCursorEffect($0.name) }
+                .map { $0.instance(at: kt, span: span) }
             return Layer(clipID: n.id, content: content, size: size,
                          transform: Conventions.transform(n.params, at: kt),
                          sourceCrop: Conventions.sourceCrop(n.params, at: kt),
@@ -282,8 +318,7 @@ struct SceneEvaluator {
                                    time: Conventions.streamTime(ticks: n.mediaTime(t), editRate: editRate))
             var l = make(.video(req), size)
             if let cursor, let c = cursor.sample(at: req.time.seconds) {
-                l.cursor = CursorOverlay(image: c.image.url, imageSize: c.image.size, hotspot: c.image.hotspot,
-                                         position: c.position, sourceSize: cursor.videoSize)
+                l.cursor = cursorOverlay(n, cursor, c, at: req.time.seconds, kt: kt)
             }
             return l
         case .image(let url, let size):

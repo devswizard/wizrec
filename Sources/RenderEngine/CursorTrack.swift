@@ -2,9 +2,9 @@ import CoreGraphics
 import Foundation
 import os
 
-/// Read-only view of a WizRec `cursor.json` (`docs/specs/cursor-log.md`, v1), indexed for
-/// sampling at any recording time. Mirrors only what rendering needs; the writer's model is
-/// `Recorder.CursorLog`. Immutable after load.
+/// A recording's cursor, indexed for sampling at any recording time: from a WizRec `cursor.json`
+/// (`docs/specs/cursor-log.md`, v1; the writer's model is `Recorder.CursorLog`) or a `.trec`'s `TSCM`
+/// streams (`TrecCursor`, `docs/specs/trec.md`). Immutable after load.
 final class CursorTrack: Sendable {
     struct Image: Sendable, Equatable {
         var url: URL
@@ -19,11 +19,30 @@ final class CursorTrack: Sendable {
     let positions: [(t: Double, x: Double, y: Double)]
     /// `cursor` events, sorted: seconds, image id.
     let shapes: [(t: Double, id: Int)]
+    /// Button presses and releases, sorted by time.
+    let clicks: [Click]
+
+    struct Click: Sendable, Equatable {
+        enum Button: Sendable { case left, right, other }
+        var t: Double
+        var button: Button
+        var down: Bool
+    }
 
     init(videoSize: CGSize, images: [Int: Image], positions: [(t: Double, x: Double, y: Double)],
-         shapes: [(t: Double, id: Int)]) {
+         shapes: [(t: Double, id: Int)], clicks: [Click] = []) {
         self.videoSize = videoSize; self.images = images; self.positions = positions; self.shapes = shapes
+        self.clicks = clicks
     }
+
+    /// Hot-spot position only (video px), for velocity and motion sampling.
+    func position(at t: Double) -> CGPoint? {
+        guard let p = Self.last(positions.count, { positions[$0].t <= t }) else { return nil }
+        return CGPoint(x: positions[p].x, y: positions[p].y)
+    }
+
+    /// Times of left-button presses, sorted.
+    var leftDowns: [Double] { clicks.filter { $0.button == .left && $0.down }.map(\.t) }
 
     /// Position (video px, top-left origin) and image at recording time `t` seconds:
     /// the last sample at or before `t` holds [cursor-log.md §3]. Nil before the first sample.
@@ -49,7 +68,9 @@ final class CursorTrack: Sendable {
     private struct File: Decodable {
         struct Cursor: Decodable { var id: Int; var file: String; var width: Double; var height: Double
             var hotspotX: Double; var hotspotY: Double }
-        struct Event: Decodable { var t: Double; var type: String; var x: Double?; var y: Double?; var id: Int? }
+        struct Event: Decodable {
+            var t: Double; var type: String; var x: Double?; var y: Double?; var id: Int?; var button: String?
+        }
         var format: String
         var version: Int
         var videoWidth: Double
@@ -71,10 +92,15 @@ final class CursorTrack: Sendable {
         }
         var pos: [(t: Double, x: Double, y: Double)] = []
         var shapes: [(t: Double, id: Int)] = []
+        var clicks: [Click] = []
         for e in f.events where e.t.isFinite {
             switch e.type {
             case "move", "down", "up", "scroll":
                 if let x = e.x, let y = e.y { pos.append((e.t, x, y)) }
+                if e.type == "down" || e.type == "up" {
+                    let b: Click.Button = e.button == "left" ? .left : e.button == "right" ? .right : .other
+                    clicks.append(Click(t: e.t, button: b, down: e.type == "down"))
+                }
             case "cursor":
                 if let id = e.id { shapes.append((e.t, id)) }
             default: break
@@ -84,7 +110,7 @@ final class CursorTrack: Sendable {
         pos = pos.enumerated().sorted { ($0.element.t, $0.offset) < ($1.element.t, $1.offset) }.map(\.element)
         shapes = shapes.enumerated().sorted { ($0.element.t, $0.offset) < ($1.element.t, $1.offset) }.map(\.element)
         return CursorTrack(videoSize: CGSize(width: f.videoWidth, height: f.videoHeight), images: images,
-                           positions: pos, shapes: shapes)
+                           positions: pos, shapes: shapes, clicks: clicks)
     }
 
     /// `cursor.json` next to a screen recording's video file [cursor-log.md §1], cached per file

@@ -105,6 +105,12 @@ enum Conventions {
         video.deletingPathExtension().lastPathComponent == "screen"
     }
 
+    /// `.trec` recordings carry the cursor in `TSCM`; it belongs to the screen stream (index 0) only,
+    /// not the camera stream of the same file [trec.md §6].
+    static func hasTrecCursor(_ video: URL, stream: Int) -> Bool {
+        video.pathExtension.lowercased() == "trec" && stream == 0
+    }
+
     // MARK: Geometry
 
     /// translate(`translation0`, `translation1`) · rotate(`rotation2`) · scale(`scale0`, `scale1`),

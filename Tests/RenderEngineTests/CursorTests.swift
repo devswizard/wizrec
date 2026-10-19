@@ -11,7 +11,8 @@ private let s = P.rate
 
 /// A recording folder with `cursor.json` and one solid-colour cursor PNG (synthetic data).
 private func recording(events: [[String: Any]], video: (Int, Int) = (200, 100), cursor: (Int, Int) = (8, 8),
-                       hotspot: (Int, Int) = (2, 2)) throws -> URL {
+                       hotspot: (Int, Int) = (2, 2), color: CGColor = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+    throws -> URL {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-cursor-\(UUID())")
     try FileManager.default.createDirectory(at: dir.appendingPathComponent("cursors"), withIntermediateDirectories: true)
     let log: [String: Any] = [
@@ -27,7 +28,7 @@ private func recording(events: [[String: Any]], video: (Int, Int) = (200, 100), 
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
     let ctx = CGContext(data: nil, width: cursor.0, height: cursor.1, bitsPerComponent: 8, bytesPerRow: 0, space: cs,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+    ctx.setFillColor(color)
     ctx.fill(CGRect(x: 0, y: 0, width: cursor.0, height: cursor.1))
     let png = dir.appendingPathComponent("cursors/cursor-0.png")
     let dest = CGImageDestinationCreateWithURL(png as CFURL, "public.png" as CFString, 1, nil)!
@@ -120,5 +121,26 @@ private var moves: [[String: Any]] { [
         let out2 = try GPUTest.render(RenderPlan(time: 0, canvasSize: CGSize(width: 200, height: 100),
                                                  background: RGBA(0, 0, 0), layers: [cropped]), frames: [rq: fr], 200, 100)
         #expect(out2.at(150, 31) == .black)
+    }
+
+    @Test func cursorEffectsDrawOnTheCursorOnly() throws {
+        let dir = try recording(events: moves, color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        let img = dir.appendingPathComponent("cursors/cursor-0.png")
+        let rq = GPUTest.request("bg2")
+        let fr = GPUTest.frame(GPUTest.pixelBuffer(16, 16) { _, _ in .white })
+        // Black cursor: CursorColor maps dark pixels to secondColor (green); scale 2 about the hot spot.
+        let color = EffectInstance(name: "CursorColor", parameters: [
+            "color-red": 0, "color-green": 0, "color-blue": 0, "color-alpha": 1, "colorLumaCutoff": 1,
+            "secondColor-red": 0, "secondColor-green": 1, "secondColor-blue": 0, "secondColor-alpha": 1,
+            "secondColorLumaCutoff": 0, "intensity": 1], bypassed: false)
+        let c = CursorOverlay(image: img, imageSize: CGSize(width: 8, height: 8), hotspot: CGPoint(x: 2, y: 2),
+                              position: CGPoint(x: 50, y: 30), sourceSize: CGSize(width: 200, height: 100), scale: 2,
+                              effects: [color])
+        let layer = Layer(clipID: 1, content: .video(rq), size: CGSize(width: 200, height: 100), cursor: c)
+        let out = try GPUTest.render(RenderPlan(time: 0, canvasSize: CGSize(width: 200, height: 100),
+                                                background: RGBA(0, 0, 0), layers: [layer]), frames: [rq: fr], 200, 100)
+        // Scaled 2× about (50, 30): image spans x 46…62, y 26…42.
+        #expect(out.at(47, 27).near(.green, 3) && out.at(60, 40).near(.green, 3))
+        #expect(out.at(44, 27) == .white && out.at(64, 40) == .white)
     }
 }
