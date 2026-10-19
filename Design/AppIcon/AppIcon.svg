@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- macOS icon grid: 824×824 body at (100,100), continuous-corner radius ≈ 185 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B4BF5"/>
+      <stop offset="0.55" stop-color="#3424B8"/>
+      <stop offset="1" stop-color="#160F55"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.18" r="0.75">
+      <stop offset="0" stop-color="#9C8CFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#9C8CFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCD8FF"/>
+    </linearGradient>
+    <linearGradient id="display" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B1645"/>
+      <stop offset="1" stop-color="#0B0A24"/>
+    </linearGradient>
+    <radialGradient id="rec" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FF8A94"/>
+      <stop offset="0.6" stop-color="#FF3B4E"/>
+      <stop offset="1" stop-color="#D91A35"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dy="12" result="b"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.38"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
+      <feOffset dy="8"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="recglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <clipPath id="body"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+
+  <!-- body -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  </g>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+
+  <g clip-path="url(#body)">
+    <!-- screen -->
+    <g filter="url(#soft)">
+      <rect x="206" y="214" width="612" height="392" rx="46" fill="url(#bezel)"/>
+    </g>
+    <rect x="234" y="242" width="556" height="336" rx="26" fill="url(#display)"/>
+    <!-- faint canvas guides inside the display -->
+    <path d="M512 262 V558 M254 410 H770" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="3"/>
+
+    <!-- record button -->
+    <circle cx="512" cy="410" r="96" fill="#FF3B4E" opacity="0.45" filter="url(#recglow)"/>
+    <circle cx="512" cy="410" r="100" fill="none" stroke="#FF5A6B" stroke-opacity="0.35" stroke-width="10"/>
+    <circle cx="512" cy="410" r="72" fill="url(#rec)"/>
+    <ellipse cx="490" cy="382" rx="30" ry="18" fill="#FFFFFF" opacity="0.35"/>
+
+    <!-- timeline: three tracks of clips -->
+    <g filter="url(#soft)">
+      <rect x="206" y="650" width="246" height="40" rx="20" fill="#38C6F4"/>
+      <rect x="466" y="650" width="352" height="40" rx="20" fill="#B79BFF"/>
+      <rect x="206" y="706" width="132" height="40" rx="20" fill="#FFC145"/>
+      <rect x="352" y="706" width="298" height="40" rx="20" fill="#FF7AB8"/>
+      <rect x="664" y="706" width="154" height="40" rx="20" fill="#38C6F4"/>
+    </g>
+    <!-- audio track: waveform -->
+    <g fill="#FFFFFF" fill-opacity="0.55">
+      <rect x="214" y="772" width="10" height="24" rx="5"/>
+      <rect x="234" y="764" width="10" height="40" rx="5"/>
+      <rect x="254" y="756" width="10" height="56" rx="5"/>
+      <rect x="274" y="768" width="10" height="32" rx="5"/>
+      <rect x="294" y="760" width="10" height="48" rx="5"/>
+      <rect x="314" y="752" width="10" height="64" rx="5"/>
+      <rect x="334" y="766" width="10" height="36" rx="5"/>
+      <rect x="354" y="774" width="10" height="20" rx="5"/>
+      <rect x="374" y="762" width="10" height="44" rx="5"/>
+      <rect x="394" y="756" width="10" height="56" rx="5"/>
+      <rect x="414" y="768" width="10" height="32" rx="5"/>
+      <rect x="434" y="760" width="10" height="48" rx="5"/>
+      <rect x="454" y="770" width="10" height="28" rx="5"/>
+      <rect x="474" y="764" width="10" height="40" rx="5"/>
+      <rect x="494" y="754" width="10" height="60" rx="5"/>
+      <rect x="514" y="762" width="10" height="44" rx="5"/>
+      <rect x="534" y="772" width="10" height="24" rx="5"/>
+      <rect x="554" y="766" width="10" height="36" rx="5"/>
+      <rect x="574" y="758" width="10" height="52" rx="5"/>
+      <rect x="594" y="768" width="10" height="32" rx="5"/>
+      <rect x="614" y="762" width="10" height="44" rx="5"/>
+      <rect x="634" y="756" width="10" height="56" rx="5"/>
+      <rect x="654" y="770" width="10" height="28" rx="5"/>
+      <rect x="674" y="764" width="10" height="40" rx="5"/>
+      <rect x="694" y="760" width="10" height="48" rx="5"/>
+      <rect x="714" y="770" width="10" height="28" rx="5"/>
+      <rect x="734" y="766" width="10" height="36" rx="5"/>
+      <rect x="754" y="774" width="10" height="20" rx="5"/>
+      <rect x="774" y="768" width="10" height="32" rx="5"/>
+      <rect x="794" y="772" width="10" height="24" rx="5"/>
+    </g>
+
+    <!-- playhead -->
+    <g filter="url(#soft)">
+      <rect x="595" y="634" width="10" height="194" rx="5" fill="#FF3B4E"/>
+      <path d="M574 622 H626 V640 L600 662 L574 640 Z" fill="#FF3B4E"/>
+    </g>
+  </g>
+</svg>
