@@ -109,7 +109,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 |---|---|---|---|---|
 | M8-AUD-1 | audio | done | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
 | M8-AUD-2 | audio | done | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
-| M8-AUD-3 | audio | claimed | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
+| M8-AUD-3 | audio | done | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
 | M8-AUD-4 | audio | done | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
 | M9-EXP-1 | export | claimed | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
 | M9-EXP-2 | export | claimed | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
@@ -159,3 +159,8 @@ worktrees removed; branches kept.
 - timelineui3: library from WizRecAssets, renderedTransitions. M3-TUI-1 done.
 - captions3: CAP-2 dynamic captions rendered (621). M10 done (whisper.cpp waits on user).
 - Open follow-ups: inner AddTrack/RemoveTrack + media drops in open groups; Sparkle dependency (approval pending); Info.plist camera/mic usage strings (app); caption UI + export sheet (app); AUD-3 (audio); EXP-1..3 (export).
+- qa3: audio + captions integration tests, QA-7 foreground SSIM, timing audit (634).
+- audio3: AUD-3 noise removal, leveling, pitch, emphasize (own DSP). M8 done.
+- captions3: classic captions on media axis (fixes split/trim bug found by qa).
+- app3: caption UI (transcribe, dynamic captions, SRT/VTT), usage strings (645).
+- media3 (on demand): WAV probe misdetection bug found by audio.

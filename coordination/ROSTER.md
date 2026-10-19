@@ -13,6 +13,7 @@ Session 2 (2026-10-19). Session 1 agents are stopped; see docs/HANDOFF.md §2.
 | app | `a78c40f1fc917e28c` | `agent/app3` |
 | ship | `a2666025a5e9d7c45` | `agent/ship3` |
 | qa | `a743bb0d4298b4591` | `agent/qa3` |
+| media (on demand) | `af7bec23febf3b901` | `agent/media3` |
 
 Not running: render, researcher (spawn when user references arrive);
 timeline, media, recorder (on demand).
