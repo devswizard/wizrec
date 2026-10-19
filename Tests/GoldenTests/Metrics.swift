@@ -134,6 +134,29 @@ enum Metrics {
     }
 
     /// PSNR over R, G and B (alpha ignored), peak 255, dB. `+infinity` when identical.
+    /// One 8-bit channel (0 = R, 1 = G, 2 = B) as a float plane, 0–255.
+    static func channel(_ img: RGBAImage, _ c: Int) -> [Float] {
+        let n = img.width * img.height
+        var out = [Float](repeating: 0, count: n)
+        img.pixels.withUnsafeBufferPointer { p in
+            guard let base = p.baseAddress else { return }
+            vDSP_vfltu8(base + c, 4, &out, 1, vDSP_Length(n))
+        }
+        return out
+    }
+
+    /// Colour-aware SSIM: the minimum of luma SSIM and the SSIM of each of R, G and B.
+    /// Luma SSIM alone misses hue and saturation errors (a desaturated cell keeps its luma),
+    /// which colour effects (ColorAdjustment, BlendModeEffect, shadow colour) must catch.
+    static func colorSSIM(_ a: RGBAImage, _ b: RGBAImage) -> Double {
+        precondition(a.width == b.width && a.height == b.height, "image size mismatch")
+        var worst = ssim(a, b).mean
+        for c in 0..<3 {
+            worst = min(worst, ssim(lumaA: channel(a, c), lumaB: channel(b, c), width: a.width, height: a.height).mean)
+        }
+        return worst
+    }
+
     static func psnr(_ a: RGBAImage, _ b: RGBAImage) -> Double {
         precondition(a.width == b.width && a.height == b.height, "image size mismatch")
         let n = a.width * a.height

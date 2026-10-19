@@ -248,6 +248,21 @@ public final class ProjectBuilder {
         ])
     }
 
+    /// A `Callout` clip with `def` (see `CalloutDef`); natural size `def.width × def.height` callout px.
+    /// Key order follows Camtasia 2026's caption callouts [obs, DynamicCaption samples].
+    public func callout(_ def: JSONObject, start: Int64, duration: Int64, params: [String: ParamSpec] = [:]) -> JSONObject {
+        let id = clipID()
+        let (ps, anim) = parameters(params)
+        return JSONObject([
+            ("id", .num(id)), ("_type", .str("Callout")), ("def", .object(def)),
+            ("attributes", .obj(["ident": .str(""), "autoRotateText": .flag(true)])),
+            ("parameters", ps), ("effects", .emptyArray),
+            ("start", .num(start)), ("duration", .num(duration)),
+            ("mediaStart", .num(0)), ("mediaDuration", .num(duration)), ("scalar", .num(1)),
+            ("metadata", clipMetadata(speedChanged: false)), ("animationTracks", anim),
+        ])
+    }
+
     /// A `Group` whose inner tracks (bottom to top) are built by `content` after the group's id is taken.
     /// Inner clip times are on the group's own timeline; `mediaStart` is the inner time shown at `start`.
     public func group(name: String, start: Int64, duration: Int64, mediaStart: Int64 = 0,
