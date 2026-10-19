@@ -208,8 +208,8 @@ enum BuiltInBackgrounds {
             if (y > 0.0) {
                 float z = 0.08 / max(y, 0.001);
                 float gx = uv.x - 0.5;
-                gx = gx * z * 4.0 * _Density * 0.5;
-                float gz = z * _Density + _Time * _Speed;
+                gx = gx * z * 40.0 * _Density;
+                float gz = z * 4.0 * _Density + _Time * _Speed * 0.6;
                 float ex = 0.5 - abs(fract(gx) - 0.5);
                 float ez = 0.5 - abs(fract(gz) - 0.5);
                 float lx = 1.0 - smoothstep(0.0, fwidth(gx) * 1.5 + 0.0001, ex);

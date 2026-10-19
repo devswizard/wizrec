@@ -47,17 +47,19 @@ enum CursorArt: String, Sendable, Hashable {
             outlined(ctx, p, fill: fill, edge: edge, width: 2.5)
         case .hand:
             let p = CGMutablePath()
-            p.addRoundedRect(in: CGRect(x: 10, y: 2, width: 6, height: 17), cornerWidth: 3, cornerHeight: 3)
-            p.addRoundedRect(in: CGRect(x: 15.5, y: 10, width: 5, height: 10), cornerWidth: 2.5, cornerHeight: 2.5)
-            p.addRoundedRect(in: CGRect(x: 20, y: 11.5, width: 5, height: 10), cornerWidth: 2.5, cornerHeight: 2.5)
-            p.addRoundedRect(in: CGRect(x: 4.5, y: 14, width: 7, height: 5), cornerWidth: 2.5, cornerHeight: 2.5)
-            p.addRoundedRect(in: CGRect(x: 8, y: 14.5, width: 17, height: 14), cornerWidth: 5, cornerHeight: 5)
+            // Index finger up on the left, three folded fingers stepping down to the right, thumb left.
+            p.addRoundedRect(in: CGRect(x: 8, y: 2, width: 5.5, height: 17), cornerWidth: 2.75, cornerHeight: 2.75)
+            p.addRoundedRect(in: CGRect(x: 13, y: 9.5, width: 5, height: 9), cornerWidth: 2.5, cornerHeight: 2.5)
+            p.addRoundedRect(in: CGRect(x: 17.5, y: 10.5, width: 5, height: 9), cornerWidth: 2.5, cornerHeight: 2.5)
+            p.addRoundedRect(in: CGRect(x: 22, y: 12, width: 4.5, height: 8.5), cornerWidth: 2.25, cornerHeight: 2.25)
+            p.addRoundedRect(in: CGRect(x: 3, y: 15.5, width: 8, height: 5), cornerWidth: 2.5, cornerHeight: 2.5)
+            p.addRoundedRect(in: CGRect(x: 8, y: 14, width: 18.5, height: 15), cornerWidth: 5, cornerHeight: 5)
             // The fill covers the inner halves of the overlapping outlines: one silhouette remains.
             outlined(ctx, p, fill: Self.paper, edge: Self.ink, width: 2)
             // Knuckle creases.
             ctx.setStrokeColor(Self.ink); ctx.setLineWidth(1.2)
-            for x in [15.7, 20.2] {
-                ctx.move(to: CGPoint(x: x, y: 13)); ctx.addLine(to: CGPoint(x: x, y: 18))
+            for x in [13.2, 17.7, 22.1] {
+                ctx.move(to: CGPoint(x: x, y: 12.5)); ctx.addLine(to: CGPoint(x: x, y: 17.5))
             }
             ctx.strokePath()
         case .ibeam:
@@ -97,7 +99,7 @@ enum BuiltInCursors {
     static let all: [CursorAsset] = [
         CursorAsset(id: "arrow", displayName: "Arrow", hotspot: SIMD2(4, 2), art: .arrow),
         CursorAsset(id: "arrow-light", displayName: "Arrow (Light)", hotspot: SIMD2(4, 2), art: .arrowLight),
-        CursorAsset(id: "hand", displayName: "Pointing Hand", hotspot: SIMD2(13, 2), art: .hand),
+        CursorAsset(id: "hand", displayName: "Pointing Hand", hotspot: SIMD2(10.75, 2), art: .hand),
         CursorAsset(id: "ibeam", displayName: "Text (I-Beam)", hotspot: SIMD2(16, 16), art: .ibeam),
         CursorAsset(id: "crosshair", displayName: "Crosshair", hotspot: SIMD2(16, 16), art: .crosshair),
     ]
