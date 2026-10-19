@@ -195,7 +195,8 @@ enum CalloutGeometry {
 
     /// Everything the callout draws, callout px: box, tail and stroke.
     static func bounds(_ c: CalloutContent) -> CGRect {
-        let pad = c.strokeWidth / 2 + 2 + c.textStrokeWidth
+        var pad = c.strokeWidth / 2 + 2 + c.textStrokeWidth
+        if let dc = c.dynamicCaption { pad += DynamicCaptionText.overhang(dc.style, fontSize: c.fontSize) }
         if c.shape == "arrow" {
             let w = max(c.strokeWidth, 1)
             let head = max(max(w * Spec.arrowHeadLength, 6), max(w * Spec.arrowHeadHalfWidth, 4)) + pad
@@ -274,7 +275,11 @@ final class CalloutRasterizer {
         default:
             break
         }
-        if !c.text.isEmpty { CalloutText.draw(c, in: ctx) }
+        if c.dynamicCaption != nil {
+            DynamicCaptionText.draw(c, in: ctx)
+        } else if !c.text.isEmpty {
+            CalloutText.draw(c, in: ctx)
+        }
         return ctx.makeImage()
     }
 }

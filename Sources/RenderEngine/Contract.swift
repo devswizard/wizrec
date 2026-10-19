@@ -1,6 +1,7 @@
 // Public interface of RenderEngine, frozen by coordination/CONTRACTS.md.
 // Changing anything here needs an API_CHANGE message and the lead's approval.
 
+import CaptionLayout
 import CoreGraphics
 import CoreMedia
 import Foundation
@@ -121,6 +122,9 @@ public struct CalloutContent: Sendable, Equatable {
     public var intensity: Double
     /// Region kinds: `blur-invert` / `fill-invert`.
     public var invert: Bool
+    /// Set for a dynamic caption (`def.modifier == "dynamicCaption"`): `text` is then the current
+    /// block's text and `runs` one run over all of it (font, weight, colour; no size).
+    public var dynamicCaption: DynamicCaptionRender?
 
     public init(kind: String = "remix", shape: String = "shape-rectangle", style: String = "",
                 size: CGSize, fill: RGBA = RGBA(1, 1, 1, 1), stroke: RGBA = RGBA(0, 0, 0, 1),
@@ -131,7 +135,7 @@ public struct CalloutContent: Sendable, Equatable {
                 horizontalAlignment: String = "center", verticalAlignment: String = "center",
                 wordWrap: Bool = true, lineSpacing: Double = 0, tracking: Double = 0,
                 textStrokeWidth: Double = 0, textStrokeColor: RGBA = RGBA(0, 0, 0, 1),
-                intensity: Double = 0.5, invert: Bool = false) {
+                intensity: Double = 0.5, invert: Bool = false, dynamicCaption: DynamicCaptionRender? = nil) {
         self.kind = kind; self.shape = shape; self.style = style; self.size = size; self.fill = fill
         self.stroke = stroke; self.strokeWidth = strokeWidth; self.strokeStyle = strokeStyle
         self.cornerRadius = cornerRadius; self.tail = tail; self.anchorCap = anchorCap; self.tailCap = tailCap
@@ -139,8 +143,17 @@ public struct CalloutContent: Sendable, Equatable {
         self.fontSize = fontSize; self.textColor = textColor; self.horizontalAlignment = horizontalAlignment
         self.verticalAlignment = verticalAlignment; self.wordWrap = wordWrap; self.lineSpacing = lineSpacing
         self.tracking = tracking; self.textStrokeWidth = textStrokeWidth; self.textStrokeColor = textStrokeColor
-        self.intensity = intensity; self.invert = invert
+        self.intensity = intensity; self.invert = invert; self.dynamicCaption = dynamicCaption
     }
+}
+
+/// A dynamic caption at the plan time (`docs/specs/captions.md` §3–§4): which words show and how far
+/// the highlight has moved, plus the callout's `dynamic-caption-*` style.
+public struct DynamicCaptionRender: Sendable, Equatable {
+    /// What shows now; nil = nothing (before the first word, between blocks, no transcribed audio).
+    public var frame: DynamicCaptionFrame?
+    public var style: DynamicCaptionStyle
+    public init(frame: DynamicCaptionFrame?, style: DynamicCaptionStyle) { self.frame = frame; self.style = style }
 }
 
 /// A track transition evaluated at the plan time.
