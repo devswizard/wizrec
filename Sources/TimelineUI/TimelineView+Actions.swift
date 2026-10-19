@@ -61,9 +61,22 @@ extension TimelineView: NSMenuItemValidation {
     @objc public func zoomOut(_ sender: Any?) { canvas.zoom(to: model.pointsPerSecond / TimelineZoom.step) }
     /// Key: ⌘0.
     @objc public func zoomToFit(_ sender: Any?) { canvas.zoomToFit() }
-    /// Adds an empty track on top of the stack.
+    /// Adds an empty track on top of the shown stack (inside the innermost open group when one is open).
     @objc public func addTrack(_ sender: Any?) {
         if !editor.addTrack(at: canvas.snapshot.tracks.count) { NSSound.beep() }
+    }
+    /// Removes a track of the shown level with its clips: the NSMenuItem's `representedObject`
+    /// (NSNumber track index, 0 = bottom), else the track of the single selected clip.
+    /// The last track inside a group cannot be removed.
+    @objc public func removeTrack(_ sender: Any?) {
+        guard let index = removableTrack(sender), editor.removeTrack(at: index) else { NSSound.beep(); return }
+    }
+
+    func removableTrack(_ sender: Any?) -> Int? {
+        if let item = sender as? NSMenuItem, let n = item.representedObject as? NSNumber { return n.intValue }
+        canvas.rebuildIfNeeded()
+        guard model.selection.count == 1, let id = model.selection.first else { return nil }
+        return canvas.snapshot.tracks.firstIndex { $0.clips.contains { $0.id == id } }
     }
     @objc public func toggleSnapping(_ sender: Any?) { model.snappingEnabled.toggle() }
     /// Sets the selected clips' speed: `sender` is an NSMenuItem whose `representedObject` is an
@@ -141,7 +154,8 @@ extension TimelineView: NSMenuItemValidation {
             return true
         case #selector(openGroup(_:)): return selectedGroup != nil
         case #selector(closeGroup(_:)): return !canvas.snapshot.groupPath.isEmpty
-        case #selector(addTrack(_:)): return canvas.snapshot.groupPath.isEmpty
+        case #selector(addTrack(_:)): return editor.canAddTrack
+        case #selector(removeTrack(_:)): return removableTrack(item).map(editor.canRemoveTrack(at:)) ?? false
         case #selector(setClipSpeed(_:)): return !editor.retimableSelection.isEmpty
         case #selector(extendFrame(_:)):
             return editor.retimableSelection.contains { canvas.snapshot.clip($0).map { !$0.clip.videoSpans.isEmpty } ?? false }

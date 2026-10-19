@@ -792,11 +792,11 @@ extension TimelineCanvas {
             item("Delete", #selector(menuDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
             item("Ripple Delete", #selector(menuRippleDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
         case .header(let track, _):
-            let top = snapshot.groupPath.isEmpty  // inner tracks: no add/remove yet
-            item("Add Track Above", #selector(menuAddTrack(_:)), track + 1, enabled: top)
-            item("Add Track Below", #selector(menuAddTrack(_:)), track, enabled: top)
+            let add = editor.canAddTrack
+            item("Add Track Above", #selector(menuAddTrack(_:)), track + 1, enabled: add)
+            item("Add Track Below", #selector(menuAddTrack(_:)), track, enabled: add)
             menu.addItem(.separator())
-            item("Remove Track", #selector(menuRemoveTrack(_:)), track, enabled: top)
+            item("Remove Track", #selector(menuRemoveTrack(_:)), track, enabled: editor.canRemoveTrack(at: track))
         case .ruler(let t):
             item("Add Marker at Playhead", #selector(menuAddMarker(_:)))
             let near = editor.marker(near: t, tolerance: layout.ticks(forWidth: 6))
@@ -813,7 +813,7 @@ extension TimelineCanvas {
                 item("Close Group", #selector(menuCloseGroup(_:)))
             }
         case .track, .empty, .corner:
-            item("Add Track", #selector(menuAddTrack(_:)), snapshot.tracks.count, enabled: snapshot.groupPath.isEmpty)
+            item("Add Track", #selector(menuAddTrack(_:)), snapshot.tracks.count, enabled: editor.canAddTrack)
             item("Zoom to Fit", #selector(menuZoomToFit(_:)))
         }
         return menu

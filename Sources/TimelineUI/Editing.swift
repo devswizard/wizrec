@@ -583,19 +583,4 @@ public struct TimelineEditor {
         guard let m = marker(near: t, tolerance: tolerance) else { return false }
         return perform(RemoveMarker(at: m.time))
     }
-
-    @discardableResult
-    public func addTrack(at index: Int) -> Bool {
-        guard snapshot.groupPath.isEmpty else { return false }  // inner tracks: not supported yet
-        return perform(AddTrack(at: min(max(index, 0), snapshot.tracks.count)))
-    }
-
-    @discardableResult
-    public func removeTrack(at index: Int) -> Bool {
-        guard snapshot.groupPath.isEmpty, snapshot.track(index) != nil else { return false }
-        let gone = Set(snapshot.tracks[index].clips.map(\.id))
-        guard perform(RemoveTrack(at: index)) else { return false }
-        model.selection.subtract(gone)
-        return true
-    }
 }
