@@ -17,6 +17,7 @@ private struct DecodedFrame {
 /// Runs on a private serial dispatch queue: decode work blocks, so it stays off the
 /// cooperative pool, and the libav contexts in `core` are only ever touched from that queue.
 actor VideoDecoder {
+    /// libav (container) stream index.
     nonisolated let streamIndex: Int
     private let queue: DispatchSerialQueue
     private let core: VideoDecodeCore
@@ -25,18 +26,175 @@ actor VideoDecoder {
     init(url: URL, streamIndex: Int, allowHardware: Bool = true) throws {
         self.streamIndex = streamIndex
         self.queue = DispatchSerialQueue(label: "wizrec.media.video.\(streamIndex)", qos: .userInitiated)
-        self.core = try VideoDecodeCore(url: url, streamIndex: streamIndex, allowHardware: allowHardware)
+        let core = try VideoDecodeCore(url: url, streamIndex: streamIndex, allowHardware: allowHardware)
+        self.core = core
+        self.isHardwareCapable = core.usingHardware
     }
+
+    /// The decoder opened on VideoToolbox.
+    nonisolated let isHardwareCapable: Bool
 
     /// Frame on screen at stream time `time` (last frame with PTS ≤ time, clamped).
     func frame(at time: CMTime) throws -> VideoFrame { try core.frame(at: time) }
+
+    /// `frame(at:)` plus its cost: pictures decoded and wall time (ms).
+    func measuredFrame(at time: CMTime) throws -> (frame: VideoFrame, decoded: Int, ms: Double) {
+        let before = core.decodedFrames
+        let start = DispatchTime.now().uptimeNanoseconds
+        let f = try core.frame(at: time)
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6
+        return (f, core.decodedFrames - before, ms)
+    }
+
+    /// True when serving `time` would need a demuxer seek (not just decoding forward).
+    func requiresSeek(at time: CMTime) -> Bool { core.requiresSeek(at: time) }
 
     /// True when frames come from VideoToolbox.
     var isHardwareAccelerated: Bool { core.usingHardware }
 }
 
+/// One video stream, served by up to two decoders ("lanes"):
+///
+/// - a VideoToolbox lane — cheap and fast while decoding forward (playback);
+/// - a multithreaded software lane, created on the first seek.
+///
+/// libav's VideoToolbox path decodes synchronously frame by frame, so its seeks can be slow
+/// (synthetic 1080p hevc: ~135 ms mean vs ~40 ms in software on an M3 Pro). For other
+/// streams software is the slow one (2688×1512 10-bit hevc: ~20 ms/frame vs ~10 ms). So each
+/// lane's decode cost per frame is measured, and a seek goes to the cheaper lane. When the
+/// software lane is playing forward, the hardware lane is repositioned in the background just
+/// ahead of the playhead and takes over there.
+///
+/// Both lanes return identical frames for a time (same frame rule), so switching is invisible.
+/// Codecs without hardware decode (tscc2, …) use one software lane.
+actor VideoStreamDecoder {
+    nonisolated let url: URL
+    nonisolated let streamIndex: Int
+    private let hw: VideoDecoder?
+    private var sw: VideoDecoder?
+
+    /// Requests the software lane served by decoding forward, in a row.
+    private var softwareRun = 0
+    /// The hardware lane is busy repositioning in the background.
+    private var warming = false
+    /// The hardware lane only serves at or after this time (where it was repositioned).
+    private var hwFrom: CMTime = .zero
+    /// The hardware lane was repositioned ahead and waits for the playhead to reach `hwFrom`.
+    private var handoverPending = false
+    /// Bumped on every scrub, so a late handover for an old position is ignored.
+    private var generation: UInt64 = 0
+    /// Smoothed decode cost per picture (ms) of each lane; nil until measured.
+    private var hwCost: Double?
+    private var swCost: Double?
+
+    /// Software frames in a row before the hardware lane is repositioned for playback.
+    private let runBeforeHandover = 6
+    /// How far ahead of the playhead the hardware lane is repositioned (seconds).
+    private let handoverLead = 0.5
+
+    init(url: URL, streamIndex: Int) throws {
+        self.url = url
+        self.streamIndex = streamIndex
+        let first = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: true)
+        if first.isHardwareCapable {
+            hw = first
+        } else {
+            hw = nil
+            sw = first
+        }
+    }
+
+    private func softwareLane() throws -> VideoDecoder {
+        if let sw { return sw }
+        let d = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: false)
+        sw = d
+        return d
+    }
+
+    private static func smooth(_ old: Double?, _ sample: Double) -> Double {
+        old.map { 0.7 * $0 + 0.3 * sample } ?? sample
+    }
+
+    private func serveHardware(_ hw: VideoDecoder, _ time: CMTime) async throws -> VideoFrame {
+        hardwareServed += 1
+        let r = try await hw.measuredFrame(at: time)
+        if r.decoded > 0 { hwCost = Self.smooth(hwCost, r.ms / Double(r.decoded)) }
+        return r.frame
+    }
+
+    private func serveSoftware(_ sw: VideoDecoder, _ time: CMTime) async throws -> VideoFrame {
+        softwareServed += 1
+        let r = try await sw.measuredFrame(at: time)
+        if r.decoded > 0 { swCost = Self.smooth(swCost, r.ms / Double(r.decoded)) }
+        return r.frame
+    }
+
+    func frame(at time: CMTime) async throws -> VideoFrame {
+        guard let hw else { return try await softwareLane().frame(at: time) }
+        // 1. Hardware lane positioned for this time: playback.
+        if !warming, time >= hwFrom, await !hw.requiresSeek(at: time) {
+            softwareRun = 0
+            handoverPending = false
+            return try await serveHardware(hw, time)
+        }
+        // 2. Software lane positioned for this time.
+        if let sw, await !sw.requiresSeek(at: time) {
+            let f = try await serveSoftware(sw, time)
+            softwareRun += 1
+            if softwareRun >= runBeforeHandover, !warming, !handoverPending { startHandover(hw, after: time) }
+            return f
+        }
+        // 3. A seek. It invalidates any pending handover.
+        softwareRun = 0
+        handoverPending = false
+        generation &+= 1
+        if !warming, let h = hwCost, let s = swCost, h < 0.9 * s {
+            hwFrom = .zero
+            return try await serveHardware(hw, time)
+        }
+        return try await serveSoftware(try softwareLane(), time)
+    }
+
+    private func startHandover(_ hw: VideoDecoder, after time: CMTime) {
+        warming = true
+        let target = time + CMTime(seconds: handoverLead, preferredTimescale: 600)
+        let gen = generation
+        Task {
+            var ok = false
+            do {
+                let r = try await hw.measuredFrame(at: target)
+                ok = true
+                if r.decoded > 0 { self.recordHardwareCost(r.ms / Double(r.decoded)) }
+            } catch {}
+            self.handoverDone(at: target, ok: ok, generation: gen)
+        }
+    }
+
+    private func recordHardwareCost(_ ms: Double) { hwCost = Self.smooth(hwCost, ms) }
+
+    private func handoverDone(at time: CMTime, ok: Bool, generation gen: UInt64) {
+        warming = false
+        guard gen == generation else { return } // the playhead jumped meanwhile
+        if ok {
+            hwFrom = time
+            handoverPending = true
+        } else {
+            hwFrom = .positiveInfinity // hardware lane unusable; stay in software
+        }
+    }
+
+    /// True when playback frames come from VideoToolbox.
+    var isHardwareAccelerated: Bool { get async { await hw?.isHardwareAccelerated ?? false } }
+
+    /// Requests served per lane (diagnostics, tests).
+    private(set) var hardwareServed = 0
+    private(set) var softwareServed = 0
+}
+
+
 /// The libav state behind a `VideoDecoder`. Not thread-safe; confined to the actor.
 final class VideoDecodeCore {
+    /// libav (container) stream index.
     let streamIndex: Int
     let clock: StreamClock
 
@@ -45,7 +203,7 @@ final class VideoDecodeCore {
     private var codec: UnsafeMutablePointer<AVCodecContext>
     private(set) var usingHardware: Bool
     private let packet: UnsafeMutablePointer<AVPacket>
-    private let converter = FrameConverter()
+    private let converter: FrameConverter
     /// Keyframe timestamps (stream ticks, ascending) from the container index. May be empty.
     private let keyframes: [Int64]
 
@@ -70,7 +228,8 @@ final class VideoDecodeCore {
         else { throw MediaError.noSuchStream(streamIndex) }
         fc.discardAll(except: streamIndex)
         self.format = fc
-        self.clock = StreamClock(timeBase: st.pointee.time_base, origin: streamOrigin(st))
+        // Stream time 0 = movie time 0 (edit lists applied by libav); never the first PTS.
+        self.clock = StreamClock(timeBase: st.pointee.time_base, origin: 0)
 
         var kf: [Int64] = []
         let n = avformat_index_get_entries_count(st)
@@ -83,8 +242,9 @@ final class VideoDecodeCore {
             kf.sort()
         }
         self.keyframes = kf
+        self.converter = FrameConverter(codec: par.pointee.codec_id)
 
-        let (ctx, hw) = try Self.openCodec(par: par, allowHardware: allowHardware)
+        let (ctx, hw) = try Self.openCodec(par: par, timeBase: st.pointee.time_base, allowHardware: allowHardware)
         self.codec = ctx
         self.usingHardware = hw
         guard let pkt = av_packet_alloc() else { throw MediaError.decodeFailed("av_packet_alloc") }
@@ -92,6 +252,7 @@ final class VideoDecodeCore {
     }
 
     deinit {
+        clearPacketQueue()
         var c: UnsafeMutablePointer<AVCodecContext>? = codec
         avcodec_free_context(&c)
         var p: UnsafeMutablePointer<AVPacket>? = packet
@@ -102,8 +263,8 @@ final class VideoDecodeCore {
         }
     }
 
-    private static func openCodec(par: UnsafeMutablePointer<AVCodecParameters>, allowHardware: Bool) throws
-        -> (UnsafeMutablePointer<AVCodecContext>, Bool) {
+    private static func openCodec(par: UnsafeMutablePointer<AVCodecParameters>, timeBase: AVRational,
+                                  allowHardware: Bool) throws -> (UnsafeMutablePointer<AVCodecContext>, Bool) {
         let id = par.pointee.codec_id
         guard let dec = avcodec_find_decoder(id) else {
             throw MediaError.unsupported("no decoder for \(codecName(id))")
@@ -112,6 +273,7 @@ final class VideoDecodeCore {
         var ok = false
         defer { if !ok { var c: UnsafeMutablePointer<AVCodecContext>? = ctx; avcodec_free_context(&c) } }
         guard avcodec_parameters_to_context(ctx, par) >= 0 else { throw MediaError.decodeFailed("parameters_to_context") }
+        ctx.pointee.pkt_timebase = timeBase
 
         var hw = false
         let hwCodecs: Set<AVCodecID> = [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_PRORES, AV_CODEC_ID_MPEG4,
@@ -147,6 +309,9 @@ final class VideoDecodeCore {
     // MARK: - Public entry
 
     /// Frame on screen at stream time `time` (last frame with PTS ≤ time, clamped).
+    /// Pictures decoded so far (all calls); lets callers measure decode cost per frame.
+    private(set) var decodedFrames = 0
+
     func frame(at time: CMTime) throws -> VideoFrame {
         var target = clock.ticksFloor(time)
         if target < clock.origin { target = clock.origin }
@@ -161,7 +326,7 @@ final class VideoDecodeCore {
 
     private func switchToSoftware() throws {
         guard let par = format.stream(streamIndex)?.pointee.codecpar else { throw MediaError.noSuchStream(streamIndex) }
-        let (ctx, _) = try Self.openCodec(par: par, allowHardware: false)
+        let (ctx, _) = try Self.openCodec(par: par, timeBase: clock.avTimeBase, allowHardware: false)
         var old: UnsafeMutablePointer<AVCodecContext>? = codec
         avcodec_free_context(&old)
         codec = ctx
@@ -187,12 +352,31 @@ final class VideoDecodeCore {
             try advance(to: target)
             if current == nil { try seekAndDecode(to: target) }
         }
-        guard current != nil else { throw MediaError.decodeFailed("no frame decoded for stream \(streamIndex)") }
+        guard let cur = current else { throw MediaError.decodeFailed("no frame decoded for stream \(streamIndex)") }
+        if usingHardware {
+            // VideoToolbox can silently drop a frame (e.g. under GPU/decoder pressure); that
+            // would hold the previous frame. Every packet presenting in (cur, target] must have
+            // produced a picture, else fall back to software (frame(at:) retries).
+            if sentPTS.contains(where: { $0 > cur.pts && $0 <= target }) {
+                throw MediaError.decodeFailed("VideoToolbox dropped a frame in stream \(streamIndex)")
+            }
+            sentPTS.removeAll { $0 <= target }
+        }
         return try output()
     }
 
+    /// PTS of packets sent to a hardware decoder and not yet checked against its output.
+    private var sentPTS: [Int64] = []
+
+    /// True when serving `time` needs a demuxer seek rather than decoding forward.
+    func requiresSeek(at time: CMTime) -> Bool {
+        let target = max(clock.origin, clock.ticksFloor(time))
+        return !covers(target) && needsSeek(to: target)
+    }
+
     private func needsSeek(to target: Int64) -> Bool {
-        guard let cur = current else { return !atStart }
+        // Fresh decoder: decoding from the start is only worth it for a target near the start.
+        guard let cur = current else { return !atStart || clock.seconds(target - clock.origin) > seekAheadThreshold }
         if target < cur.pts { return true }
         if let k = keyframeIndex(atOrBefore: target), keyframes[k] > cur.pts,
            clock.seconds(target - cur.pts) > seekAheadThreshold {
@@ -210,44 +394,49 @@ final class VideoDecodeCore {
         return lo == 0 ? nil : lo - 1
     }
 
-    /// Seek to the keyframe before `target`, stepping further back while the first
-    /// decoded frame lands after `target` (B-frame reordering / missing index).
+    /// Seek so the target frame decodes, stepping further back while the first decoded
+    /// frame lands after `target` (B-frame reordering, missing or inexact index).
+    ///
+    /// Demuxers seek by presentation time (mov picks the last sync sample presenting at or
+    /// before the timestamp), so the first try seeks to the target itself. Retries step back
+    /// one indexed keyframe at a time (or 1 s, 2 s, 4 s … without an index).
     private func seekAndDecode(to target: Int64) throws {
-        var k = keyframeIndex(atOrBefore: target)
-        var fallbackBack: Int64 = 0
-        for _ in 0..<64 {
+        var k = keyframeIndex(atOrBefore: target) ?? -1
+        var back: Int64 = 0
+        let first = keyframes.first ?? clock.origin
+        for attempt in 0..<64 {
             let seekTS: Int64
-            if !keyframes.isEmpty {
-                seekTS = k.map { keyframes[$0] } ?? Int64.min
+            if attempt == 0 {
+                seekTS = target
+            } else if !keyframes.isEmpty {
+                k -= 1
+                seekTS = k >= 0 ? keyframes[k] : Int64.min
             } else {
-                seekTS = target - fallbackBack
+                back = max(clock.ticks(seconds: 1), back * 2)
+                seekTS = target - back
             }
             try seek(to: seekTS)
+            try queuePacketsAfterSeek(target: target)
             try advance(to: target)
-            let firstWasBefore = current != nil
-            let atStreamStart = (!keyframes.isEmpty && (k ?? 0) <= 0) || (keyframes.isEmpty && seekTS <= clock.origin)
-            if firstWasBefore { return }
-            if atStreamStart {
+            if current != nil { return }
+            if seekTS == Int64.min || seekTS <= first {
                 // Target precedes every frame: hold the first frame.
                 if let p = pending { current = p; pending = nil; currentOutput = nil }
                 if current != nil { return }
                 throw MediaError.decodeFailed("stream \(streamIndex) has no frames")
-            }
-            if !keyframes.isEmpty {
-                k = (k ?? 0) - 1
-            } else {
-                fallbackBack = max(clock.ticks(seconds: 1), fallbackBack * 2)
             }
         }
         throw MediaError.decodeFailed("cannot seek to \(target) in stream \(streamIndex)")
     }
 
     private func resetState() {
+        clearPacketQueue()
         for f in [current, pending].compactMap({ $0 }) {
             var fp: UnsafeMutablePointer<AVFrame>? = f.frame
             av_frame_free(&fp)
         }
         current = nil; pending = nil; currentOutput = nil
+        sentPTS.removeAll()
         drained = false; sentFlushPacket = false; atStart = true
     }
 
@@ -281,6 +470,101 @@ final class VideoDecodeCore {
         }
     }
 
+    // MARK: - Packets
+
+    /// Packets read ahead after a seek, consumed by `readPacket()` before the demuxer.
+    private var packetQueue: [UnsafeMutablePointer<AVPacket>] = []
+
+    private func clearPacketQueue() {
+        for q in packetQueue { var qp: UnsafeMutablePointer<AVPacket>? = q; av_packet_free(&qp) }
+        packetQueue.removeAll()
+    }
+
+    /// Fills `packet` from the read-ahead queue or the demuxer. Negative at end of file.
+    private func readPacket() -> Int32 {
+        if !packetQueue.isEmpty {
+            let q = packetQueue.removeFirst()
+            av_packet_move_ref(packet, q)
+            var qp: UnsafeMutablePointer<AVPacket>? = q
+            av_packet_free(&qp)
+            return 0
+        }
+        return av_read_frame(format.ctx, packet)
+    }
+
+    /// After a seek, reads every packet that can present at or before `target` (all packets
+    /// up to the first with DTS > target) and drops disposable (non-reference) ones that
+    /// present before the target frame: nothing depends on them and they are never shown.
+    private func queuePacketsAfterSeek(target: Int64) throws {
+        guard canSkipDisposable else { return }
+        var read: [UnsafeMutablePointer<AVPacket>] = []
+        while read.count < 2048 {
+            guard let q = av_packet_alloc() else { break }
+            if av_read_frame(format.ctx, q) < 0 { var qp: UnsafeMutablePointer<AVPacket>? = q; av_packet_free(&qp); break }
+            if Int(q.pointee.stream_index) != streamIndex { var qp: UnsafeMutablePointer<AVPacket>? = q; av_packet_free(&qp); continue }
+            read.append(q)
+            let d = q.pointee.dts != avNoPTS ? q.pointee.dts : q.pointee.pts
+            if d != avNoPTS && d > target { break }
+        }
+        var targetPTS = Int64.min
+        for q in read where q.pointee.pts != avNoPTS && q.pointee.pts <= target { targetPTS = max(targetPTS, q.pointee.pts) }
+        for q in read {
+            let pts = q.pointee.pts
+            if pts != avNoPTS, pts < targetPTS, isDisposable(q) {
+                var qp: UnsafeMutablePointer<AVPacket>? = q
+                av_packet_free(&qp)
+            } else {
+                packetQueue.append(q)
+            }
+        }
+    }
+
+    /// NAL length size for length-prefixed (avcC) H.264, nil for Annex B / other codecs.
+    private lazy var avcLengthSize: Int? = {
+        guard codec.pointee.codec_id == AV_CODEC_ID_H264, let ex = codec.pointee.extradata,
+              codec.pointee.extradata_size >= 7, ex[0] == 1 else { return nil }
+        return Int(ex[4] & 3) + 1
+    }()
+
+    private var canSkipDisposable: Bool {
+        codec.pointee.codec_id == AV_CODEC_ID_H264 && ProcessInfo.processInfo.environment["WIZREC_NO_SKIP"] == nil
+    }
+
+    /// True when the packet's picture is never used as a reference.
+    private func isDisposable(_ q: UnsafeMutablePointer<AVPacket>) -> Bool {
+        if (q.pointee.flags & AV_PKT_FLAG_DISPOSABLE) != 0 { return true }
+        if (q.pointee.flags & AV_PKT_FLAG_KEY) != 0 { return false }
+        guard let data = q.pointee.data else { return false }
+        let size = Int(q.pointee.size)
+        // H.264: the first VCL NAL (type 1 or 5) decides; nal_ref_idc == 0 means non-reference.
+        func check(_ nal: Int) -> Bool? {
+            let b = data[nal], type = b & 0x1F
+            guard type == 1 || type == 5 else { return nil }
+            return (b >> 5) & 3 == 0
+        }
+        if let len = avcLengthSize {
+            var o = 0
+            while o + len < size {
+                var n = 0
+                for i in 0..<len { n = (n << 8) | Int(data[o + i]) }
+                let nal = o + len
+                guard n > 0, nal + n <= size else { return false }
+                if let r = check(nal) { return r }
+                o = nal + n
+            }
+            return false
+        }
+        // Annex B start codes.
+        var i = 0
+        while i + 3 < size {
+            if data[i] == 0, data[i + 1] == 0, data[i + 2] == 1 {
+                if let r = check(i + 3) { return r }
+                i += 3
+            } else { i += 1 }
+        }
+        return false
+    }
+
     /// Next frame in presentation order, or nil at end of stream.
     private func decodeNext() throws -> DecodedFrame? {
         guard let f = av_frame_alloc() else { throw MediaError.decodeFailed("av_frame_alloc") }
@@ -301,13 +585,14 @@ final class VideoDecodeCore {
                     continue
                 }
                 keep = true
+                decodedFrames += 1
                 return DecodedFrame(frame: f, pts: pts)
             }
             if r == avErrorEOF { return nil }
             guard r == avErrorEAGAIN else { throw MediaError.decodeFailed("receive_frame: \(avErrorString(r))") }
 
             if sentFlushPacket { return nil }
-            let rr = av_read_frame(format.ctx, packet)
+            let rr = readPacket()
             if rr < 0 {
                 // End of file (or read error): drain the decoder.
                 sentFlushPacket = true
@@ -317,6 +602,9 @@ final class VideoDecodeCore {
             defer { av_packet_unref(packet) }
             guard Int(packet.pointee.stream_index) == streamIndex else { continue }
             atStart = false
+            if usingHardware, packet.pointee.pts != avNoPTS, (packet.pointee.flags & AV_PKT_FLAG_DISCARD) == 0 {
+                sentPTS.append(packet.pointee.pts)
+            }
             let s = avcodec_send_packet(codec, packet)
             if s < 0 && s != avErrorEAGAIN {
                 // Corrupt packet: skip it, like ffmpeg does, unless hardware refuses everything.

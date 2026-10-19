@@ -103,9 +103,15 @@ enum Synth {
         if writer.status != .completed { throw writer.error ?? MediaError.decodeFailed("finishWriting") }
     }
 
-    /// 16-bit PCM WAV of a sine (`frequency` Hz, amplitude 0.5) on every channel.
+    /// Sample `i` of the test sine: amplitude 0.5, silent before `onset` seconds.
+    static func sine(_ i: Int, rate: Double, frequency: Double, onset: Double = 0) -> Double {
+        let t = Double(i) / rate
+        return t < onset ? 0 : 0.5 * sin(2 * Double.pi * frequency * t)
+    }
+
+    /// 16-bit PCM WAV of a sine (`frequency` Hz, amplitude 0.5) on every channel, silent before `onset`.
     static func writeWAV(to url: URL, seconds: Double, sampleRate: Double = 44100, channels: Int = 1,
-                         frequency: Double = 441) throws {
+                         frequency: Double = 441, onset: Double = 0) throws {
         let n = Int(seconds * sampleRate)
         var data = Data()
         func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
@@ -115,7 +121,7 @@ enum Synth {
         u32(UInt32(sampleRate)); u32(UInt32(sampleRate) * UInt32(channels * 2)); u16(UInt16(channels * 2)); u16(16)
         data.append(contentsOf: Array("data".utf8)); u32(UInt32(n * channels * 2))
         for i in 0..<n {
-            let v = Int16((0.5 * sin(2 * Double.pi * frequency * Double(i) / sampleRate) * 32767).rounded())
+            let v = Int16((sine(i, rate: sampleRate, frequency: frequency, onset: onset) * 32767).rounded())
             for _ in 0..<channels { u16(UInt16(bitPattern: v)) }
         }
         try data.write(to: url)

@@ -51,6 +51,10 @@ final class FrameConverter {
     private var sws: UnsafeMutablePointer<SwsContext>?
     private var swsKey: (Int32, Int32, Int32, Int32, Int32) = (0, 0, -1, -1, -1)
     private var transfer: VTPixelTransferSession?
+    /// Codec of the stream; picks the default matrix for untagged frames.
+    private let codecID: AVCodecID
+
+    init(codec: AVCodecID) { codecID = codec }
 
     deinit {
         if let s = sws { sws_freeContext(s) }
@@ -105,7 +109,7 @@ final class FrameConverter {
             let desc = av_pix_fmt_desc_get(AVPixelFormat(fmt))
             let isRGB = desc.map { ($0.pointee.flags & UInt64(AV_PIX_FMT_FLAG_RGB)) != 0 } ?? false
             if !isRGB {
-                let cs = Self.swsColorspace(colorspace, height: h)
+                let cs = Self.swsColorspace(colorspace, codec: codecID, height: h)
                 // Unspecified range on YUV means limited ("tv") range, the libav convention.
                 let srcFull: Int32 = (range == AVCOL_RANGE_JPEG || Self.isJPEGFormat(fmt)) ? 1 : 0
                 let coeffs = sws_getCoefficients(cs)
@@ -133,15 +137,19 @@ final class FrameConverter {
         return dst
     }
 
-    /// BT.709 when tagged (or unspecified HD), else BT.601. [inf: tscc2 is untagged]
-    static func swsColorspace(_ cs: AVColorSpace, height: Int) -> Int32 {
+    /// The YUV->RGB matrix. Tagged streams follow their tags. Untagged: tscc2 is BT.601
+    /// (limited range; docs/specs/media-streams.md 5a [obs]); other untagged streams use
+    /// BT.709 from 720 lines up, else BT.601 (the common convention) [inf].
+    static func swsColorspace(_ cs: AVColorSpace, codec: AVCodecID, height: Int) -> Int32 {
         switch cs {
         case AVCOL_SPC_BT709: return Int32(SWS_CS_ITU709)
         case AVCOL_SPC_BT2020_NCL, AVCOL_SPC_BT2020_CL: return Int32(SWS_CS_BT2020)
         case AVCOL_SPC_SMPTE240M: return Int32(SWS_CS_SMPTE240M)
         case AVCOL_SPC_FCC: return Int32(SWS_CS_FCC)
         case AVCOL_SPC_BT470BG, AVCOL_SPC_SMPTE170M: return Int32(SWS_CS_ITU601)
-        default: return height >= 720 ? Int32(SWS_CS_ITU709) : Int32(SWS_CS_ITU601)
+        default:
+            if codec == AV_CODEC_ID_TSCC2 { return Int32(SWS_CS_ITU601) }
+            return height >= 720 ? Int32(SWS_CS_ITU709) : Int32(SWS_CS_ITU601)
         }
     }
 

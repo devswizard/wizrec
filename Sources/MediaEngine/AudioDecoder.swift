@@ -13,10 +13,12 @@ actor AudioDecoder {
     private let core: AudioDecodeCore
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    init(url: URL, streamIndex: Int) throws {
+    /// `streamIndex`: libav (container) index. `trim`: leading samples to drop (AAC priming);
+    /// `length`: valid samples after the trim, when known.
+    init(url: URL, streamIndex: Int, trim: Int64 = 0, length: Int64? = nil) throws {
         self.streamIndex = streamIndex
         self.queue = DispatchSerialQueue(label: "wizrec.media.audio.\(streamIndex)", qos: .userInitiated)
-        self.core = try AudioDecodeCore(url: url, streamIndex: streamIndex)
+        self.core = try AudioDecodeCore(url: url, streamIndex: streamIndex, trim: trim, length: length)
     }
 
     /// PCM for `range` (stream time), resampled to `format`, silence outside the stream.
@@ -50,15 +52,23 @@ final class AudioDecodeCore {
     /// Source samples decoded before the requested region after a seek (decoder warm-up).
     private let preroll: Int64 = 4096
 
-    init(url: URL, streamIndex: Int) throws {
+    /// Decoded samples dropped from the start (priming); sample 0 = decoded sample `trim`.
+    let trim: Int64
+    /// Valid sample count, when known; later samples are silence.
+    let validLength: Int64?
+
+    init(url: URL, streamIndex: Int, trim: Int64, length: Int64?) throws {
         self.streamIndex = streamIndex
+        self.trim = max(0, trim)
+        self.validLength = length
         let fc = try FormatContext(url: url)
         guard let st = fc.stream(streamIndex), let par = st.pointee.codecpar,
               par.pointee.codec_type == AVMEDIA_TYPE_AUDIO
         else { throw MediaError.noSuchStream(streamIndex) }
         fc.discardAll(except: streamIndex)
         format = fc
-        clock = StreamClock(timeBase: st.pointee.time_base, origin: streamOrigin(st))
+        // Stream time 0 = movie time 0 (edit lists applied by libav), minus `trim` samples.
+        clock = StreamClock(timeBase: st.pointee.time_base, origin: 0)
         guard let dec = avcodec_find_decoder(par.pointee.codec_id) else {
             throw MediaError.unsupported("no decoder for \(codecName(par.pointee.codec_id))")
         }
@@ -67,6 +77,8 @@ final class AudioDecodeCore {
         guard avcodec_parameters_to_context(ctx, par) >= 0 else {
             avcodec_free_context(&c); throw MediaError.decodeFailed("parameters_to_context")
         }
+        // Lets the decoder shift frame timestamps when it drops priming (skip-samples) audio.
+        ctx.pointee.pkt_timebase = st.pointee.time_base
         let rc = avcodec_open2(ctx, dec, nil)
         guard rc >= 0 else { avcodec_free_context(&c); throw MediaError.decodeFailed("avcodec_open2: \(avErrorString(rc))") }
         guard let pkt = av_packet_alloc(), let frm = av_frame_alloc() else {
@@ -138,7 +150,8 @@ final class AudioDecodeCore {
         let count = Int(b - a)
         var out = Array(repeating: [Float](repeating: 0, count: count), count: sourceChannels)
         let lo = max(a, 0)
-        let hi = endSample.map { min(b, $0) } ?? b
+        var hi = endSample.map { min(b, $0) } ?? b
+        if let v = validLength { hi = min(hi, v) }
         if lo < hi {
             try ensureDecoded(lo, hi)
             let s = max(lo, bufStart), e = min(hi, bufEnd)
@@ -187,8 +200,13 @@ final class AudioDecodeCore {
         positioned = true
         flushed = false
         avcodec_flush_buffers(codec)
-        let ts = clock.origin + clock.ticks(seconds: Double(s) / sourceRate)
+        var ts = clock.ticks(seconds: Double(s + trim) / sourceRate)
         let idx = Int32(streamIndex)
+        if s <= 0, let st = format.stream(streamIndex) {
+            // From the very first packet, so libav re-applies the start-of-stream priming skip
+            // (a seek into the priming region skips the wrong amount).
+            ts = avformat_index_get_entries_count(st) > 0 ? (avformat_index_get_entry(st, 0)?.pointee.timestamp ?? Int64.min) : Int64.min
+        }
         var rc = avformat_seek_file(format.ctx, idx, Int64.min, ts, ts, 0)
         if rc < 0 { rc = av_seek_frame(format.ctx, idx, ts, AVSEEK_FLAG_BACKWARD) }
         if rc < 0 { rc = av_seek_frame(format.ctx, idx, ts, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) }
@@ -225,7 +243,7 @@ final class AudioDecodeCore {
         if pts == avNoPTS { pts = f.pointee.pts }
         var start: Int64 = buf[0].isEmpty ? 0 : bufEnd
         if pts != avNoPTS {
-            start = Int64((clock.seconds(pts - clock.origin) * sourceRate).rounded())
+            start = Int64((clock.seconds(pts) * sourceRate).rounded()) - trim
         }
         if buf[0].isEmpty {
             bufStart = start
