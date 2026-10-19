@@ -5,6 +5,10 @@ import TimelineEngine
 extension TimelineView: NSMenuItemValidation {
     /// Pasteboard type for media-bin drags: one string per item, the `sourceBin` id.
     public static let sourceIDType = NSPasteboard.PasteboardType("com.devswizard.wizrec.source-id")
+    /// Library drags: string = effect name (`TimelineLibrary.effects`), dropped on a clip.
+    public static let effectType = NSPasteboard.PasteboardType("com.devswizard.wizrec.effect")
+    /// Library drags: string = transition name (`TimelineLibrary.transitions`), dropped on a cut or clip edge.
+    public static let transitionType = NSPasteboard.PasteboardType("com.devswizard.wizrec.transition")
 
     /// Thumbnail and waveform source. Nil draws placeholders.
     public var mediaProvider: (any TimelineMediaProvider)? {
@@ -62,6 +66,34 @@ extension TimelineView: NSMenuItemValidation {
         if !editor.addTrack(at: canvas.snapshot.tracks.count) { NSSound.beep() }
     }
     @objc public func toggleSnapping(_ sender: Any?) { model.snappingEnabled.toggle() }
+    /// Sets the selected clips' speed: `sender` is an NSMenuItem whose `representedObject` is an
+    /// NSNumber speed (2 = 2×), or whose `tag` is a percentage (200 = 2×). ⌥ in the menu = ripple.
+    @objc public func setClipSpeed(_ sender: Any?) {
+        guard let speed = Self.speed(from: sender) else { NSSound.beep(); return }
+        let ripple = NSApp?.currentEvent?.modifierFlags.contains(.option) ?? false
+        if !editor.setSpeed(speed, ripple: ripple) { NSSound.beep() }
+    }
+    /// Holds the last frame of the selected clips: `representedObject` NSNumber seconds, default 1 s.
+    @objc public func extendFrame(_ sender: Any?) {
+        let secs = ((sender as? NSMenuItem)?.representedObject as? NSNumber)?.doubleValue ?? 1
+        if !editor.extendFrame(seconds: secs) { NSSound.beep() }
+    }
+    /// Renames the marker under (or nearest within 6 pt of) the playhead.
+    @objc public func renameMarker(_ sender: Any?) {
+        guard let m = editor.marker(near: model.playhead, tolerance: canvas.layout.ticks(forWidth: 6)) else {
+            NSSound.beep(); return
+        }
+        canvas.beginRenameMarker(at: m.time)
+    }
+
+    static func speed(from sender: Any?) -> Double? {
+        if let item = sender as? NSMenuItem {
+            if let n = item.representedObject as? NSNumber { return n.doubleValue }
+            if item.tag > 0 { return Double(item.tag) / 100 }
+        }
+        if let n = sender as? NSNumber { return n.doubleValue }
+        return nil
+    }
     /// Adds a marker at the playhead. Key: M.
     @objc public func addMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
     override public func selectAll(_ sender: Any?) { model.selection = Set(canvas.snapshot.allClips.map(\.id)) }
@@ -76,6 +108,11 @@ extension TimelineView: NSMenuItemValidation {
         case #selector(toggleSnapping(_:)):
             item.state = model.snappingEnabled ? .on : .off
             return true
+        case #selector(setClipSpeed(_:)): return !editor.retimableSelection.isEmpty
+        case #selector(extendFrame(_:)):
+            return editor.retimableSelection.contains { canvas.snapshot.clip($0).map { !$0.clip.videoSpans.isEmpty } ?? false }
+        case #selector(renameMarker(_:)):
+            return editor.marker(near: model.playhead, tolerance: canvas.layout.ticks(forWidth: 6)) != nil
         case #selector(selectAll(_:)): return !canvas.snapshot.allClips.isEmpty
         case #selector(deselectAll(_:)): return !model.selection.isEmpty
         default: return true

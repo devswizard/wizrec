@@ -367,6 +367,8 @@ extension TimelineCanvas {
                 (plan.isValid ? Palette.marqueeStroke : Palette.invalid).setFill()
                 ctx.fill(CGRect(x: x - 1, y: rr.minY, width: 2, height: rr.height))
             }
+        case .marker(_, _, let g):
+            guide = g
         case .marquee(let oc, let pc, _):
             let o = viewPoint(oc), p = viewPoint(pc)
             let r = CGRect(x: min(o.x, p.x), y: min(o.y, p.y), width: abs(p.x - o.x), height: abs(p.y - o.y))
@@ -380,6 +382,22 @@ extension TimelineCanvas {
             let x = L.x(ofTicks: drop.ticks).rounded()
             Palette.marqueeStroke.setFill()
             ctx.fill(CGRect(x: x - 1, y: rr.minY, width: 2, height: rr.height))
+        }
+        switch libraryTarget {
+        case .effect(_, let id)?:
+            if let (track, c) = snapshot.clip(id), let r = L.clipRect(track: track, start: c.start, duration: c.duration) {
+                ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(3)
+                ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 5, cornerHeight: 5, transform: nil))
+                ctx.strokePath()
+            }
+        case .transition(_, let l, let rgt)?:
+            if let span = editor.transitionSpan(left: l, right: rgt),
+               let r = L.clipRect(track: span.track, start: span.start, duration: span.end - span.start) {
+                Palette.marqueeFill.setFill(); ctx.fill(r)
+                ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(2)
+                ctx.stroke(r.insetBy(dx: 1, dy: 1))
+            }
+        case nil: break
         }
         if let g = guide {
             let x = L.x(ofTicks: g).rounded() + 0.5
@@ -428,9 +446,15 @@ extension TimelineCanvas {
         ctx.restoreGState()
     }
 
+    /// Markers as drawn now (a dragged marker at its preview position).
+    var displayedMarkers: [Marker] {
+        guard case .marker(let from, let to, _) = drag else { return snapshot.markers }
+        return snapshot.markers.map { $0.time == from ? Marker(time: to, name: $0.name) : $0 }
+    }
+
     func drawMarkers(_ ctx: CGContext, _ L: TimelineLayout, ruler r: CGRect) {
         let font = NSFont.systemFont(ofSize: 9.5, weight: .semibold)
-        for m in snapshot.markers {
+        for m in displayedMarkers {
             let x = L.x(ofTicks: m.time).rounded()
             guard x > r.minX - 80, x < r.maxX + 8 else { continue }
             let pin = CGMutablePath()
@@ -451,12 +475,13 @@ extension TimelineCanvas {
     }
 
     func drawMarkerLines(_ ctx: CGContext, _ L: TimelineLayout) {
-        guard !snapshot.markers.isEmpty else { return }
+        let markers = displayedMarkers
+        guard !markers.isEmpty else { return }
         ctx.saveGState()
         ctx.setStrokeColor(Palette.marker.withAlphaComponent(0.45).cgColor)
         ctx.setLineWidth(1)
         ctx.setLineDash(phase: 0, lengths: [2, 3])
-        for m in snapshot.markers {
+        for m in markers {
             let x = L.x(ofTicks: m.time).rounded() + 0.5
             guard x >= L.clipArea.minX, x <= L.clipArea.maxX else { continue }
             ctx.move(to: CGPoint(x: x, y: L.clipArea.minY)); ctx.addLine(to: CGPoint(x: x, y: L.clipArea.maxY))
@@ -602,7 +627,13 @@ extension TimelineCanvas {
 
     // MARK: Context menus
 
-    func contextMenu(for hit: TimelineHit) -> NSMenu? {
+    /// Transition on `track` whose window contains view x `x`.
+    func transition(onTrack track: Int, atX x: CGFloat) -> TimelineTransitionItem? {
+        let t = layout.ticks(atX: x)
+        return snapshot.track(track)?.transitions.first { $0.start <= t && t <= $0.end }
+    }
+
+    func contextMenu(for hit: TimelineHit, at p: CGPoint = .zero) -> NSMenu? {
         let menu = NSMenu()
         func item(_ title: String, _ action: Selector, _ tag: Int = 0, enabled: Bool = true) {
             let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -611,7 +642,15 @@ extension TimelineCanvas {
         }
         menu.autoenablesItems = false
         switch hit {
-        case .clip:
+        case .clip(_, let track, _):
+            if let tr = transition(onTrack: track, atX: p.x) {
+                let i = NSMenuItem(title: "Remove Transition", action: #selector(menuRemoveTransition(_:)), keyEquivalent: "")
+                i.target = self
+                i.representedObject = [tr.leftClipID.map { NSNumber(value: $0) } ?? NSNull(),
+                                       tr.rightClipID.map { NSNumber(value: $0) } ?? NSNull()] as NSArray
+                menu.addItem(i)
+                menu.addItem(.separator())
+            }
             item("Split at Playhead", #selector(menuSplit(_:)), enabled: !editor.splitTargets(at: model.playhead).isEmpty)
             menu.addItem(.separator())
             item("Delete", #selector(menuDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
@@ -627,6 +666,9 @@ extension TimelineCanvas {
             let remove = NSMenuItem(title: "Remove Marker", action: #selector(menuRemoveMarker(_:)), keyEquivalent: "")
             remove.target = self; remove.isEnabled = near != nil; remove.representedObject = near.map { NSNumber(value: $0.time) }
             menu.addItem(remove)
+            let rename = NSMenuItem(title: "Rename Marker…", action: #selector(menuRenameMarker(_:)), keyEquivalent: "")
+            rename.target = self; rename.isEnabled = near != nil; rename.representedObject = near.map { NSNumber(value: $0.time) }
+            menu.addItem(rename)
             menu.addItem(.separator())
             item("Zoom to Fit", #selector(menuZoomToFit(_:)))
         case .track, .empty, .corner:
@@ -642,7 +684,16 @@ extension TimelineCanvas {
     @objc func menuAddTrack(_ sender: NSMenuItem) { if !editor.addTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuRemoveTrack(_ sender: NSMenuItem) { if !editor.removeTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuZoomToFit(_ sender: Any?) { zoomToFit() }
+    @objc func menuRemoveTransition(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? NSArray, pair.count == 2 else { return }
+        let l = (pair[0] as? NSNumber)?.int64Value, r = (pair[1] as? NSNumber)?.int64Value
+        if !editor.removeTransition(left: l, right: r) { NSSound.beep() }
+    }
     @objc func menuAddMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
+    @objc func menuRenameMarker(_ sender: NSMenuItem) {
+        guard let t = (sender.representedObject as? NSNumber)?.int64Value else { return }
+        beginRenameMarker(at: t)
+    }
     @objc func menuRemoveMarker(_ sender: NSMenuItem) {
         guard let t = (sender.representedObject as? NSNumber)?.int64Value else { return }
         if !editor.removeMarker(near: t, tolerance: 0) { NSSound.beep() }

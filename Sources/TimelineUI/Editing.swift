@@ -355,6 +355,108 @@ public struct TimelineEditor {
         snapshot.markers.filter { abs($0.time - t) <= tolerance }.min { abs($0.time - t) < abs($1.time - t) }
     }
 
+    /// Moves the marker at `from` to `to` (ticks; the command frame-snaps).
+    @discardableResult
+    public func moveMarker(from: Int64, to: Int64) -> Bool {
+        guard from != to, snapshot.markers.contains(where: { $0.time == from }) else { return false }
+        return perform(MoveMarker(from: from, to: max(0, to)))
+    }
+
+    /// Renames the marker at `time`.
+    @discardableResult
+    public func renameMarker(at time: Int64, to name: String) -> Bool {
+        guard let m = snapshot.markers.first(where: { $0.time == time }), m.name != name else { return false }
+        return perform(RenameMarker(at: time, to: name))
+    }
+
+    /// Selected clips whose speed can change (not images, callouts or shaders).
+    public var retimableSelection: [Int64] {
+        snapshot.tracks.filter { !$0.locked }.flatMap(\.clips)
+            .filter { model.selection.contains($0.id) && ![.image, .callout, .shader].contains($0.style) }
+            .map(\.id)
+    }
+
+    /// Sets the speed of the retimable selected clips (one undo step). `speed` > 0, e.g. 2 = 2×.
+    /// With `ripple`, later clips follow the length change; without it a clip that would grow
+    /// into its neighbour makes the command fail.
+    @discardableResult
+    public func setSpeed(_ speed: Double, ripple: Bool = false) -> Bool {
+        let ids = retimableSelection
+        guard speed > 0, speed.isFinite, !ids.isEmpty else { return false }
+        let r = Rational(Int64((speed * 1000).rounded()), 1000)
+        let cmds: [any EditCommand] = ids.map { SetClipSpeed(clipID: $0, speed: r, ripple: ripple) }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Clip Speed", cmds))
+    }
+
+    /// Holds the last frame of each retimable selected clip for `seconds` (frame-rounded).
+    @discardableResult
+    public func extendFrame(seconds: Double) -> Bool {
+        let ids = retimableSelection.filter { id in snapshot.clip(id).map { !$0.clip.videoSpans.isEmpty } ?? false }
+        let ticks = snapshot.quantize(Int64((seconds * Double(snapshot.editRate)).rounded()))
+        guard ticks > 0, !ids.isEmpty else { return false }
+        let cmds: [any EditCommand] = ids.map { ExtendFrame(clipID: $0, duration: ticks) }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Extend Frame", cmds))
+    }
+
+    // MARK: Library (effects, transitions)
+
+    /// Adds library effect `name` (defaults from `TimelineLibrary`; unknown names get no
+    /// parameters) to clip `clipID`. Locked tracks refuse.
+    @discardableResult
+    public func addEffect(named name: String, to clipID: Int64) -> Bool {
+        guard let (track, _) = snapshot.clip(clipID), snapshot.track(track)?.locked == false else { return false }
+        let preset = TimelineLibrary.effect(named: name)
+        return perform(AddEffect(clipID: clipID, name: name, category: preset?.category ?? "categoryVisualEffects",
+                                 parameters: (preset?.parameters ?? []).map { ($0.key, $0.value) }))
+    }
+
+    /// Which clip edges a transition dropped at tick `t` on `track` covers: a cut between two
+    /// touching clips within `tolerance` → both; otherwise the nearer edge of the clip under
+    /// `t` (start → fade in, `right` only; end → fade out, `left` only).
+    public func transitionTarget(track: Int, at t: Int64, tolerance: Int64) -> (left: Int64?, right: Int64?)? {
+        guard let tr = snapshot.track(track), !tr.locked else { return nil }
+        let clips = tr.clips
+        for (a, b) in zip(clips, clips.dropFirst()) where a.end == b.start && abs(t - a.end) <= tolerance {
+            return (a.id, b.id)
+        }
+        guard let c = clips.first(where: { $0.start <= t && t < $0.end }) else { return nil }
+        return t - c.start < c.end - t ? (nil, c.id) : (c.id, nil)
+    }
+
+    /// Track ticks a transition on these sides spans (for highlighting), or nil.
+    public func transitionSpan(left: Int64?, right: Int64?) -> (track: Int, start: Int64, end: Int64)? {
+        let d = transitionDuration(left: left, right: right)
+        switch (left.flatMap { snapshot.clip($0) }, right.flatMap { snapshot.clip($0) }) {
+        case let (l?, _?): return (l.track, l.clip.end - d / 2, l.clip.end - d / 2 + d)
+        case let (l?, nil): return (l.track, l.clip.end - d, l.clip.end)
+        case let (nil, r?): return (r.track, r.clip.start, r.clip.start + d)
+        default: return nil
+        }
+    }
+
+    /// Default length (`TimelineLibrary.defaultTransitionSeconds`), at most half of each
+    /// covered clip, frame-rounded, at least one frame.
+    public func transitionDuration(left: Int64?, right: Int64?) -> Int64 {
+        var d = Int64((TimelineLibrary.defaultTransitionSeconds * Double(snapshot.editRate)).rounded())
+        for id in [left, right].compactMap({ $0 }) {
+            if let c = snapshot.clip(id)?.clip { d = min(d, c.duration / 2) }
+        }
+        let f = snapshot.frameTicks
+        return max(f, (d / f) * f)
+    }
+
+    @discardableResult
+    public func addTransition(named name: String, left: Int64?, right: Int64?) -> Bool {
+        guard left != nil || right != nil else { return false }
+        return perform(AddTransition(name: name, leftClipID: left, rightClipID: right,
+                                     duration: transitionDuration(left: left, right: right)))
+    }
+
+    @discardableResult
+    public func removeTransition(left: Int64?, right: Int64?) -> Bool {
+        perform(RemoveTransition(leftClipID: left, rightClipID: right))
+    }
+
     @discardableResult
     public func removeMarker(near t: Int64, tolerance: Int64) -> Bool {
         guard let m = marker(near: t, tolerance: tolerance) else { return false }
