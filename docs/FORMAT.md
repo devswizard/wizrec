@@ -217,7 +217,15 @@ Each entry in `track.transitions[]` looks like this [obs, one sample]:
 ```
 
 `leftMedia` and `rightMedia` hold clip ids. When only one side is present, the
-transition is a fade in or fade out at a clip edge [inf].
+transition is a fade in or fade out at a clip edge [inf]. For the catalog,
+timing and shader-transition inputs, see `docs/specs/transitions.md`.
+
+### Markers
+
+Timeline markers are stored as `timeline.parameters.toc`, a string
+parameter with one keyframe per marker: `{time, endTime: time, duration: 0,
+value: name}` [obs: two bundle samples]. Clip markers are [?]. See
+`docs/specs/markers.md`.
 
 ### Callouts (`def`)
 
@@ -230,17 +238,22 @@ font {name, size, weight, tracking, color-*},
 textAttributes {type: "textAttributeList", keyframes[]}
 ```
 
-Rich text can also be stored as RTF, in `metadata.default-text`.
+Rich text can also be stored as RTF, in `metadata.default-text`. For the
+`kind`/`shape` catalog and text runs, see `docs/specs/callouts.md`.
 
 ### Captions
 
 - Caption style lives in `timeline.captionAttributes`: font, colours, `lang`
   and opacity [obs].
-- Dynamic captions are stored on an audio clip:
-  `parameters.transcription = {type: "string", keyframes[]}`. Each keyframe
-  holds one word, and its `time` is when that word starts [obs].
-- The many style keys named `dynamic-caption-*` control how the captions
-  look [obs].
+- Transcribed words are stored on the **source**, not on a clip:
+  `sourceBin[i].sourceTracks[j].parameters.transcription = {type: "string",
+  keyframes[]}`, plus `transcriptionSet: true`. Each keyframe holds one word,
+  and its `time` (project ticks, on the source's media axis) is when that word
+  starts [obs: seven samples]. Corrected 2026-10-19: this was earlier
+  described as a clip parameter.
+- A dynamic caption is a `Callout` with `modifier: "dynamicCaption"` and
+  `style: "caption"`. Its many `dynamic-caption-*` style keys control how the
+  captions look [obs]. See `docs/specs/captions.md`.
 
 ## Media files
 
@@ -259,9 +272,11 @@ Rich text can also be stored as RTF, in `metadata.default-text`.
     and decode to no picture [obs].
   - See `docs/specs/media-streams.md`.
 - **`.tscshadervid`** is JSON of the form
-  `{name, version, width, height, code}`, where `code` is a GLSL fragment
-  shader [obs]. Its uniforms (`_Color0..3`, `_MidPointX/Y`, `_Speed`) match
-  the parameters of the `SourceEffect` that uses it.
+  `{name, version, width, height, effectDef, code, vertexCode?, numVertices?,
+  blend?, signature, copyright}`. `code` is a GLSL fragment shader, and its
+  uniforms `_<name>` match the `effectDef` entries and the clip's
+  `sourceEffect` parameters [obs]. `_Time` is in seconds [obs]. See
+  `docs/specs/shader-backgrounds.md`.
   Shaders that ship with Camtasia are TechSmith content. Render them only when
   a user's own project includes them, and never redistribute them.
 
@@ -269,7 +284,9 @@ Rich text can also be stored as RTF, in `metadata.default-text`.
 
 - [?] The exact `eioe` easing curve.
 - [?] The layout of `.trec` `TSCM` records (cursor and click data).
-- [?] The full list of transition names and their parameters.
+- [~] Transition names: catalogued in `docs/specs/transitions.md`. How a
+  project names a shader transition, and the window placement between two
+  clips, are still [?].
 - [?] The rendering maths for each effect (shadow, rounded corners, motion
   blur, cursor physics).
 - ✅ **Camtasia accepts our rewritten files** [obs, 2026-10-19].
