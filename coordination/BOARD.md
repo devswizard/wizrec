@@ -115,18 +115,18 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M9-EXP-2 | export | claimed | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
 | M9-EXP-3 | export | claimed | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
 | M10-CAP-1 | captions | done | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
-| M10-CAP-2 | captions | claimed | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
-| M3-TUI-1 | timelineui | claimed | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
+| M10-CAP-2 | captions | done | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
+| M3-TUI-1 | timelineui | done | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
 | M2-APP-4 | app | claimed | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
 
 # Wave C — M11 polish & ship
 
 | id | owner | status | depends-on | acceptance |
 |---|---|---|---|---|
-| M11-SHIP-1 | ship | claimed | — | `Sources/WizRecAssets`: our own original library — backgrounds (Metal/GLSL we write), transitions (Fade/Dissolve/wipes/slide/cube… our shaders), callout presets, cursor art (arrow/hand/I-beam), click-effect art, OFL fonts (upstream copies + licence files); catalog API; no TechSmith content |
-| M11-SHIP-2 | ship | claimed | — | Release engineering: `scripts/make-app.sh` release build with bundled FFmpeg dylibs (rpath fix, licence notices), codesign/notarize script taking identity from env (no secrets in repo), DMG, Sparkle (MIT) integration plan behind a flag, CI update |
-| M11-SHIP-3 | ship | claimed | — | Docs: README refresh, CONTRIBUTING.md (clean-room rules), user guide (`docs/user-guide/`), keyboard shortcut map, third-party notices |
-| M11-APP-1 | app | todo | M2-APP-4 | Preferences, onboarding, accessibility pass, localisation scaffolding (String Catalog), Open Recent, crash reporting opt-in (local only) |
+| M11-SHIP-1 | ship | done | — | `Sources/WizRecAssets`: our own original library — backgrounds (Metal/GLSL we write), transitions (Fade/Dissolve/wipes/slide/cube… our shaders), callout presets, cursor art (arrow/hand/I-beam), click-effect art, OFL fonts (upstream copies + licence files); catalog API; no TechSmith content |
+| M11-SHIP-2 | ship | done | — | Release engineering: `scripts/make-app.sh` release build with bundled FFmpeg dylibs (rpath fix, licence notices), codesign/notarize script taking identity from env (no secrets in repo), DMG, Sparkle (MIT) integration plan behind a flag, CI update |
+| M11-SHIP-3 | ship | done | — | Docs: README refresh, CONTRIBUTING.md (clean-room rules), user guide (`docs/user-guide/`), keyboard shortcut map, third-party notices |
+| M11-APP-1 | app | done | M2-APP-4 | Preferences, onboarding, accessibility pass, localisation scaffolding (String Catalog), Open Recent, crash reporting opt-in (local only) |
 
 # Session 2 (2026-10-19) — resume of waves B and C
 
@@ -154,3 +154,8 @@ worktrees removed; branches kept.
 - app3: AUD-4 playback through AudioMixer, basic mix removed (526).
 - captions3: CAP-1 commands, SRT/VTT, TranscriptionBackend + Apple Speech (gated) (587 with ship).
 - ship3 slice 1: WizRecAssets catalog, own shaders/art, 4 OFL fonts.
+- ship3: GLSL transition renderer (all 18 catalog transitions), release scripts, docs + notices (621). SHIP done.
+- app3: M11-APP-1 preferences, onboarding, crash log opt-in, String Catalog, a11y (608).
+- timelineui3: library from WizRecAssets, renderedTransitions. M3-TUI-1 done.
+- captions3: CAP-2 dynamic captions rendered (621). M10 done (whisper.cpp waits on user).
+- Open follow-ups: inner AddTrack/RemoveTrack + media drops in open groups; Sparkle dependency (approval pending); Info.plist camera/mic usage strings (app); caption UI + export sheet (app); AUD-3 (audio); EXP-1..3 (export).
