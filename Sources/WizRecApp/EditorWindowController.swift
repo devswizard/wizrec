@@ -2,6 +2,7 @@ import AppKit
 import MetalKit
 import PlayerKit
 import QuartzCore
+import Recorder
 import SwiftUI
 import TimelineEngine
 import TimelineUI
@@ -37,6 +38,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var lastTimelineError: String?
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
+    private var recorderHUD: RecorderHUDController?
+    /// Playhead (ticks) when the current recording started; the result is placed there.
+    private var recordingStart: Int64 = 0
 
     init(document: ProjectDocument, model: EditorDocumentModel, options: LaunchOptions) {
         self.model = model
@@ -134,7 +138,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
-            set: { [weak self] f, v in self?.setField(f, v) })))
+            set: { [weak self] f, v in self?.setField(f, v) },
+            setSpeed: { [weak self] v in self?.setSpeed(v) })))
         bin.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         props.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
@@ -255,6 +260,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let sel = timelineModel.selection
         inspector.selectionCount = sel.count
         let next = sel.count == 1 ? sel.first.flatMap(inspection(of:)) : nil
+        inspector.speedEditable = next.map { n in model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } } } ?? false
         if next != inspector.inspection { inspector.inspection = next }
     }
 
@@ -306,6 +312,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let changes = i.changes(f, v)
         guard !changes.isEmpty else { return }
         run("Change property") { try model.set(changes) }
+    }
+
+    /// Clip speed from the inspector, as an exact rational (percent precision); later clips ripple.
+    private func setSpeed(_ speed: Double) {
+        guard let i = inspector.inspection, speed.isFinite, speed > 0 else { return }
+        let r = Rational(max(1, Int64((speed * 100).rounded())), 100)
+        run("Clip speed") { try model.perform(SetClipSpeed(clipID: i.clipID, speed: r, ripple: true)) }
     }
 
     func undoEdit() { run("Undo") { try model.undoLast() } }
@@ -366,6 +379,48 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                     let clip = try model.insertSource(id, at: t, track: track)
                     if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
                     select([clip])
+                }
+            }
+        }
+    }
+
+    // MARK: Recording
+
+    /// File ▸ New Recording: shows the recorder panel. Each recording is written to the
+    /// project's `recordings/<unix-ts>/` and, when it stops, placed at the playhead where it
+    /// started (screen, camera and audio stacked on free tracks) as one undo step.
+    @objc func newRecording(_ sender: Any?) {
+        if let hud = recorderHUD { hud.present(); return }
+        let hud = RecorderHUDController(
+            outputDirectory: { [weak self] in self?.nextRecordingFolder() ?? RecorderHUDModel.defaultOutputDirectory() },
+            onFinish: { [weak self] result in self?.recordingFinished(result) })
+        recorderHUD = hud
+        hud.present()
+    }
+
+    private func nextRecordingFolder() -> URL {
+        recordingStart = engine.currentTicks
+        let stamp = String(format: "%.6f", Date().timeIntervalSince1970)
+        return model.bundle.directory.appendingPathComponent("recordings", isDirectory: true)
+            .appendingPathComponent(stamp, isDirectory: true)
+    }
+
+    private func recordingFinished(_ result: Result<RecordingResult, Error>) {
+        switch result {
+        case .failure(let e):
+            ui.show("Recording failed: \(Self.describe(e))", seconds: 10)
+        case .success(let r):
+            let files = [r.screen] + (r.camera.map { [$0] } ?? []) + r.audio
+            let start = recordingStart
+            window?.makeKeyAndOrderFront(nil)
+            Task {
+                do {
+                    let ids = try await model.importAndPlace(files, at: start, name: "Add Recording")
+                    select(ids.first.map { [$0] } ?? [])
+                    engine.seek(toTicks: start)
+                } catch {
+                    ui.show("Cannot add the recording: \(Self.describe(error)). Its files are in \(r.screen.deletingLastPathComponent().path).",
+                            seconds: 12)
                 }
             }
         }
@@ -501,29 +556,34 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     /// Window content as PNG, with the Metal canvas rendered offscreen into its frame
-    /// (Metal layers are not captured by `cacheDisplay`).
+    /// (Metal layers are not captured by `cacheDisplay`). Everything is composed into a fresh
+    /// bitmap: drawing into the rep `cacheDisplay` filled broke later SwiftUI captures.
     private func writeSnapshot(to url: URL, note: String) {
-        guard let root = window?.contentView, let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
-        root.cacheDisplay(in: root.bounds, to: rep)
+        guard let root = window?.contentView, let cached = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
+        root.cacheDisplay(in: root.bounds, to: cached)
+        guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: cached.pixelsWide, pixelsHigh: cached.pixelsHigh,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
+        out.size = root.bounds.size   // before the context, so drawing is in points
+        guard let ctx = NSGraphicsContext(bitmapImageRep: out) else { return }
         let scale = window?.backingScaleFactor ?? 2
         let rect = canvas.convert(canvas.bounds, to: root)
         let image = renderer?.renderImage(size: CGSize(width: rect.width * scale, height: rect.height * scale))
-        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = ctx
-            // `rect` is in the root's (flipped or not) space; bitmap reps use bottom-left origin.
-            let r = root.isFlipped ? NSRect(x: rect.minX, y: root.bounds.height - rect.maxY, width: rect.width, height: rect.height) : rect
-            if let image { ctx.cgContext.draw(image, in: r) }
-            let overlays = canvas.superview?.subviews.filter { $0 is PassthroughHostingView<CanvasOverlay> } ?? []
-            for v in [selectionOverlay] + overlays {
-                if let top = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
-                    v.cacheDisplay(in: v.bounds, to: top)
-                    top.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-                }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
+        cached.draw(in: root.bounds)
+        // `rect` is in the root's (flipped or not) space; the bitmap uses a bottom-left origin.
+        let r = root.isFlipped ? NSRect(x: rect.minX, y: root.bounds.height - rect.maxY, width: rect.width, height: rect.height) : rect
+        if let image { ctx.cgContext.draw(image, in: r) }
+        let overlays = canvas.superview?.subviews.filter { $0 is PassthroughHostingView<CanvasOverlay> } ?? []
+        for v in [selectionOverlay] + overlays {
+            if let top = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                v.cacheDisplay(in: v.bounds, to: top)
+                top.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
-            NSGraphicsContext.restoreGraphicsState()
         }
-        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = out.representation(using: .png, properties: [:]) else { return }
         do {
             try png.write(to: url)
             print("snapshot \(url.path) t=\(model.scene.timebase.timecode(engine.currentTicks))\(note)")
@@ -579,6 +639,91 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         run("Delete") { try model.perform(DeleteClips(clipIDs: ids)) }
     }
 
+    // MARK: Clipboard and clip structure
+
+    static let clipsType = NSPasteboard.PasteboardType("com.devswizard.wizrec.clips")
+    static let clipsOriginType = NSPasteboard.PasteboardType("com.devswizard.wizrec.clips-origin")
+
+    /// Selected clips that sit directly on a track (copy, group and stitch work on those).
+    private var topLevelSelection: [Int64] {
+        let top = Set(model.project.tracks.flatMap(\.clips).map(\.id))
+        return model.project.tracks.flatMap(\.clips).map(\.id).filter { timelineModel.selection.contains($0) && top.contains($0) }
+    }
+
+    private func put(_ payload: ClipboardPayload) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(payload.data, forType: Self.clipsType)
+        pb.setString(model.bundle.directory.path, forType: Self.clipsOriginType)
+    }
+
+    @objc func copy(_ sender: Any?) {
+        run("Copy") { put(try model.copyClips(topLevelSelection)) }
+    }
+
+    @objc func cut(_ sender: Any?) {
+        run("Cut") {
+            put(try model.cutClips(topLevelSelection))
+            select([])
+        }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        guard let data = pb.data(forType: Self.clipsType), let payload = try? ClipboardPayload(data: data) else { return }
+        let origin = pb.string(forType: Self.clipsOriginType).map { URL(fileURLWithPath: $0) }
+        let track = topLevelSelection.first.flatMap { id in model.project.tracks.firstIndex { $0.clips.contains { $0.id == id } } }
+        let at = engine.grid.snap(engine.currentTicks)
+        Task {
+            do {
+                let ids = try await model.paste(payload, origin: origin, track: track, at: at)
+                select(Set(ids))
+                if !model.missing.isEmpty { ui.show("Some pasted media is missing: File ▸ Relink Missing Media.") }
+            } catch {
+                ui.show("Paste failed: \(Self.describe(error))")
+            }
+        }
+    }
+
+    @objc func groupClips(_ sender: Any?) {
+        let ids = topLevelSelection
+        let c = GroupClips(clipIDs: ids)
+        run("Group") { try model.perform(c) }
+        if let g = c.groupID { select([g]) }
+    }
+
+    @objc func ungroupClip(_ sender: Any?) {
+        guard let id = topLevelSelection.first else { return }
+        let c = UngroupClip(clipID: id)
+        run("Ungroup") { try model.perform(c) }
+        if !c.releasedIDs.isEmpty { select(Set(c.releasedIDs)) }
+    }
+
+    @objc func stitchClips(_ sender: Any?) {
+        let c = StitchClips(clipIDs: topLevelSelection)
+        run("Stitch") { try model.perform(c) }
+        if let s = c.stitchedID { select([s]) }
+    }
+
+    @objc func unstitchClip(_ sender: Any?) {
+        guard let id = topLevelSelection.first else { return }
+        let c = UnstitchClip(clipID: id)
+        run("Unstitch") { try model.perform(c) }
+        if !c.pieceIDs.isEmpty { select(Set(c.pieceIDs)) }
+    }
+
+    @objc func detachAudio(_ sender: Any?) {
+        guard let id = topLevelSelection.first else { return }
+        let c = DetachAudio(clipID: id)
+        run("Separate Video and Audio") { try model.perform(c) }
+        if let v = c.videoID { select([v]) }
+    }
+
+    private func kindOfSelection() -> ClipKind? {
+        guard topLevelSelection.count == 1, let id = topLevelSelection.first else { return nil }
+        return model.project.tracks.flatMap(\.clips).first { $0.id == id }?.kind
+    }
+
     // Timeline actions arriving here (the timeline is not first responder): forward them.
     @objc func splitAtPlayhead(_ sender: Any?) { timelineView.splitAtPlayhead(sender) }
     @objc func rippleDelete(_ sender: Any?) { timelineView.rippleDelete(sender) }
@@ -602,6 +747,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             item.title = ui.showOverlay ? "Hide Performance Overlay" : "Show Performance Overlay"
         case #selector(delete(_:)):
             return !timelineModel.selection.isEmpty
+        case #selector(copy(_:)), #selector(cut(_:)):
+            return !topLevelSelection.isEmpty
+        case #selector(paste(_:)):
+            return NSPasteboard.general.availableType(from: [Self.clipsType]) != nil
+        case #selector(groupClips(_:)):
+            return topLevelSelection.count >= 2
+        case #selector(stitchClips(_:)):
+            return topLevelSelection.count >= 2
+        case #selector(ungroupClip(_:)):
+            return kindOfSelection() == .group
+        case #selector(unstitchClip(_:)):
+            return kindOfSelection() == .stitched
+        case #selector(detachAudio(_:)):
+            return kindOfSelection() == .unified
         case #selector(showRelink(_:)):
             return relinkWindow == nil
         default: break
@@ -620,6 +779,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let m = keyMonitor { NSEvent.removeMonitor(m) }
         keyMonitor = nil
         engine.shutdown()
+        if recorderHUD?.model.state == .idle { recorderHUD?.close() }
         let thumbs = model.thumbnailPool
         Task { await thumbs.purge() }
     }

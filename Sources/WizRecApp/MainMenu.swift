@@ -29,6 +29,7 @@ enum MainMenu {
         file.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         file.addItem(withTitle: "Save As…", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "S")
         file.addItem(.separator())
+        file.addItem(withTitle: "New Recording…", action: #selector(EditorWindowController.newRecording(_:)), keyEquivalent: "r")
         file.addItem(withTitle: "Import Media…", action: #selector(EditorWindowController.importMedia(_:)), keyEquivalent: "i")
         file.addItem(withTitle: "Relink Missing Media…", action: #selector(EditorWindowController.showRelink(_:)),
                      keyEquivalent: "")
@@ -46,6 +47,16 @@ enum MainMenu {
         del.keyEquivalentModifierMask = []
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         add(edit, to: main)
+
+        let clip = NSMenu(title: "Clip")
+        clip.addItem(withTitle: "Group", action: #selector(EditorWindowController.groupClips(_:)), keyEquivalent: "g")
+        clip.addItem(withTitle: "Ungroup", action: #selector(EditorWindowController.ungroupClip(_:)), keyEquivalent: "G")
+        clip.addItem(.separator())
+        clip.addItem(withTitle: "Stitch Selected Media", action: #selector(EditorWindowController.stitchClips(_:)), keyEquivalent: "")
+        clip.addItem(withTitle: "Unstitch", action: #selector(EditorWindowController.unstitchClip(_:)), keyEquivalent: "")
+        clip.addItem(.separator())
+        clip.addItem(withTitle: "Separate Video and Audio", action: #selector(EditorWindowController.detachAudio(_:)), keyEquivalent: "")
+        add(clip, to: main)
 
         // Sent to the first responder: TimelineView implements and validates these; the
         // editor window forwards them to the timeline when it is not focused.
