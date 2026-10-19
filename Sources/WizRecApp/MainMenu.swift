@@ -60,6 +60,26 @@ enum MainMenu {
         clip.addItem(withTitle: String(localized: "Separate Video and Audio"), action: #selector(EditorWindowController.detachAudio(_:)), keyEquivalent: "")
         add(clip, to: main)
 
+        let captions = NSMenu(title: String(localized: "Captions"))
+        captions.addItem(withTitle: String(localized: "Transcribe Selected Audio"),
+                         action: #selector(EditorWindowController.transcribeSelection(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Cancel Transcription"),
+                         action: #selector(EditorWindowController.cancelTranscription(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Add Dynamic Captions"),
+                         action: #selector(EditorWindowController.addDynamicCaptions(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Dynamic Caption Style…"),
+                         action: #selector(EditorWindowController.editDynamicCaptionStyle(_:)), keyEquivalent: "")
+        captions.addItem(.separator())
+        captions.addItem(withTitle: String(localized: "Import Captions…"),
+                         action: #selector(EditorWindowController.importCaptions(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Export Captions as SRT…"),
+                         action: #selector(EditorWindowController.exportCaptionsSRT(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Export Captions as WebVTT…"),
+                         action: #selector(EditorWindowController.exportCaptionsVTT(_:)), keyEquivalent: "")
+        captions.addItem(.separator())
+        captions.addItem(withTitle: String(localized: "Delete All Captions"),
+                         action: #selector(EditorWindowController.deleteCaptions(_:)), keyEquivalent: "")
+
         // Sent to the first responder: TimelineView implements and validates these; the
         // editor window forwards them to the timeline when it is not focused.
         let timeline = NSMenu(title: String(localized: "Timeline"))
@@ -80,6 +100,7 @@ enum MainMenu {
         timeline.addItem(.separator())
         timeline.addItem(withTitle: String(localized: "Deselect All"), action: #selector(TimelineView.deselectAll(_:)), keyEquivalent: "A")
         add(timeline, to: main)
+        add(captions, to: main)
 
         let view = NSMenu(title: String(localized: "View"))
         view.addItem(withTitle: String(localized: "Show Performance Overlay"),

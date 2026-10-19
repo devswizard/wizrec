@@ -16,6 +16,8 @@ import Foundation
 /// - `--select-last`: select the last clip when nothing else is selected (shows the inspector).
 /// - `--save`: File ▸ Save after the scripted steps.
 /// - `--frame-policy exact|thin|nearest`: high-speed playback policy (default nearest).
+/// - `--import-captions <file.srt|.vtt>`: import captions after the scripted imports.
+/// - `--export-captions <file.srt|.vtt>`: write the project's captions after the scripted steps.
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -40,6 +42,10 @@ public struct LaunchOptions: Sendable, Equatable {
     public var save = false
     /// High-speed policy: "exact" (off), "thin" (subsample only), "nearest" (thin + `.nearestDecoded`).
     public var framePolicy = "nearest"
+    /// SRT/WebVTT file to import as captions (scripted verification).
+    public var importCaptions: String?
+    /// Where to export the project's captions (format from the extension).
+    public var exportCaptions: String?
 
     public init() {}
 
@@ -49,6 +55,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.snapshotDir == b.snapshotDir && a.snapshotTimes == b.snapshotTimes && a.drawAlways == b.drawAlways
             && a.importPaths == b.importPaths && a.nudge?.x == b.nudge?.x && a.nudge?.y == b.nudge?.y
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
+            && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
     }
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
@@ -83,6 +90,8 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--select-last": select = true
             case "--save": save = true
             case "--frame-policy": framePolicy = value() ?? framePolicy
+            case "--import-captions": importCaptions = value()
+            case "--export-captions": exportCaptions = value()
             default:
                 if a.hasPrefix("-psn_") { break }
                 if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }

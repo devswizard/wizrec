@@ -1,5 +1,4 @@
 import PlayerKit
-import RenderEngine
 import SwiftUI
 import TimelineUI
 
@@ -54,13 +53,37 @@ struct SidebarView: View {
     static func effectItems() -> [LibraryItem] {
         TimelineLibrary.effects.map {
             LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
-                        note: Compositor.renderedEffects.contains($0.name) ? nil : String(localized: "not previewed"))
+                        note: $0.isRendered ? nil : String(localized: "not previewed"))
         }
     }
 
     static func transitionItems() -> [LibraryItem] {
         TimelineLibrary.transitions.map {
-            LibraryItem(name: $0.name, title: $0.displayName, symbol: "square.split.2x1", note: nil)
+            LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(transitionCategory: $0.category),
+                        note: $0.isRendered ? nil : String(localized: "not previewed"),
+                        section: sectionTitle($0.category))
+        }
+    }
+
+    static func sectionTitle(_ category: String) -> String {
+        switch category {
+        case "fades": String(localized: "Fades")
+        case "wipes": String(localized: "Wipes")
+        case "slides": String(localized: "Slides")
+        case "shapes": String(localized: "Shapes")
+        case "3d": String(localized: "3D")
+        default: category.capitalized
+        }
+    }
+
+    static func symbol(transitionCategory: String) -> String {
+        switch transitionCategory {
+        case "fades": "circle.lefthalf.filled"
+        case "wipes": "rectangle.righthalf.inset.filled"
+        case "slides": "arrow.right.square"
+        case "shapes": "circle.dashed"
+        case "3d": "cube"
+        default: "square.split.2x1"
         }
     }
 
@@ -82,6 +105,8 @@ struct LibraryItem: Identifiable, Equatable {
     var title: String
     var symbol: String
     var note: String?
+    /// Heading the tile is grouped under (nil = no heading).
+    var section: String?
     var id: String { name }
 }
 
@@ -103,7 +128,19 @@ struct LibraryList: View {
     }
 
     private var shown: [LibraryItem] {
-        items.filter { LibrarySearch.matches(query, fields: [$0.title, LibrarySearch.words(ofIdentifier: $0.name)]) }
+        items.filter {
+            LibrarySearch.matches(query, fields: [$0.title, LibrarySearch.words(ofIdentifier: $0.name), $0.section ?? ""])
+        }
+    }
+
+    /// `shown` grouped by section, in first-appearance order.
+    private var sections: [(title: String, items: [LibraryItem])] {
+        var out: [(title: String, items: [LibraryItem])] = []
+        for item in shown {
+            let t = item.section ?? ""
+            if let i = out.firstIndex(where: { $0.title == t }) { out[i].items.append(item) } else { out.append((t, [item])) }
+        }
+        return out
     }
 
     var body: some View {
@@ -118,8 +155,15 @@ struct LibraryList: View {
                         Text("No matches").font(.callout).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity).padding(.top, 20)
                     }
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(shown) { tile($0) }
+                    ForEach(sections, id: \.title) { group in
+                        if let t = group.title.isEmpty ? nil : group.title {
+                            Text(t).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(group.items) { tile($0) }
+                        }
                     }
                 }
                 .padding(10)

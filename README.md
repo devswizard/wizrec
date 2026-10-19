@@ -29,7 +29,7 @@ project started in Camtasia on another Mac or PC can be edited here and opened t
 | Editing: split, trim, ripple, move with snapping, groups, stitch, speed, markers, copy/paste, undo | ✅ |
 | Recorder: screen/region/window, camera, mic, system audio, cursor and click log | ✅ (needs Screen Recording permission) |
 | Audio mixing, loudness normalisation | ✅ engine |
-| Captions: SRT/VTT, transcription | ✅ engine; editor UI ⏳ |
+| Captions: SRT/VTT, transcription | ✅ engine + Captions menu (transcribe, dynamic captions, import/export) |
 | Export: MP4/MOV/GIF/audio | ✅ engine; export sheet ⏳ |
 
 Out of scope: quizzes, hotspots, Smart Player, TechSmith cloud sharing.
