@@ -78,13 +78,38 @@ enum VideoCodec: Equatable {
     }
 }
 
-/// Audio side of a movie export: the feed and its writer input (nil = no audio).
+/// Audio side of a movie export: where chunks come from and their writer input (nil = no audio).
 struct AudioPump {
-    var feed: AudioFeed?
+    enum Source {
+        /// Mixed inline by the writer loop (the serial path).
+        case inline(AudioFeed)
+        /// Mixed ahead on a separate task.
+        case prefetched(AudioPrefetch)
+    }
+    var source: Source?
     let input: AVAssetWriterInput?
     var done: Bool
-    init(feed: AudioFeed?, input: AVAssetWriterInput?) {
-        self.feed = feed; self.input = input; done = feed == nil || input == nil
+    /// Samples handed to the writer so far, and in total.
+    var written: Int64 = 0
+    let total: Int64
+    let sampleRate: Int
+
+    init(feed: AudioFeed?, input: AVAssetWriterInput?, prefetch: Bool, depth: Int) {
+        self.input = input
+        total = feed?.totalSamples ?? 0
+        sampleRate = feed?.sampleRate ?? 1
+        if let feed, input != nil {
+            source = prefetch ? .prefetched(AudioPrefetch(feed: feed, capacity: depth)) : .inline(feed)
+        }
+        done = source == nil
+    }
+
+    /// Output seconds handed to the writer so far.
+    var writtenSeconds: Double { Double(written) / Double(sampleRate) }
+
+    /// Stops a prefetch task (no-op for the inline source).
+    func cancel() {
+        if case .prefetched(let p) = source { p.cancel() }
     }
 }
 
@@ -106,6 +131,10 @@ extension ExportSession {
     static let pipelineDepth = 6
     /// Audio is kept this far ahead of video so the writer can interleave.
     static let audioLead = 0.5
+    /// Audio chunks (0.5 s each) mixed ahead of the writer on their own task.
+    static let audioPrefetchDepth = 8
+    /// True mixes audio inline in the writer loop instead of on a prefetch task (tests compare the two).
+    @TaskLocal static var serialAudio = false
 
     /// Writes a movie: video from the render path, plus the project mix when available.
     func writeMovie(to url: URL, fileType: AVFileType, codec: VideoCodec, resolved r: ResolvedExport) async throws {
@@ -173,7 +202,8 @@ extension ExportSession {
         // AVAssetWriter interleaves its inputs: an input stops being ready while the other lags
         // (or is not marked finished). So never block on one input: feed whichever is ready, keep
         // audio ≤ `audioLead` s ahead, and mark audio finished as soon as its feed ends.
-        var pump = AudioPump(feed: feed, input: audio)
+        var pump = AudioPump(feed: feed, input: audio, prefetch: !Self.serialAudio, depth: Self.audioPrefetchDepth)
+        defer { pump.cancel() }
         var stall = StallWatch()
 
         for n in 0..<frameCount {
@@ -204,24 +234,37 @@ extension ExportSession {
             try stall.check()
             try await pause()
         }
-        let end = max(timing.duration, pump.feed.map { CMTime(value: $0.totalSamples, timescale: CMTimeScale($0.sampleRate)) } ?? .zero)
+        let end = max(timing.duration, pump.source == nil ? .zero : CMTime(value: pump.total, timescale: CMTimeScale(pump.sampleRate)))
         writer.endSession(atSourceTime: end)
         try await finish(writer)
         finished = true
     }
 
     /// Appends one audio chunk if the input is ready and audio is < `seconds` ahead, or marks the
-    /// input finished once the feed is exhausted. Returns true when it did something.
+    /// input finished once all samples are written. Returns true when it did something.
     func pumpAudio(_ pump: inout AudioPump, until seconds: Double) async throws -> Bool {
-        guard !pump.done, var f = pump.feed, let input = pump.input else { return false }
-        if f.isFinished {
+        guard !pump.done, let source = pump.source, let input = pump.input else { return false }
+        if pump.written >= pump.total {
             input.markAsFinished()
             pump.done = true
             return true
         }
-        guard f.writtenSeconds < seconds, input.isReadyForMoreMediaData else { return false }
-        try await appendAudioChunk(&f, into: input)
-        pump.feed = f
+        guard pump.writtenSeconds < seconds, input.isReadyForMoreMediaData else { return false }
+        if isCancelled { throw ExportError.cancelled }
+        let chunk: AudioChunk?
+        switch source {
+        case .inline(var f):
+            chunk = try await f.nextChunk().map { c in
+                AudioChunk(buffer: try AudioFeed.sampleBuffer(planes: c.channels, start: c.start, sampleRate: f.sampleRate),
+                           samples: Int64(c.channels.first?.count ?? 0))
+            }
+            pump.source = .inline(f)
+        case .prefetched(let p):
+            chunk = try await p.next()
+        }
+        guard let chunk, chunk.samples > 0 else { throw ExportError.failed("audio mix ended early") }
+        guard input.append(chunk.buffer) else { throw ExportError.failed("audio append failed") }
+        pump.written += chunk.samples
         return true
     }
 
