@@ -1,4 +1,6 @@
+import AudioEngine
 import CoreVideo
+import Exporter
 import Foundation
 import MediaEngine
 import Metal
@@ -163,5 +165,34 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
             if got == 10 { await pipe.cancel() }
         }
         #expect(got >= 10 && got < all.count)
+    }
+
+    /// End to end: the same edited project exported twice (ProRes 422, separate pools) decodes
+    /// to identical frames. Clips sharing one source at different times make the decoder seek
+    /// back and forth, so this stays an intermittent known issue until MediaEngine's lanes
+    /// agree (SeekDeterminismTests); remove the wrapper with that fix.
+    @Test func twoExportsDecodeToIdenticalFrames() async throws {
+        let dir = try scratchDir("pipe-export")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bundle = try editedBundle(in: dir)
+        var outs: [URL] = []
+        for k in 0..<2 {
+            let out = dir.appendingPathComponent("run\(k).mov")
+            var settings = ExportSettings(format: .mov(profile: "422"))
+            settings.includeAudio = false
+            let session = ExportSession(scene: SceneModel(project: bundle.project, resolve: bundle.resolve),
+                                        audio: AudioScene(project: bundle.project, resolve: bundle.resolve),
+                                        pool: MediaPool(diskCacheDirectory: nil), settings: settings, output: out)
+            try await session.run()
+            outs.append(out)
+        }
+        let n = Int(bundle.project.duration / frameTicks)
+        let a = try await MovieFrameReader.frames(outs[0], indices: Array(0..<n))
+        let b = try await MovieFrameReader.frames(outs[1], indices: Array(0..<n))
+        #expect(a.count == n && b.count == n)
+        let differing = (0..<n).filter { a[$0]?.pixels != b[$0]?.pixels }
+        withKnownIssue("MediaEngine lanes give different pixels after seeks", isIntermittent: true) {
+            #expect(differing.isEmpty, "exports differ at frames \(differing)")
+        }
     }
 }
