@@ -66,6 +66,37 @@ struct GLSLTranslator {
 
     static func translate(_ glsl: String, mode: Mode = .background) throws -> Output {
         let implicit = mode == .transition ? implicitNames.union(["_Progress"]) : implicitNames
+        let parsed = try parse(glsl, implicit: implicit, stage: .single)
+        let source = mode == .transition ? assembleTransition(body: parsed.body, uniforms: parsed.uniforms)
+            : assemble(body: parsed.body, uniforms: parsed.uniforms)
+        return Output(source: source, uniforms: parsed.uniforms)
+    }
+
+    /// Which program a parse belongs to; decides what interface (`in`/`out`/`varying`) variables mean.
+    enum Stage { case single, particleVertex, particleFragment }
+
+    /// A vertex → fragment interface variable of a particle program.
+    struct Varying: Equatable {
+        var name: String
+        var type: String
+        /// Integer types are always flat.
+        var flat: Bool
+    }
+
+    struct Parsed {
+        var body: String
+        var uniforms: [Uniform]
+        /// `particleVertex` only: its `out`/`varying` variables, in declaration order.
+        var varyings: [Varying] = []
+        /// Macro names the body `#define`s.
+        var macros: [String] = []
+    }
+
+    /// Interpolation and layout qualifiers stripped from interface declarations.
+    static let interfaceQualifiers: Set<String> = ["flat", "smooth", "noperspective", "centroid", "invariant",
+                                                   "highp", "mediump", "lowp"]
+
+    static func parse(_ glsl: String, implicit: Set<String>, stage: Stage) throws -> Parsed {
         var toks = Lexer(glsl).tokens()
         // Drop precision qualifiers and rename reserved identifiers.
         toks = toks.compactMap { t in
@@ -78,7 +109,11 @@ struct GLSLTranslator {
             return t
         }
 
+        let signatures = OutCalls.signatures(toks)
+        var calls = OutCalls(signatures: signatures)
         var uniforms: [Uniform] = []
+        var varyings: [Varying] = []
+        var macros: [String] = []
         var body = ""
         var hasMain = false
         var i = 0
@@ -91,6 +126,11 @@ struct GLSLTranslator {
                 let d = t.text.trimmingCharacters(in: .whitespaces)
                 let keep = !(d.hasPrefix("#version") || d.hasPrefix("#extension") || d.hasPrefix("#pragma"))
                 body += keep ? "\n" + t.text + "\n" : "\n"
+                if d.hasPrefix("#define") {
+                    let rest = d.dropFirst("#define".count).drop { $0 == " " || $0 == "\t" }
+                    let name = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+                    if !name.isEmpty { macros.append(String(name)) }
+                }
                 i += 1; continue
             default: break
             }
@@ -122,7 +162,20 @@ struct GLSLTranslator {
             guard end <= toks.count, end > i else { throw Failure.malformed("unterminated declaration") }
             let decl = Array(toks[i..<end])
             i = end
-            let words = decl.filter { $0.kind != .ws && $0.kind != .directive }
+            var words = decl.filter { $0.kind != .ws && $0.kind != .directive }
+            // `layout(…)` and interpolation qualifiers only matter for interface variables.
+            var flat = false
+            while let w = words.first {
+                if w.text == "layout", words.count > 1, words[1].text == "(",
+                   let close = words.firstIndex(where: { $0.text == ")" }) {
+                    words.removeSubrange(0...close)
+                } else if !isFunction, interfaceQualifiers.contains(w.text),
+                          words.count > 1, ["in", "out", "varying", "uniform", "attribute"].contains(words[1].text)
+                            || (words.count > 2 && interfaceQualifiers.contains(words[1].text)) {
+                    if w.text == "flat" { flat = true }
+                    words.removeFirst()
+                } else { break }
+            }
             guard let first = words.first else { continue }
 
             if first.text == "uniform" {
@@ -136,8 +189,32 @@ struct GLSLTranslator {
             }
             if first.text == "varying" || first.text == "attribute" || (first.text == "in" && !isFunction)
                 || (first.text == "out" && !isFunction) {
-                // Interface variables: `out vec4 x;` is the output, `in`/`varying vec2 x;` the coordinate.
                 let names = words.dropFirst().filter { $0.kind == .ident }.map(\.text)
+                switch stage {
+                case .particleVertex:
+                    // `out`/`varying` feed the fragment stage; there are no vertex buffers.
+                    guard first.text == "out" || first.text == "varying" else {
+                        throw Failure.malformed("vertex input \(names.last ?? "")")
+                    }
+                    if names.count >= 2 {
+                        let type = names[0]
+                        let integer = type.hasPrefix("int") || type.hasPrefix("ivec") || type.hasPrefix("uint")
+                            || type.hasPrefix("uvec")
+                        for n in names.dropFirst() where !implicit.contains(n) {
+                            varyings.append(Varying(name: n, type: type, flat: flat || integer))
+                        }
+                    }
+                    continue
+                case .particleFragment:
+                    // Inputs come from the vertex stage's outputs; `out vec4 x;` is the colour.
+                    if first.text == "out", names.count >= 2 {
+                        for n in names.dropFirst() { body += "\n#define \(n) _FragColor\n" }
+                    }
+                    continue
+                case .single:
+                    break
+                }
+                // Interface variables: `out vec4 x;` is the output, `in`/`varying vec2 x;` the coordinate.
                 if names.count >= 2 {
                     let type = names[0]
                     for n in names.dropFirst() {
@@ -149,7 +226,7 @@ struct GLSLTranslator {
             }
             if isFunction {
                 if decl.contains(where: { $0.text == "glsl_main" }) { hasMain = true }
-                body += rewriteParameters(decl)
+                body += rewriteParameters(calls.rewrite(decl))
             } else if parenAt != nil, words.last?.text == ";", isPrototype(words) {
                 continue  // function prototype: members need none
             } else {
@@ -157,9 +234,153 @@ struct GLSLTranslator {
             }
         }
         guard hasMain else { throw Failure.missingMain }
-        let source = mode == .transition ? assembleTransition(body: body, uniforms: uniforms)
-            : assemble(body: body, uniforms: uniforms)
-        return Output(source: source, uniforms: uniforms)
+        return Parsed(body: body, uniforms: uniforms, varyings: varyings, macros: macros)
+    }
+
+    /// GLSL `out`/`inout` arguments are copied in and back after the call; MSL references
+    /// (`thread T&`) cannot bind to a vector component such as `v.x`. So a call passing a member
+    /// or component expression (anything with a `.`) to such a parameter becomes a statement
+    /// expression with temporaries: `({ auto t = v.x; f(t); v.x = t; })`, keeping GLSL semantics.
+    /// Likewise `v.xy *= m;` becomes `v.xy = v.xy * (m);` (MSL's `vector *= matrix` takes a reference).
+    struct OutCalls {
+        struct Signature { var refs: Set<Int>; var returnsVoid: Bool }
+        let signatures: [String: Signature]
+        private var counter = 0
+
+        init(signatures: [String: Signature]) { self.signatures = signatures }
+
+        /// Functions defined at top level that have `out`/`inout` parameters (positions merged
+        /// over overloads; a by-value parameter copied back unchanged is harmless).
+        static func signatures(_ toks: [Token]) -> [String: Signature] {
+            let words = toks.enumerated().filter { $0.element.kind != .ws && $0.element.kind != .directive }
+            var out: [String: Signature] = [:]
+            var depth = 0, k = 0
+            while k < words.count {
+                let t = words[k].element
+                if t.text == "{" { depth += 1 } else if t.text == "}" { depth -= 1 }
+                if depth == 0, k >= 1, k + 1 < words.count, t.kind == .ident, words[k - 1].element.kind == .ident,
+                   words[k + 1].element.text == "(" {
+                    // Parameters up to the matching `)`, then `{` = a definition.
+                    var d = 0, m = k + 1, params: [[Token]] = [[]]
+                    while m < words.count {
+                        let x = words[m].element
+                        if x.text == "(" { d += 1; if d == 1 { m += 1; continue } }
+                        if x.text == ")" { d -= 1; if d == 0 { break } }
+                        if x.text == "," && d == 1 { params.append([]) } else { params[params.count - 1].append(x) }
+                        m += 1
+                    }
+                    if m + 1 < words.count, words[m + 1].element.text == "{" {
+                        var refs: Set<Int> = []
+                        for (i, p) in params.enumerated() where p.contains(where: { $0.text == "out" || $0.text == "inout" }) {
+                            refs.insert(i)
+                        }
+                        if !refs.isEmpty {
+                            var sig = out[t.text] ?? Signature(refs: [], returnsVoid: false)
+                            sig.refs.formUnion(refs)
+                            sig.returnsVoid = sig.returnsVoid || words[k - 1].element.text == "void"
+                            out[t.text] = sig
+                        }
+                    }
+                }
+                k += 1
+            }
+            return out
+        }
+
+        /// Rewrites calls inside a function definition's body (its header is kept as is).
+        mutating func rewrite(_ decl: [Token]) -> [Token] {
+            guard let open = decl.firstIndex(where: { $0.text == "{" }) else { return decl }
+            let text = rewrite(decl[(open + 1)...])
+            return Array(decl[...open]) + [Token(kind: .ws, text: text)]
+        }
+
+        /// For `*` at `star` (followed by `=`): the operand before it when it is a plain member or
+        /// component path (`a.b.xy`: identifiers and dots, no spaces) containing a dot. `raw` is
+        /// the path plus the whitespace up to `*`, exactly as already emitted; `text` the path.
+        /// `end`: index of the `;`, `,` or unmatched `)` ending the right-hand side.
+        private func componentLValue(_ toks: ArraySlice<Token>, star: Int)
+            -> (lhs: (raw: String, text: String), end: Int)? {
+            var k = star - 1, trailing = ""
+            while k >= toks.startIndex, toks[k].kind == .ws { trailing = toks[k].text + trailing; k -= 1 }
+            var path = "", dot = false
+            while k >= toks.startIndex, toks[k].kind == .ident || toks[k].text == "." {
+                if toks[k].text == "." { dot = true }
+                path = toks[k].text + path
+                k -= 1
+            }
+            guard dot, !path.isEmpty, !path.hasPrefix(".") else { return nil }
+            var depth = 0, e = star + 2
+            while e < toks.endIndex {
+                let x = toks[e].text
+                if x == "(" || x == "[" { depth += 1 }
+                if x == ")" || x == "]" { if depth == 0 { break }; depth -= 1 }
+                if (x == ";" || x == ",") && depth == 0 { break }
+                e += 1
+            }
+            guard e < toks.endIndex else { return nil }
+            return ((path + trailing, path), e)
+        }
+
+        private mutating func rewrite(_ toks: ArraySlice<Token>) -> String {
+            var out = ""
+            var i = toks.startIndex
+            var previous: Token?
+            while i < toks.endIndex {
+                let t = toks[i]
+                defer { if t.kind != .ws && t.kind != .directive { previous = t } }
+                if t.text == "*", i + 1 < toks.endIndex, toks[i + 1].text == "=",
+                   let (lhs, rhsEnd) = componentLValue(toks, star: i), out.hasSuffix(lhs.raw) {
+                    // `v.xy *= m;` → `v.xy = v.xy * (m);` (MSL's vector *= matrix needs a whole vector).
+                    out.removeLast(lhs.raw.count)
+                    let rhs = rewrite(toks[(i + 2)..<rhsEnd])
+                    out += "\(lhs.raw)= \(lhs.text) * (\(rhs))"
+                    i = rhsEnd
+                    continue
+                }
+                guard t.kind == .ident, let sig = signatures[t.text],
+                      previous.map({ $0.kind != .ident || ["return", "else"].contains($0.text) }) ?? true else {
+                    out += t.text; i += 1; continue
+                }
+                var j = i + 1
+                while j < toks.endIndex, toks[j].kind == .ws { j += 1 }
+                guard j < toks.endIndex, toks[j].text == "(" else { out += t.text; i += 1; continue }
+                // Arguments up to the matching `)`.
+                var depth = 0, k = j, args: [ArraySlice<Token>] = []
+                var argStart = j + 1
+                while k < toks.endIndex {
+                    let x = toks[k].text
+                    if x == "(" || x == "[" { depth += 1 }
+                    if x == ")" || x == "]" {
+                        depth -= 1
+                        if depth == 0 { args.append(toks[argStart..<k]); break }
+                    }
+                    if x == "," && depth == 1 { args.append(toks[argStart..<k]); argStart = k + 1 }
+                    k += 1
+                }
+                guard k < toks.endIndex else { out += t.text; i += 1; continue }
+                let texts = args.map { rewrite($0) }
+                var pre = "", post = "", passed = texts
+                for (n, a) in args.enumerated() where sig.refs.contains(n) && a.contains(where: { $0.text == "." }) {
+                    let tmp = "wz_t\(counter)"; counter += 1
+                    pre += "auto \(tmp) = (\(texts[n])); "
+                    post += "\(texts[n]) = \(tmp); "
+                    passed[n] = tmp
+                }
+                let call = "\(t.text)(\(passed.joined(separator: ",")))"
+                if pre.isEmpty {
+                    out += call
+                } else if sig.returnsVoid {
+                    out += "({ \(pre)\(call); \(post)})"
+                } else {
+                    let r = "wz_r\(counter)"; counter += 1
+                    out += "({ \(pre)auto \(r) = \(call); \(post)\(r); })"
+                }
+                previous = Token(kind: .punct, text: ")")
+                i = k + 1
+                continue
+            }
+            return out
+        }
     }
 
     private static func declStartsWith(_ toks: [Token], _ i: Int, _ word: String) -> Bool {
@@ -210,7 +431,7 @@ struct GLSLTranslator {
     // MARK: Output
 
     /// Uniform members and the statements filling them from `wz_u.v[k]`.
-    private static func uniformCode(_ uniforms: [Uniform]) -> (members: String, fill: String) {
+    static func uniformCode(_ uniforms: [Uniform]) -> (members: String, fill: String) {
         var members = ""
         for u in uniforms { members += "    \(u.type) \(u.name);\n" }
         var fill = ""
@@ -233,7 +454,7 @@ struct GLSLTranslator {
     }
 
     /// GLSL type names, missing built-ins and the uniform block shared by both modes.
-    private static let prelude = """
+    static let prelude = """
         typedef float2 vec2; typedef float3 vec3; typedef float4 vec4;
         typedef int2 ivec2; typedef int3 ivec3; typedef int4 ivec4;
         typedef bool2 bvec2; typedef bool3 bvec3; typedef bool4 bvec4;
