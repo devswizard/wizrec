@@ -96,3 +96,12 @@ Dated log. Newest last.
   `metadata.ProjectThumbnail` from vendored `demo.tscproj` fixtures before
   going public; tests that need it read the user's own project in place and
   skip when absent.
+- **2026-10-19 · SW-only decode for ProRes/MPEG-2/MPEG-4 Part 2 (session 4):**
+  VideoToolbox and libav reconstruct these codecs differently (IDCT not
+  bit-exact by spec), so lanes could never match; they decode in libav only.
+  HW lane: H.264/HEVC/VP9/AV1. (media, approved.)
+- **2026-10-19 · HDR → SDR [WizRec] (session 4):** HDR10/HLG sources detected
+  from stream `color_trc`, tone-mapped to SDR BT.709 (203 cd/m² = 1.0, max-RGB
+  soft shoulder). Curve documented in `ToneMapping.swift`. (media, approved.)
+- **2026-10-19 · Perf numbers come from release builds** (`swift test -c
+  release -Xswiftc -enable-testing`); debug overstates DSP cost. (export.)
