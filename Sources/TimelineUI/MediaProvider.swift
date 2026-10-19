@@ -1,4 +1,4 @@
-import AVFoundation
+import CoreMedia
 import CoreGraphics
 import Foundation
 import MediaEngine
@@ -36,23 +36,25 @@ public protocol TimelineMediaProvider: AnyObject, Sendable {
     func waveform(_ media: TimelineMediaRef) async -> TimelineWaveform?
 }
 
-/// `TimelineMediaProvider` backed by a `MediaPool`. Give it a pool of its own so
-/// thumbnail decoding never disturbs the playback decoders (CONTRACTS.md, MediaEngine M2).
-/// Waveforms are computed from `MediaSource.audio` (8 kHz mono, 100 buckets/s) and cached
-/// per stream until MediaEngine's peaks API replaces this path.
-public actor MediaPoolTimelineProvider: TimelineMediaProvider {
+/// `TimelineMediaProvider` backed by MediaEngine: filmstrip frames from
+/// `MediaPool.thumbnail(url:stream:at:maxPixelSize:accuracy:)` (its own decoders, so playback
+/// lanes never move; nearest keyframe) and waveforms from `MediaPool.peaks` (decoded once,
+/// cached in memory and on disk). The playback pool can be shared.
+public final class MediaPoolTimelineProvider: TimelineMediaProvider {
     public let pool: MediaPool
+    /// Waveform resolution requested from `MediaPool.peaks`, buckets per second.
+    public let bucketsPerSecond: Double
     private let resolve: @Sendable (TimelineMediaRef) -> URL?
-    private var waveforms: [TimelineMediaRef: Task<TimelineWaveform?, Never>] = [:]
 
     /// `resolve` maps a source to its file (the app knows the bundle location).
-    public init(pool: MediaPool, resolve: @escaping @Sendable (TimelineMediaRef) -> URL?) {
-        self.pool = pool; self.resolve = resolve
+    public init(pool: MediaPool, bucketsPerSecond: Double = 400,
+                resolve: @escaping @Sendable (TimelineMediaRef) -> URL?) {
+        self.pool = pool; self.bucketsPerSecond = bucketsPerSecond; self.resolve = resolve
     }
 
     /// Resolves `src` like `ProjectBundle.resolve`: absolute paths and `file:` URLs as is,
     /// anything else relative to `bundleDirectory`.
-    public init(pool: MediaPool, bundleDirectory: URL) {
+    public convenience init(pool: MediaPool, bundleDirectory: URL) {
         self.init(pool: pool) { ref in
             if ref.src.hasPrefix("/") { return URL(fileURLWithPath: ref.src) }
             if let u = URL(string: ref.src), u.scheme == "file" { return u }
@@ -62,58 +64,16 @@ public actor MediaPoolTimelineProvider: TimelineMediaProvider {
 
     public func thumbnail(_ media: TimelineMediaRef, atSeconds seconds: Double, maxPixelSize: Int) async -> CGImage? {
         guard let url = resolve(media) else { return nil }
-        do {
-            let source = try await pool.source(for: url)
-            let t = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
-            return try await source.thumbnail(stream: media.stream, at: t, maxPixelSize: maxPixelSize)
-        } catch { return nil }
+        let t = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        return try? await pool.thumbnail(url: url, stream: media.stream, at: t, maxPixelSize: maxPixelSize,
+                                         accuracy: .nearestKeyframe).image
     }
 
     public func waveform(_ media: TimelineMediaRef) async -> TimelineWaveform? {
-        if let t = waveforms[media] { return await t.value }
-        guard let url = resolve(media) else { return nil }
-        let pool = pool
-        let task = Task<TimelineWaveform?, Never> {
-            await Self.computeWaveform(pool: pool, url: url, stream: media.stream)
-        }
-        waveforms[media] = task
-        return await task.value
-    }
-
-    static func computeWaveform(pool: MediaPool, url: URL, stream: Int) async -> TimelineWaveform? {
-        do {
-            let source = try await pool.source(for: url)
-            guard let info = source.info.streams.first(where: { $0.index == stream }), info.kind == .audio else {
-                return nil
-            }
-            let seconds = max(info.duration.seconds.isFinite ? info.duration.seconds : 0,
-                              source.info.duration.seconds.isFinite ? source.info.duration.seconds : 0)
-            guard seconds > 0 else { return nil }
-            let rate = 8000.0, perBucket = 80
-            let format = PCMFormat(sampleRate: rate, channels: 1)
-            var mins: [Float] = [], maxs: [Float] = []
-            mins.reserveCapacity(Int(seconds * 100) + 1); maxs.reserveCapacity(Int(seconds * 100) + 1)
-            var t = 0.0
-            let chunk = 20.0
-            while t < seconds {
-                let len = min(chunk, seconds - t)
-                let range = CMTimeRange(start: CMTime(seconds: t, preferredTimescale: 8000),
-                                        duration: CMTime(seconds: len, preferredTimescale: 8000))
-                let pcm = try await source.audio(stream: stream, range: range, format: format)
-                let samples = pcm.channels.first ?? []
-                var i = 0
-                while i < samples.count {
-                    let j = min(samples.count, i + perBucket)
-                    var mn: Float = 0, mx: Float = 0
-                    for k in i..<j { let v = samples[k]; if v < mn { mn = v }; if v > mx { mx = v } }
-                    mins.append(mn); maxs.append(mx)
-                    i = j
-                }
-                t += len
-                if Task.isCancelled { return nil }
-            }
-            return TimelineWaveform(bucketsPerSecond: rate / Double(perBucket), minima: mins, maxima: maxs)
-        } catch { return nil }
+        guard let url = resolve(media),
+              let p = try? await pool.peaks(url: url, stream: media.stream, bucketsPerSecond: bucketsPerSecond)
+        else { return nil }
+        return TimelineWaveform(bucketsPerSecond: p.bucketsPerSecond, minima: p.min, maxima: p.max)
     }
 }
 
