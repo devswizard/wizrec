@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "TSCProjKit",
+    name: "Tapeline",
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "TSCProjKit", targets: ["TSCProjKit"]),

@@ -1,4 +1,4 @@
-# CLAUDE.md — open-source Camtasia-compatible recorder & editor
+# CLAUDE.md — Tapeline: open-source Camtasia-compatible recorder & editor
 
 ## Mission
 
@@ -8,14 +8,17 @@ features, and it should **open, edit and save Camtasia `.cmproj` /
 `.tscproj` projects**, so that work started in Camtasia on any Mac or PC can
 continue here.
 
-- **Working name:** to be decided. The candidates are *OpenTake* and *Retake
-  Studio*.
-- **The name must not contain "Camtasia".** That word is a TechSmith
-  trademark, and using it in the product name invites takedowns.
+- **Name: Tapeline** (chosen 2026-10-19). Tape means recording; line means
+  timeline.
+  - Tagline: *"Tapeline — free, open-source screen recorder & editor. Opens
+    your Camtasia projects."*
+  - App target and product: `Tapeline`. Swift package: `Tapeline`.
+  - Module names stay descriptive (`TSCProjKit`, `MediaEngine`,
+    `RenderEngine`, …).
+- **Never put "Camtasia" in a product, module or bundle name.** It is a
+  TechSmith trademark, and using it invites takedowns.
 - **Describing compatibility is fine.** A line such as "opens Camtasia
   projects" is allowed (nominative use).
-- **Until the name is chosen,** module and target names stay generic
-  (`MediaEngine`, `RenderEngine`, …). The app target is called `App`.
 
 ## Hard rules (non-negotiable)
 
@@ -395,7 +398,12 @@ Each item lists the question, the preferred method, and where the result goes.
 
 ## Open decisions (ask the user)
 
-- **App name**: OpenTake, Retake Studio, or other. Do a trademark check.
+- ~~App name~~ **Decided 2026-10-19: Tapeline.** A web search found no app
+  with this name. Still to do before a public launch:
+  - a USPTO trademark search (class 9);
+  - claim the GitHub org `tapeline`;
+  - register a domain, which also sets the bundle ID (for example
+    `app.tapeline.Tapeline` if you own `tapeline.app`).
 - ~~Licence~~ **Decided 2026-10-19: GPL-3.0-or-later** for the whole repo
   (`LICENSE`).
   - Every forked or redistributed version must stay open source.

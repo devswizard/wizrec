@@ -1,4 +1,6 @@
-# (working name) — free, open-source screen recorder & editor for macOS
+<p align="center"><img src="Design/AppIcon/AppIcon.svg" width="128" alt="Tapeline icon"></p>
+
+# Tapeline — free, open-source screen recorder & editor for macOS
 
 Records your screen, then lets you edit on a multi-track timeline. It opens
 and saves Camtasia® `.cmproj` / `.tscproj` projects, so a project started in
