@@ -48,6 +48,16 @@ enum MainMenu {
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         add(edit, to: main)
 
+        let clip = NSMenu(title: "Clip")
+        clip.addItem(withTitle: "Group", action: #selector(EditorWindowController.groupClips(_:)), keyEquivalent: "g")
+        clip.addItem(withTitle: "Ungroup", action: #selector(EditorWindowController.ungroupClip(_:)), keyEquivalent: "G")
+        clip.addItem(.separator())
+        clip.addItem(withTitle: "Stitch Selected Media", action: #selector(EditorWindowController.stitchClips(_:)), keyEquivalent: "")
+        clip.addItem(withTitle: "Unstitch", action: #selector(EditorWindowController.unstitchClip(_:)), keyEquivalent: "")
+        clip.addItem(.separator())
+        clip.addItem(withTitle: "Separate Video and Audio", action: #selector(EditorWindowController.detachAudio(_:)), keyEquivalent: "")
+        add(clip, to: main)
+
         // Sent to the first responder: TimelineView implements and validates these; the
         // editor window forwards them to the timeline when it is not focused.
         let timeline = NSMenu(title: "Timeline")

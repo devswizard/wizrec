@@ -1,5 +1,6 @@
 import Observation
 import PlayerKit
+import RenderEngine
 import SwiftUI
 import TSCProjKit
 
@@ -11,6 +12,8 @@ final class InspectorState {
     var selectionCount = 0
     var timebase = Timebase.camtasia
     var error: String?
+    /// The selected clip sits directly on a track (speed can be changed).
+    var speedEditable = false
 }
 
 /// Callbacks from the inspector into the window controller.
@@ -21,6 +24,8 @@ struct InspectorActions {
     var commit: () -> Void
     /// Typed value: one undo step.
     var set: (InspectorField, Double) -> Void
+    /// New clip speed (1 = normal), top-level clips only.
+    var setSpeed: (Double) -> Void
 }
 
 /// Properties of the selected clip: transform, crop, opacity, volume; speed read-only.
@@ -58,7 +63,16 @@ struct InspectorView: View {
                 info("Type", Self.typeLabel(i.typeName))
                 info("Start", state.timebase.timecode(i.start))
                 info("Duration", state.timebase.timecode(i.duration))
-                info("Speed", String(format: "%.0f%%", i.speed * 100))
+                if state.speedEditable {
+                    HStack(spacing: 6) {
+                        Text("Speed").font(.callout).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
+                        Spacer()
+                        NumberField(value: i.speed * 100, unit: "%") { actions.setSpeed($0 / 100) }
+                            .frame(width: 70)
+                    }
+                } else {
+                    info("Speed", String(format: "%.0f%%", i.speed * 100))
+                }
             }
             if i.visualClipID != nil {
                 section("Transform") {
@@ -89,7 +103,12 @@ struct InspectorView: View {
                         HStack {
                             Text(e.name).font(.callout)
                             Spacer()
-                            if e.bypassed { Text("off").font(.caption).foregroundStyle(.secondary) }
+                            if e.bypassed {
+                                Text("off").font(.caption).foregroundStyle(.secondary)
+                            } else if !Compositor.renderedEffects.contains(e.name) {
+                                Text("not previewed").font(.caption).foregroundStyle(.orange)
+                                    .help("WizRec keeps this effect in the project but does not draw it yet.")
+                            }
                         }
                     }
                 }
