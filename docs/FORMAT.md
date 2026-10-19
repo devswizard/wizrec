@@ -63,7 +63,13 @@ holds the file [inf].
   played at 2× has scalar `1/2`. It is `1` at normal speed, or a rational
   string such as `"304/457"` (≈1.5× speed) [obs: both non-unit scalars in the
   user's vlog satisfy this exactly; the reverse relation holds for neither].
-- **Keyframes.** Keyframe times are relative to the clip's own start [inf].
+- **Keyframes.** Keyframe times are on the clip's media-time axis (the same
+  axis as `mediaStart`), not relative to the clip's start: after a left trim
+  of 22 frames, keyframes run to `mediaStart + duration` [obs]. With speed
+  ≠ 1 the exact base is [?]. See `docs/specs/time-mapping.md`.
+- **Frame alignment.** With `allowSubFrameEditing: false`, every `start`,
+  `duration`, `mediaStart` and `mediaDuration` is a whole number of output
+  frames, except the `mediaDuration` of a sped-up clip [obs].
 
 ## Top level
 
@@ -88,10 +94,12 @@ metadata               ProjectThumbnail (base64 PNG), ruler guides, theme id, �
 ```
 id, src ("./media/<ts>/file.mp4"), rect [x, y, w, h], lastMod, loudnessNormalization
 sourceTracks[]: {
-  type          0 = video, 2 = audio [obs]; 1 = image [?]
-  editRate      units per second for this stream (not the project rate)
-  range         [start, end] in the stream's editRate units
-  sampleRate    fps for video (may be a rational, e.g. "2997/50"); Hz for audio
+  type          0 = video, 1 = still image (png, pdf), 2 = audio [obs]
+  editRate      unit of `range` only (30 … 240000); never a frame rate
+  range         [0, n]: playable length after edit lists and AAC priming,
+                n / editRate seconds [obs]
+  sampleRate    approximate average fps for video (e.g. "2997/50"); Hz for audio
+                (display only, never for timing)
   trackRect, numChannels, bitDepth, integratedLUFS, peakLevel, metaData
 }
 ```
@@ -108,22 +116,23 @@ Each entry in `tracks[]` looks like this:
 {trackIndex, medias[], transitions[]?, parameters}
 ```
 
-- Index 0 is the bottom of the visual stack [inf].
+- Index 0 is the bottom of the visual stack [obs: demo thumbnail].
 - The UI state for each track sits in a separate list,
   `timeline.trackAttributes[]`, in the same order as the tracks. It holds
   `ident`, `audioMuted`, `videoHidden`, `magnetic`, `matte`, `solo`
-  and `metadata`.
+  and `metadata`. Tracks inside a group carry these flags inline on the
+  track object instead [obs].
 
 ### Clip types (`_type`)
 
 | `_type` | Meaning | Extra keys |
 |---|---|---|
-| `VMFile` | Video stream of a source file | `src`, `trackNumber` |
+| `VMFile` | Video stream of a source file | `src`, `trackNumber` (index into the source's `sourceTracks`, which lists only audio/video tracks) |
 | `ScreenVMFile` | Video stream of a `.trec` recording, with cursor data | `src`, `trackNumber`, cursor params |
 | `AMFile` | Audio stream | `src`, `trackNumber`, `channelNumber` ("0,1"), `attributes.gain/mixToMono/loudnessNormalization` |
 | `IMFile` | Still image | `src`, `trimStartSum` |
-| `UnifiedMedia` | A video+audio pair from one file, edited as a single clip | `video`, `audio` (each a full clip) |
-| `StitchedMedia` | Cut segments of one source, joined back together | `medias[]` (segment `start` is relative to the clip), `minMediaStart` |
+| `UnifiedMedia` | A video+audio pair from one file, edited as a single clip | `video`, `audio` (each a full clip with the parent's own `start`, not offset from it) |
+| `StitchedMedia` | Cut segments of one source, joined back together | `medias[]` (segments end to end from 0 on the stitched clip's inner timeline), `minMediaStart` |
 | `Group` | Nested timeline | `tracks[]` (same shape as top-level tracks) |
 | `Callout` | Annotation: shape, text, arrow… | `def` |
 
@@ -140,26 +149,29 @@ Each entry in `parameters` comes in one of two shapes [obs]:
 - **Constant:** a bare number, e.g. `"translation0": 172.7`.
 - **Animatable:** an object,
   `{"type": "double", "defaultValue": v, "interp": "eioe"|"linr", "uiHints"?, "keyframes"?}`.
+  Older files (format ≤ 4.0) omit `interp`.
 
 Each keyframe is `{time, endTime, duration, value, interp?}`. The parameter
 moves from the previous value to `value` between `time` and `endTime`, where
-`endTime = time + duration` [obs + inf].
+`endTime = time + duration` [obs + inf]. The first keyframe starts from
+`defaultValue` [inf, strong]; the last value holds afterwards [inf].
 
-`interp` takes two values:
+`interp` takes three values [obs]:
 
 - `linr`: linear.
 - `eioe`: ease in and out. TSCProjKit approximates it with smoothstep; the
   exact curve Camtasia uses is unknown [?].
+- `bnce`: bounce (MotionBlurPreview sample); curve unknown [?].
 
 Clip transform keys [obs]:
 
 | Key | Meaning |
 |---|---|
-| `translation0/1/2` | Offset from canvas centre, in px |
-| `scale0/1` | Scale; `metadata.default-scale` records the fit-to-canvas value |
-| `rotation2` | Z rotation |
-| `geometryCrop0..3` | Crop, as fractions of the frame (left, top, right, bottom [inf]) |
-| `sourceCrop0..3` | Crop applied in source space (images, callouts, screen recordings) |
+| `translation0/1/2` | Offset of the layer centre from the canvas centre, canvas px, **+y up** [obs] |
+| `scale0/1` | Multiplies the layer's natural size (`sourceTracks[trackNumber].trackRect`); missing = 1 [inf]; `metadata.default-scale` = min(1, fit) at import, metadata only |
+| `rotation2` | Z rotation in radians [obs]; sign and pivot [inf] |
+| `geometryCrop0..3` | Crop fractions; 0/2 are the x-edges [obs], top/bottom order [?]; no non-zero crop in any sample |
+| `sourceCrop0..3` | Crop applied in source space (images, callouts, screen recordings) [?] |
 | `opacity`, `volume` | Opacity and audio volume |
 | `cursorScale`, `cursorOpacity`, `cursorTrackLevel`, `smoothCursorAcrossEditDuration` | Screen-recording cursor settings |
 
@@ -168,9 +180,10 @@ Clip transform keys [obs]:
 `animationTracks.visual[]` holds entries of the form
 `{endTime, duration, range: [start, len], interp?}` [obs].
 
-These look like the segments that drive the keyframe animations ("visual
-animations" in the UI) [inf]. How exactly they relate to the keyframes is
-unknown [?].
+They are the animation segments ("visual animations" in the UI): every
+keyframe window `(time, endTime)` on the clip's parameters and its effects'
+parameters equals one entry's `(range[0], range[0] + range[1])` (118 / 118)
+[obs]. A renderer can evaluate the keyframes alone [inf].
 
 ### Effects
 
@@ -237,7 +250,14 @@ Rich text can also be stored as RTF, in `metadata.default-text`.
   - `h264`: the webcam video.
   - `aac`: the audio.
 
-  Where the cursor and click data is stored is unknown [?].
+  - A `.trec` has no fourth track. Two TechSmith atoms follow `moov`:
+    `TSCR` (recorder name/version/OS) and `TSCM` (`DATA` records: recording
+    environment, captured window/app names; presumably cursor and clicks)
+    [obs]. `TSCM` holds private desktop data: never log or vendor it.
+  - tscc2 is untagged; it decodes correctly as limited-range BT.601 [obs,
+    against Camtasia's thumbnail]. 1-byte tscc2 packets mean "no change"
+    and decode to no picture [obs].
+  - See `docs/specs/media-streams.md`.
 - **`.tscshadervid`** is JSON of the form
   `{name, version, width, height, code}`, where `code` is a GLSL fragment
   shader [obs]. Its uniforms (`_Color0..3`, `_MidPointX/Y`, `_Speed`) match
@@ -248,8 +268,7 @@ Rich text can also be stored as RTF, in `metadata.default-text`.
 ## Open questions
 
 - [?] The exact `eioe` easing curve.
-- [?] How `animationTracks` relates to keyframes.
-- [?] Where `.trec` stores cursor and click data, and in what format.
+- [?] The layout of `.trec` `TSCM` records (cursor and click data).
 - [?] The full list of transition names and their parameters.
 - [?] The rendering maths for each effect (shadow, rounded corners, motion
   blur, cursor physics).
