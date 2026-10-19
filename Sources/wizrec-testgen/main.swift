@@ -24,6 +24,9 @@ let usage = """
           Build the CE3 cursor sheet from your own Camtasia recording (.trec) into
           DIR/research/cursor/ce3-cursor/ (default DIR as above). The recording is
           copied into the new project; nothing about it is printed.
+      wizrec-testgen au2 [--out DIR]
+          Write the AU2 loudness signals (48 kHz WAV) and au2-generated.cmproj to
+          DIR/research/audio/au2/, with au2.json (our BS.1770 measurements).
       wizrec-testgen thumbnail PROJECT [-o OUT.png]
           Extract metadata.ProjectThumbnail (Camtasia's render at the playhead) from a
           .cmproj/.tscproj and print its size and the docPrefs playhead.
@@ -119,6 +122,21 @@ if args.first == "ce3" {
             let mod = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date) ?? Date()
             return SourceDescriptor(info: info, src: src, lastModified: mod)
         }
+        print("wrote  \(bundle.path)")
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
+
+if args.first == "au2" {
+    args.removeFirst()
+    var out = TestGen.defaultOutputDirectory
+    if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
+        out = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath, isDirectory: true)
+    }
+    do {
+        let bundle = try AudioSignals.writeAU2(to: out.appendingPathComponent("research/audio/au2", isDirectory: true))
         print("wrote  \(bundle.path)")
     } catch {
         fail("\(error)")
