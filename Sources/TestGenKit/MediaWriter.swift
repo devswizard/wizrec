@@ -28,6 +28,11 @@ public enum MediaWriter {
         public var frameCount: Int
         /// Track media timescale (units per second); sample `i` has PTS `i × timescale / fps`.
         public var timescale: Int32
+
+        public init(width: Int, height: Int, fps: Int, frameCount: Int, timescale: Int32) {
+            self.width = width; self.height = height; self.fps = fps; self.frameCount = frameCount
+            self.timescale = timescale
+        }
     }
 
     /// Encodes `frameCount` frames of `width`×`height` H.264 (High profile, no B-frames,
