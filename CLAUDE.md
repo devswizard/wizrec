@@ -1,4 +1,4 @@
-# CLAUDE.md — Tapeline: open-source Camtasia-compatible recorder & editor
+# CLAUDE.md — WizRec: open-source Camtasia-compatible recorder & editor
 
 ## Mission
 
@@ -8,11 +8,15 @@ features, and it should **open, edit and save Camtasia `.cmproj` /
 `.tscproj` projects**, so that work started in Camtasia on any Mac or PC can
 continue here.
 
-- **Name: Tapeline** (chosen 2026-10-19). Tape means recording; line means
-  timeline.
-  - Tagline: *"Tapeline — free, open-source screen recorder & editor. Opens
-    your Camtasia projects."*
-  - App target and product: `Tapeline`. Swift package: `Tapeline`.
+- **Name: WizRec** (chosen 2026-10-19), a Devs Wizard product.
+  - Tagline: *"WizRec — free, open-source screen recorder & editor by Devs
+    Wizard. Opens your Camtasia projects."*
+  - App target and product: `WizRec`. Swift package: `WizRec`.
+  - `~/Movies/WizRec/` already holds earlier recording sessions (`screen.mov`,
+    `camera.mov`, `audio.wav`, `events.json`, `zoom-plan.json`,
+    `styled.mp4`), possibly from an earlier WizRec prototype. Ask the user
+    before writing into that folder, and consider importing those sessions
+    (cursor `events.json`, `zoom-plan.json`) in M6/M7.
   - Module names stay descriptive (`TSCProjKit`, `MediaEngine`,
     `RenderEngine`, …).
 - **Never put "Camtasia" in a product, module or bundle name.** It is a
@@ -398,12 +402,12 @@ Each item lists the question, the preferred method, and where the result goes.
 
 ## Open decisions (ask the user)
 
-- ~~App name~~ **Decided 2026-10-19: Tapeline.** A web search found no app
-  with this name. Still to do before a public launch:
+- ~~App name~~ **Decided 2026-10-19: WizRec** (Devs Wizard brand). A web
+  search found no app with this name. Still to do before a public launch:
   - a USPTO trademark search (class 9);
-  - claim the GitHub org `tapeline`;
-  - register a domain, which also sets the bundle ID (for example
-    `app.tapeline.Tapeline` if you own `tapeline.app`).
+  - choose the GitHub location (for example a `devswizard/wizrec` repo);
+  - set the bundle ID from a domain Devs Wizard owns (for example
+    `com.devswizard.WizRec` if that domain is `devswizard.com`).
 - ~~Licence~~ **Decided 2026-10-19: GPL-3.0-or-later** for the whole repo
   (`LICENSE`).
   - Every forked or redistributed version must stay open source.

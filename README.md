@@ -1,6 +1,8 @@
-<p align="center"><img src="Design/AppIcon/AppIcon.svg" width="128" alt="Tapeline icon"></p>
+<p align="center"><img src="Design/AppIcon/AppIcon.svg" width="128" alt="WizRec icon"></p>
 
-# Tapeline — free, open-source screen recorder & editor for macOS
+# WizRec — free, open-source screen recorder & editor for macOS
+
+*By Devs Wizard.*
 
 Records your screen, then lets you edit on a multi-track timeline. It opens
 and saves Camtasia® `.cmproj` / `.tscproj` projects, so a project started in
