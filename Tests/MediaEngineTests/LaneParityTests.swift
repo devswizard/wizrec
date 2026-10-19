@@ -36,6 +36,7 @@ private func diff(_ a: [UInt8], _ b: [UInt8]) -> (pixels: Int, maxDelta: Int) {
 struct LaneCase: CustomTestStringConvertible, Sendable {
     let name: String
     let args: [String]
+    var ext = "mp4"
     var testDescription: String { name }
 
     static let all: [LaneCase] = [
@@ -53,13 +54,29 @@ struct LaneCase: CustomTestStringConvertible, Sendable {
             "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "30",
             "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1", "-pix_fmt", "yuv420p10le",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]),
+        LaneCase(name: "hevc 10-bit 320x180 HDR10 PQ", args: [
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "30",
+            "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1", "-pix_fmt", "yuv420p10le",
+            "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084"]),
+        LaneCase(name: "hevc 10-bit 320x180 HLG", args: [
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "30",
+            "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1", "-pix_fmt", "yuv420p10le",
+            "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=arib-std-b67"]),
+        LaneCase(name: "hevc 12-bit 320x180 HDR10 PQ", args: [
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "20",
+            "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1", "-pix_fmt", "yuv420p12le",
+            "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084"]),
+        LaneCase(name: "prores 422 10-bit 320x180 HDR10 PQ", args: [
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "20",
+            "-c:v", "prores_ks", "-profile:v", "2", "-pix_fmt", "yuv422p10le",
+            "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084"], ext: "mov"),
     ]
 }
 
 @Suite(.serialized, .enabled(if: Synth.ffmpegPath != nil, "needs ffmpeg"))
 struct LaneParityTests {
     private func make(_ c: LaneCase, in dir: URL) throws -> URL {
-        let url = dir.appendingPathComponent("lane.mp4")
+        let url = dir.appendingPathComponent("lane.\(c.ext)")
         try Synth.ffmpeg(c.args + [url.path])
         return url
     }

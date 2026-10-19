@@ -69,6 +69,13 @@ final class FrameConverter {
     /// Bi-planar YCbCr staging buffers for software pictures, and their (width, height, format).
     private var stagingPool: CVPixelBufferPool?
     private var stagingKey: [Int] = []
+    /// HDR (PQ/HLG) streams: tone-mapped to SDR BT.709 on the CPU from either lane's YCbCr.
+    private let toneMapper: ToneMapper?
+    /// Full-size tone-mapped frames awaiting a scale (thumbnails of HDR streams).
+    private var hdrPool: BGRAPool?
+    /// HDR pictures with no bi-planar equivalent are first resampled to 4:4:4 10-bit.
+    private var hdrSws: UnsafeMutablePointer<SwsContext>?
+    private var hdrFrame: UnsafeMutablePointer<AVFrame>?
 
     /// Codecs that may decode on VideoToolbox; their software frames share its conversion.
     static let gpuConvertedCodecs: Set<AVCodecID> = [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_PRORES,
@@ -81,6 +88,7 @@ final class FrameConverter {
         sharesGPUConversion = Self.gpuConvertedCodecs.contains(codecID)
         tags = VTPictureDecoder.colourAttachments(par)
         fullRange = Self.isFullRange(par)
+        toneMapper = ToneMapper(par: par)
     }
 
     /// Converter for a stream known only by its codec (swscale only).
@@ -89,7 +97,11 @@ final class FrameConverter {
         sharesGPUConversion = false
         tags = [:]
         fullRange = false
+        toneMapper = nil
     }
+
+    /// The stream is HDR (PQ or HLG) and is tone-mapped to SDR.
+    var isHDR: Bool { toneMapper != nil }
 
     /// Full-range (JPEG) samples: tagged so, or a `yuvj*` format.
     static func isFullRange(_ par: UnsafeMutablePointer<AVCodecParameters>) -> Bool {
@@ -99,6 +111,8 @@ final class FrameConverter {
     deinit {
         if let s = sws { sws_freeContext(s) }
         if let t = transfer { VTPixelTransferSessionInvalidate(t) }
+        if let s = hdrSws { sws_freeContext(s) }
+        if hdrFrame != nil { av_frame_free(&hdrFrame) }
     }
 
     private func buffer(width: Int, height: Int) throws -> CVPixelBuffer {
@@ -112,6 +126,11 @@ final class FrameConverter {
     func convert(_ frame: UnsafeMutablePointer<AVFrame>) throws -> CVPixelBuffer {
         let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
         guard w > 0, h > 0 else { throw MediaError.decodeFailed("empty frame") }
+        if let tm = toneMapper {
+            let dst = try buffer(width: w, height: h)
+            try tm.convert(try hdrSource(frame), into: dst)
+            return dst
+        }
         if let src = try yuvSource(frame) { return try transferVT(src) }
         return try convertSoftware(frame, width: w, height: h, outWidth: w, outHeight: h)
     }
@@ -129,6 +148,13 @@ final class FrameConverter {
         let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
         guard w > 0, h > 0 else { throw MediaError.decodeFailed("empty frame") }
         let (ow, oh) = Self.scaledSize(width: w, height: h, maxPixelSize: maxPixelSize)
+        if let tm = toneMapper {
+            if hdrPool?.width != w || hdrPool?.height != h { hdrPool = try BGRAPool(width: w, height: h) }
+            guard let hdrPool else { throw MediaError.decodeFailed("no pixel buffer pool") }
+            let full = try hdrPool.make()
+            try tm.convert(try hdrSource(frame), into: full)
+            return (ow, oh) == (w, h) ? full : try transferVT(full, width: ow, height: oh)
+        }
         if let src = try yuvSource(frame) { return try transferVT(src, width: ow, height: oh) }
         return try convertSoftware(frame, width: w, height: h, outWidth: ow, outHeight: oh)
     }
@@ -151,6 +177,49 @@ final class FrameConverter {
         CVBufferRemoveAllAttachments(src)
         for (k, v) in tags { CVBufferSetAttachment(src, k, v, .shouldPropagate) }
         return src
+    }
+
+    /// The YCbCr picture of an HDR frame: the VideoToolbox surface, or the software picture
+    /// staged into the same bi-planar layout (resampled to 4:4:4 10-bit first when its format
+    /// has no bi-planar equivalent, e.g. 12-bit or with alpha).
+    private func hdrSource(_ frame: UnsafeMutablePointer<AVFrame>) throws -> CVPixelBuffer {
+        if frame.pointee.format == AV_PIX_FMT_VIDEOTOOLBOX.rawValue {
+            guard let raw = frame.pointee.data.3 else { throw MediaError.decodeFailed("VideoToolbox frame without buffer") }
+            return Unmanaged<CVPixelBuffer>.fromOpaque(UnsafeRawPointer(raw)).takeUnretainedValue()
+        }
+        if let staged = try stage(frame) { return staged }
+        let w = frame.pointee.width, h = frame.pointee.height
+        let target = AV_PIX_FMT_YUV444P10LE
+        if hdrFrame == nil || hdrFrame?.pointee.width != w || hdrFrame?.pointee.height != h {
+            if hdrFrame != nil { av_frame_free(&hdrFrame) }
+            guard let f = av_frame_alloc() else { throw MediaError.decodeFailed("av_frame_alloc") }
+            f.pointee.width = w; f.pointee.height = h; f.pointee.format = target.rawValue
+            hdrFrame = f
+            guard av_frame_get_buffer(f, 0) >= 0 else { throw MediaError.decodeFailed("av_frame_get_buffer") }
+        }
+        guard let out = hdrFrame else { throw MediaError.decodeFailed("no HDR resample frame") }
+        hdrSws = sws_getCachedContext(hdrSws, w, h, AVPixelFormat(frame.pointee.format), w, h, target,
+                                      Int32(SWS_BILINEAR.rawValue | SWS_ACCURATE_RND.rawValue), nil, nil, nil)
+        guard let s = hdrSws else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(frame.pointee.format)") }
+        let rc = withUnsafePointer(to: frame.pointee.data) { dp in
+            dp.withMemoryRebound(to: UnsafePointer<UInt8>?.self, capacity: 8) { srcData in
+                withUnsafePointer(to: frame.pointee.linesize) { lp in
+                    lp.withMemoryRebound(to: Int32.self, capacity: 8) { srcStrides in
+                        withUnsafePointer(to: out.pointee.data) { odp in
+                            odp.withMemoryRebound(to: UnsafeMutablePointer<UInt8>?.self, capacity: 8) { dstData in
+                                withUnsafePointer(to: out.pointee.linesize) { olp in
+                                    olp.withMemoryRebound(to: Int32.self, capacity: 8) { dstStrides in
+                                        sws_scale(s, srcData, srcStrides, 0, h, dstData, dstStrides)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        guard rc > 0, let staged = try stage(out) else { throw MediaError.decodeFailed("HDR resample failed (\(rc))") }
+        return staged
     }
 
     /// Bi-planar CoreVideo format for a planar YCbCr software format; nil when there is none.
