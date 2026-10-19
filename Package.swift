@@ -25,9 +25,11 @@ let package = Package(
         .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
+        // Player logic (clock, frame snapping, audio mix, playback pipeline), testable without UI.
+        .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
         .executableTarget(
             name: "WizRecApp",
-            dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]
+            dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]
         ),
         .testTarget(
             name: "TSCProjKitTests",
@@ -41,6 +43,10 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "TimelineEngineTests", dependencies: ["TimelineEngine", "TSCProjKit"]),
+        .testTarget(
+            name: "PlayerKitTests",
+            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit"]
+        ),
         .testTarget(
             name: "GoldenTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit"]
