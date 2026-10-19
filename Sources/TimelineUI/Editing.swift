@@ -506,7 +506,7 @@ public struct TimelineEditor {
         let targets = transitionTargets(tolerance: tolerance)
         guard !targets.isEmpty else { return false }
         let cmds: [any EditCommand] = targets.map { t in
-            let d = transitionDuration(left: t.left, right: t.right)
+            let d = transitionDuration(left: t.left, right: t.right, name: name)
             return AddTransition(name: name, leftClipID: t.left, rightClipID: t.right,
                                  duration: map.isIdentity ? d : max(1, Int64((Double(d) / map.scale).rounded())))
         }
@@ -542,8 +542,8 @@ public struct TimelineEditor {
     }
 
     /// Track ticks a transition on these sides spans (for highlighting), or nil.
-    public func transitionSpan(left: Int64?, right: Int64?) -> (track: Int, start: Int64, end: Int64)? {
-        let d = transitionDuration(left: left, right: right)
+    public func transitionSpan(left: Int64?, right: Int64?, name: String? = nil) -> (track: Int, start: Int64, end: Int64)? {
+        let d = transitionDuration(left: left, right: right, name: name)
         switch (left.flatMap { snapshot.clip($0) }, right.flatMap { snapshot.clip($0) }) {
         case let (l?, _?): return (l.track, l.clip.end - d / 2, l.clip.end - d / 2 + d)
         case let (l?, nil): return (l.track, l.clip.end - d, l.clip.end)
@@ -552,10 +552,12 @@ public struct TimelineEditor {
         }
     }
 
-    /// Default length (`TimelineLibrary.defaultTransitionSeconds`), at most half of each
-    /// covered clip, frame-rounded, at least one frame.
-    public func transitionDuration(left: Int64?, right: Int64?) -> Int64 {
-        var d = Int64((TimelineLibrary.defaultTransitionSeconds * Double(snapshot.editRate)).rounded())
+    /// Default length of library transition `name` (`TransitionPreset.defaultSeconds`, else
+    /// `TimelineLibrary.defaultTransitionSeconds`), at most half of each covered clip,
+    /// frame-rounded, at least one frame. Ticks.
+    public func transitionDuration(left: Int64?, right: Int64?, name: String? = nil) -> Int64 {
+        let secs = name.flatMap { TimelineLibrary.transition(named: $0)?.defaultSeconds } ?? TimelineLibrary.defaultTransitionSeconds
+        var d = Int64((secs * Double(snapshot.editRate)).rounded())
         for id in [left, right].compactMap({ $0 }) {
             if let c = snapshot.clip(id)?.clip { d = min(d, c.duration / 2) }
         }
@@ -566,7 +568,7 @@ public struct TimelineEditor {
     @discardableResult
     public func addTransition(named name: String, left: Int64?, right: Int64?) -> Bool {
         guard left != nil || right != nil else { return false }
-        let d = transitionDuration(left: left, right: right)
+        let d = transitionDuration(left: left, right: right, name: name)
         return perform(AddTransition(name: name, leftClipID: left, rightClipID: right,
                                      duration: map.isIdentity ? d : max(1, Int64((Double(d) / map.scale).rounded()))))
     }

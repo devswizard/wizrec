@@ -4,6 +4,8 @@ import Testing
 import TimelineEngine
 import TSCProjKit
 @testable import TimelineUI
+import RenderEngine
+import WizRecAssets
 
 @MainActor
 struct LibraryTests {
@@ -24,10 +26,29 @@ struct LibraryTests {
     }
 
     @Test func catalogMatchesRenderer() {
-        #expect(TimelineLibrary.transitions.map(\.name) == ["Fade", "Dissolve", "FadeThroughBlack"])
-        #expect(Set(TimelineLibrary.effects.map(\.name)) == ["RoundCorners", "DropShadow", "Mask", "ColorAdjustment"])
+        // Sourced from WizRec's own catalog, in its order, flagged by what RenderEngine draws.
+        #expect(TimelineLibrary.transitions.map(\.name) == AssetCatalog.transitions.map(\.name))
+        #expect(TimelineLibrary.effects.map(\.name) == AssetCatalog.effects.map(\.name))
+        #expect(Array(TimelineLibrary.transitions.prefix(3).map(\.name)) == ["Fade", "Dissolve", "FadeThroughBlack"])
+        for t in TimelineLibrary.transitions { #expect(t.isRendered == Compositor.renderedTransitions.contains(t.name)) }
+        #expect(Compositor.renderedTransitions.isSuperset(of: ["Fade", "Dissolve", "FadeThroughBlack"]))
+        for e in TimelineLibrary.effects { #expect(e.isRendered == Compositor.renderedEffects.contains(e.name)) }
+        #expect(TimelineLibrary.effect(named: "DropShadow")?.isRendered == true)
         #expect(TimelineLibrary.effect(named: "DropShadow")?.parameters.first { $0.key == "blur" }?.value == 25)
+        #expect(TimelineLibrary.effect(named: "DropShadow")?.category == "categoryVisualEffects")
+        #expect(TimelineLibrary.transition(named: "CubeRotate")?.defaultSeconds == 1.5)
+        #expect(TimelineLibrary.transition(named: "CubeRotate")?.category == "3d")
         #expect(TimelineLibrary.transition(named: "Nope") == nil)
+    }
+
+    @Test func transitionLengthFollowsPreset() throws {
+        // editRate 30: Cube's 1.5 s = 45 ticks, capped at half of clip 3 (60 → 30).
+        let (m, _) = try makeView()
+        let e = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project))
+        #expect(e.transitionDuration(left: nil, right: nil, name: "CubeRotate") == 45)
+        #expect(e.transitionDuration(left: 1, right: 2, name: "CubeRotate") == 45)
+        #expect(e.transitionDuration(left: 3, right: nil, name: "CubeRotate") == 30)
+        #expect(e.transitionDuration(left: nil, right: nil, name: "Unknown") == 30)
     }
 
     @Test func transitionTargets() throws {

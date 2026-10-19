@@ -337,6 +337,9 @@ public final class Compositor {
     /// Effect names drawn on the GPU; any other effect passes through unchanged.
     public static var renderedEffects: Set<String> { EffectRegistry.names }
 
+    /// Transition names drawn with their own look (live registry); any other name cross-fades.
+    public static var renderedTransitions: Set<String> { TransitionRegistry.names }
+
     /// Compiles the shaders; throws `RenderError.shaderCompile` on failure.
     public init(device: any MTLDevice) throws {
         self.device = device

@@ -503,8 +503,8 @@ extension TimelineCanvas {
                 ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 5, cornerHeight: 5, transform: nil))
                 ctx.strokePath()
             }
-        case .transition(_, let l, let rgt)?:
-            if let span = editor.transitionSpan(left: l, right: rgt),
+        case .transition(let name, let l, let rgt)?:
+            if let span = editor.transitionSpan(left: l, right: rgt, name: name),
                let r = L.clipRect(track: span.track, start: span.start, duration: span.end - span.start) {
                 Palette.marqueeFill.setFill(); ctx.fill(r)
                 ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(2)
