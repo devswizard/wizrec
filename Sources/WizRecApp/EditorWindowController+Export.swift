@@ -126,7 +126,7 @@ extension EditorWindowController {
     /// Exports a close or quit would cancel; 0 when none or when the user already agreed.
     var exportsBlockingClose: Int {
         if case .ask(let n) = exportCloseGuard.decide(activeJobs: exportQueue.activeJobCount,
-                                                       scripted: options.exportPath != nil) { return n }
+                                                       scripted: options.isScripted) { return n }
         return 0
     }
 

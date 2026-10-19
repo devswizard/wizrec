@@ -211,13 +211,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
               + "canvas=\(Int(model.scene.canvasSize.width))x\(Int(model.scene.canvasSize.height)) "
               + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
         fflush(stdout)
-        if options.snapshotDir != nil || !options.importPaths.isEmpty || options.importCaptions != nil
-            || options.exportCaptions != nil || options.exportPath != nil {
+        if options.runsScript {
             Task { await runScript() }
-        } else {
-            if options.autoplay { engine.play() }
-            if !model.missing.isEmpty { showRelink(nil) }
+        } else if options.autoplay {
+            engine.play()
         }
+        if options.showsRelinkAtOpen(missing: model.missing.count) { showRelink(nil) }
     }
 
     override func windowTitle(forDocumentDisplayName displayName: String) -> String {

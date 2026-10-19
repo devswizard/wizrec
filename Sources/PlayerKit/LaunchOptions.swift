@@ -56,6 +56,18 @@ public struct LaunchOptions: Sendable, Equatable {
 
     public init() {}
 
+    /// Scripted steps run after opening (snapshots, imports, captions, export).
+    public var runsScript: Bool {
+        snapshotDir != nil || !importPaths.isEmpty || importCaptions != nil || exportCaptions != nil || exportPath != nil
+    }
+
+    /// A scripted or timed run (`runsScript` or `--quit-after`): nothing may wait for the user,
+    /// so no sheets or confirmations are shown.
+    public var isScripted: Bool { runsScript || quitAfter != nil }
+
+    /// Whether opening a project with `missing` unresolved media shows Relink Missing Media.
+    public func showsRelinkAtOpen(missing: Int) -> Bool { missing > 0 && !isScripted }
+
     public static func == (a: LaunchOptions, b: LaunchOptions) -> Bool {
         a.paths == b.paths && a.autoplay == b.autoplay && a.seekSeconds == b.seekSeconds && a.statsLog == b.statsLog
             && a.overlay == b.overlay && a.audio == b.audio && a.quitAfter == b.quitAfter

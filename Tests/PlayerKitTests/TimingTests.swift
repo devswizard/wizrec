@@ -107,6 +107,22 @@ private let tb = Timebase.camtasia
         #expect(o.seekSeconds == 3.5)
         #expect(o.quitAfter == 8)
     }
+
+    /// Scripted and timed runs never wait for the user: no relink sheet at open.
+    @Test func scriptedRunsSkipTheRelinkSheet() {
+        let user = LaunchOptions(arguments: ["p.cmproj", "--autoplay"])
+        #expect(!user.isScripted && !user.runsScript)
+        #expect(user.showsRelinkAtOpen(missing: 2))
+        #expect(!user.showsRelinkAtOpen(missing: 0))
+        for args in [["--quit-after", "3"], ["--export", "/tmp/x.mp4"], ["--snapshot-dir", "/tmp/s"],
+                     ["--import", "a.mov"], ["--import-captions", "a.srt"], ["--export-captions", "a.vtt"]] {
+            let o = LaunchOptions(arguments: ["p.cmproj"] + args)
+            #expect(o.isScripted, "\(args)")
+            #expect(!o.showsRelinkAtOpen(missing: 2), "\(args)")
+        }
+        #expect(!LaunchOptions(arguments: ["--quit-after", "3"]).runsScript)
+        #expect(LaunchOptions(arguments: ["--export", "/tmp/x.mp4"]).runsScript)
+    }
 }
 
 @Suite struct StatsTests {

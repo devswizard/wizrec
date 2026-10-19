@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let q = options.quitAfter {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: UInt64(max(0, q) * 1e9))
+                // A document sheet (e.g. Relink Missing Media shown at open) blocks closing the
+                // document and with it the scripted quit; dismiss sheets first.
+                for w in NSApp.windows { if let s = w.attachedSheet { w.endSheet(s) } }
                 NSApp.terminate(nil)
             }
         }
