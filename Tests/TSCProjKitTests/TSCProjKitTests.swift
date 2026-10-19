@@ -180,3 +180,12 @@ func installedSampleProjectsRoundTrip() throws {
     #expect(throws: JSONParseError.self) { try JSON.parse("{\"a\": }") }
     #expect(throws: JSONParseError.self) { try JSON.parse("{\"a\": 1} x") }
 }
+
+@Test func readingParametersNeverMutatesTheClip() throws {
+    let o = try #require(JSON.parse(#"{"_type": "AMFile", "start": 0}"#).object)
+    let clip = Clip(o)
+    #expect(clip.parameters.opacity() == 1)
+    #expect(o["parameters"] == nil)
+    clip.editableParameters.set("volume", 0.5)
+    #expect(o["parameters"]?.object?["volume"]?.double == 0.5)
+}

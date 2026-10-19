@@ -114,9 +114,18 @@ public struct Clip {
 
     // MARK: Content
 
+    /// Read-only view of `parameters`. Never mutates the clip: when the key is
+    /// missing this is an empty, detached view. Use `editableParameters` to write.
     public var parameters: Parameters {
-        if object["parameters"]?.object == nil { object["parameters"] = .object(JSONObject()) }
-        return Parameters(object["parameters"]!.object!)
+        Parameters(object["parameters"]?.object ?? JSONObject())
+    }
+
+    /// `parameters` for writing; inserts an empty `parameters` object if missing.
+    public var editableParameters: Parameters {
+        if let o = object["parameters"]?.object { return Parameters(o) }
+        let o = JSONObject()
+        object["parameters"] = .object(o)
+        return Parameters(o)
     }
 
     public var effects: [Effect] {
