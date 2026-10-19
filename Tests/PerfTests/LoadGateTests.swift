@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WizRecTestSupport
 
 /// `LoadGate` itself (always runs; no timing involved).
 struct LoadGateTests {

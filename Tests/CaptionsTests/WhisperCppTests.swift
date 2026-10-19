@@ -2,6 +2,7 @@ import CoreMedia
 import Foundation
 import MediaEngine
 import Testing
+import WizRecTestSupport
 @testable import Captions
 
 /// whisper-cli output for three words, a blank-audio annotation and a two-word segment
@@ -274,7 +275,8 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         let started = Date()
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
-        #expect(Date().timeIntervalSince(started) < 5)
+        let stopped = Date().timeIntervalSince(started)
+        LoadGate.expect(stopped < 5, "cancel stopped whisper-cli within 5 s, took \(stopped) s")
         guard let pid else { Issue.record("fake whisper never started"); return }
         var gone = false
         for _ in 0..<50 where !gone {

@@ -2,6 +2,7 @@ import CoreMedia
 import Foundation
 import MediaEngine
 import Testing
+import WizRecTestSupport
 import TSCProjKit
 @testable import AudioEngine
 

@@ -3,6 +3,7 @@ import Foundation
 import MediaEngine
 import RenderEngine
 import Testing
+import WizRecTestSupport
 import TSCProjKit
 @testable import Exporter
 

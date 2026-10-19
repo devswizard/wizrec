@@ -68,10 +68,10 @@ let package = Package(
             dependencies: ["TSCProjKit"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "MediaEngineTests", dependencies: ["MediaEngine", "TSCProjKit"]),
+        .testTarget(name: "MediaEngineTests", dependencies: ["MediaEngine", "TSCProjKit", "WizRecTestSupport"]),
         .testTarget(
             name: "RenderEngineTests",
-            dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine", "WizRecAssets", "CaptionLayout"],
+            dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine", "WizRecAssets", "CaptionLayout", "WizRecTestSupport"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
@@ -90,19 +90,24 @@ let package = Package(
         ),
         .testTarget(
             name: "TimelineUITests",
-            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit", "MediaEngine", "RenderEngine", "WizRecAssets"],
+            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit", "MediaEngine", "RenderEngine", "WizRecAssets",
+                           "WizRecTestSupport"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
-        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine"]),
-        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine", "TestGenKit"]),
-        .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine"]),
+        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine", "WizRecTestSupport"]),
+        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine", "TestGenKit",
+                                                   "WizRecTestSupport"]),
+        .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine",
+                                                  "WizRecTestSupport"]),
         // RenderEngine only to check that every built-in shader translates, compiles and draws.
         .testTarget(name: "WizRecAssetsTests", dependencies: ["WizRecAssets", "RenderEngine", "MediaEngine"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
             name: "PerfTests",
-            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
+            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "WizRecTestSupport"]
         ),
+        // qa: helpers for test targets only (LoadGate timing bounds); never a product dependency.
+        .target(name: "WizRecTestSupport", path: "Tests/WizRecTestSupport"),
     ]
 )
