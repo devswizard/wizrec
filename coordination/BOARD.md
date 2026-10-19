@@ -219,7 +219,7 @@ click-through not done.
 | S4-MED-1 | media | done | HDR10/HLG → SDR tone mapping in PixelConversion; tests on synthesized HDR media; lanes stay byte-identical |
 | S4-MED-2 | media | claimed | vImage-vectorised SW-lane staging copy (2.7K/4K 10-bit); LaneParityTests green; gated perf numbers |
 | S4-EXP-1 | export | done | Audio prefetch/mix in parallel with video; A/V ≤ 1 frame + determinism tests green; gated perf numbers |
-| S4-QA-1 | qa | claimed | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
+| S4-QA-1 | qa | done | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
 | S4-SHIP-1 | ship | done | Strip `ProjectThumbnail` from all `Tests/*/Fixtures/demo.tscproj`; tests needing it read the user's project in place or skip; asset audit clean; CI workflow current |
 
 ## Session 4 merges
@@ -228,3 +228,4 @@ click-through not done.
 - media5 slice 1: HDR10/HLG → SDR BT.709 tone mapping (both lanes identical); ProRes/MPEG-2/MPEG-4p2 decode SW only (VT not bit-exact). S4-MED-1 done.
 - export5: audio mixed on a prefetch task in parallel with video; byte-identical to serial. Release build: demo H.264 5.02 s (5.1× RT), audio ≈ free. S4-EXP-1 done; S4-EXP-2 profile: debug-only mix cost (NoiseReducer), no AudioEngine change.
 - ship5: `tscproj strip-thumbnail`, fixtures stripped, AssetAuditTests, release.yml librsvg fix, WIZREC_BUNDLE_ID, env-only signing → ad-hoc fallback. S4-SHIP-1 done.
+- qa5 slices 2–3: ExportSyncIntegrationTests (clicks ±1 frame, ProRes determinism), HDRIntegrationTests (PQ/HLG/SDR, 4444 ≥ 45 dB). 809 tests, 5 flaky-watch runs clean. S4-QA-1 done.
