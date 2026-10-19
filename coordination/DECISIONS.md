@@ -49,3 +49,16 @@ Dated log. Newest last.
   up to one GOP). Playback uses a VideoToolbox lane, scrubbing a software lane.
 - **2026-10-19 · `MediaPool.cacheStats` approved** (additive API_CHANGE, for the
   player's performance overlay).
+- **2026-10-19 · Build everything (user: "complete all build with multi
+  agents"):** M2–M11 run in waves. Wave A = M2 editor shell, M3 edit ops,
+  M4 effects start, M7 recorder, research specs. Wave B = M8 audio, M9 export,
+  M10 captions. Wave C = M11 polish. Items needing the user (Camtasia checks,
+  reference exports, GitHub remote, signing identity, permissions) are batched.
+- **2026-10-19 · Saves keep a backup** (`project.tscproj.wizrec-backup`), no
+  autosave into bundles in M2.
+- **2026-10-19 · Research scope (agent "researcher"):** methods 1–2 first
+  (user projects, Camtasia sample projects read in place, their
+  `ProjectThumbnail` renders, ffprobe). Static REA permitted only for the
+  `.trec` cursor/click stream layout (CLAUDE.md rule 4.4) with ledger entries.
+  No runtime observation of Camtasia (needs user approval, not given). Nothing
+  licensing-related, ever.

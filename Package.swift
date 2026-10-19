@@ -9,6 +9,11 @@ let package = Package(
         .library(name: "MediaEngine", targets: ["MediaEngine"]),
         .library(name: "RenderEngine", targets: ["RenderEngine"]),
         .library(name: "TimelineEngine", targets: ["TimelineEngine"]),
+        .library(name: "TimelineUI", targets: ["TimelineUI"]),
+        .library(name: "Recorder", targets: ["Recorder"]),
+        .library(name: "AudioEngine", targets: ["AudioEngine"]),
+        .library(name: "Exporter", targets: ["Exporter"]),
+        .library(name: "Captions", targets: ["Captions"]),
         .executable(name: "tscproj", targets: ["tscproj"]),
         .executable(name: "WizRec", targets: ["WizRecApp"]),
         .executable(name: "wizrec-testgen", targets: ["wizrec-testgen"]),
@@ -25,6 +30,16 @@ let package = Package(
         .target(name: "MediaEngine", dependencies: ["TSCProjKit", "CFFmpeg"]),
         .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
+        // M2: timeline view (agent "timelineui").
+        .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine"]),
+        // M7: screen/camera/mic capture + cursor log (agent "recorder").
+        .target(name: "Recorder"),
+        // M8: mixing, gain/volume keyframes, loudness, audio effects (agent "audio").
+        .target(name: "AudioEngine", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
+        // M9: MP4/MOV/GIF/audio export (agent "export").
+        .target(name: "Exporter", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "AudioEngine"]),
+        // M10: transcription + captions (agent "captions").
+        .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
         // qa: synthetic test media + golden test-project generator (library shared with the tests).
         .target(name: "TestGenKit", dependencies: ["TSCProjKit"]),
@@ -33,7 +48,8 @@ let package = Package(
         .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
         .executableTarget(
             name: "WizRecApp",
-            dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]
+            dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine",
+                           "TimelineUI", "Recorder", "AudioEngine", "Exporter", "Captions"]
         ),
         .testTarget(
             name: "TSCProjKitTests",
@@ -59,6 +75,11 @@ let package = Package(
             name: "GoldenTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
         ),
+        .testTarget(name: "TimelineUITests", dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit"]),
+        .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
+        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit"]),
+        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit"]),
+        .testTarget(name: "CaptionsTests", dependencies: ["Captions", "TSCProjKit"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
             name: "PerfTests",

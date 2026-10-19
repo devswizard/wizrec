@@ -61,3 +61,40 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | Resolve crop order, rotation sign, group composition/time, `trimStartSum`, edit semantics from X1–X7 | format | after user session |
 | Fit `eioe` curve with `wizrec-testgen track-marker` on reference exports | qa, format | after user session |
 | Run CI once a GitHub remote exists; check Metal-less runners skip GPU tests | qa | when repo is published |
+
+# Wave A — M2 editor shell, M3 edits, M4 effects, M7 recorder (2026-10-19)
+
+| Agent | Branch | Owns |
+|---|---|---|
+| app | `agent/app2` | `Sources/WizRecApp/**`, `Sources/PlayerKit/**`, `scripts/**` |
+| timelineui | `agent/timelineui` | `Sources/TimelineUI/**`, `Tests/TimelineUITests/**` |
+| timeline | `agent/timeline2` | `Sources/TimelineEngine/**`, TSCProjKit write path (`BundleWriting.swift` + additive helpers) |
+| media | `agent/media2` | `Sources/MediaEngine/**` |
+| render | `agent/render2` | `Sources/RenderEngine/**` |
+| researcher | `agent/researcher` | `docs/specs/**`, `docs/FORMAT.md`, `docs/ledger/**` (RE side) |
+| recorder | `agent/recorder` | `Sources/Recorder/**`, `Tests/RecorderTests/**`, `docs/specs/cursor-log.md` |
+
+| id | owner | status | depends-on | acceptance |
+|---|---|---|---|---|
+| M2-TL-1 | timeline | todo | — | `ProjectBundle.create/importFile/saveWithBackup`; new project opens in our app; round-trip tests |
+| M2-TL-2 | timeline | todo | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
+| M3-TL-1 | timeline | todo | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
+| M2-MED-1 | media | todo | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
+| M2-MED-2 | media | todo | — | high-speed playback throughput (async VT) + nearest-frame policy |
+| M2-TUI-1 | timelineui | todo | — | ruler, tracks, headers, clips, playhead, zoom/scroll; view tests on hand-built projects |
+| M2-TUI-2 | timelineui | todo | TL-2 | select/move/trim/split/delete/ripple, track flags, snapping, thumbnails + waveforms |
+| M2-APP-1 | app | todo | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
+| M2-APP-2 | app | todo | TL-1 | new/open/save/save-as (backup), import (drag-drop + menu), relink missing media |
+| M2-APP-3 | app | todo | — | inspector edits via `SetParameter`; cacheStats in overlay; high-speed frame policy |
+| M4-RES-1 | researcher | todo | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
+| M4-RES-2 | researcher | todo | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
+| M5-RES-1 | researcher | todo | — | spec: callouts (shapes, text, fills, strokes, tails) |
+| M6-RES-1 | researcher | todo | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
+| M4-REN-1 | render | todo | — | effect pipeline (offscreen + passes), shader backgrounds for real, transition framework + fade |
+| M4-REN-2 | render | todo | RES-1 | group-1 effects from published specs, golden-ready |
+| M5-REN-1 | render | todo | M5-RES-1 | callout rendering (own vector shapes, text) |
+| M6-REN-1 | render | todo | M6-RES-1 | cursor layer + cursor effects |
+| M7-REC-1 | recorder | todo | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
+| M7-REC-2 | recorder | todo | REC-1 | mic, system audio, camera |
+| M7-REC-3 | recorder | todo | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
+| M7-REC-4 | recorder | todo | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |

@@ -129,3 +129,84 @@ with ≤ 8 layers in < 4 ms GPU time.
 Consumes the above only. `NSDocument` for `.cmproj`; canvas is an `MTKView`
 driven by the display link; audio via `AVAudioEngine` from
 `audioSegments` + `MediaSource.audio` as the master clock.
+
+---
+
+# Contracts — M2+ (wave A, 2026-10-19)
+
+Same rules as above. New frozen stubs: `Sources/TimelineEngine/ContractM2.swift`,
+`Sources/TSCProjKit/BundleWriting.swift`, `Sources/TimelineUI/Contract.swift`,
+`Sources/Recorder/Contract.swift`. `AudioEngine`, `Exporter`, `Captions` are
+placeholder targets until wave B writes their contracts.
+
+```
+TSCProjKit ◄─ TimelineEngine ◄─ TimelineUI ◄─┐
+     ▲              ▲                          ├─ WizRecApp (+ PlayerKit)
+     ├─ MediaEngine ◄─ RenderEngine ◄─ AudioEngine ◄─ Exporter
+     └─ Captions                    Recorder (no project deps) ─┘
+```
+
+## Writing projects (first writes ever — safety rules)
+
+- Every write goes through TSCProjKit (`ProjectBundle.saveWithBackup`,
+  `create`, `importFile`) and TimelineEngine commands. Untouched keys, key
+  order and number lexemes survive.
+- Agents test writes **only on copies** in a temp dir. The user's projects in
+  `~/Documents` stay read-only for agents; the app may write them only when the
+  user saves.
+- Save = atomic replace of `project.tscproj` + `project.tscproj.wizrec-backup`
+  of the previous version. No autosave into the bundle in M2.
+- New projects: format `10.0`, editRate 705600000, `authoringClientName`
+  `{name: "WizRec", platform: "Mac", version}`.
+
+## TimelineEngine M2/M3
+
+M2 commands (stubs in `ContractM2.swift`): `AddSource`, `InsertClip`,
+`DeleteClips(ripple:)`, `AddTrack`, `RemoveTrack`, `SetTrackFlag`,
+`SetParameter(keyframeAt:)`, `RelinkSource`. Semantics follow
+`docs/specs/*.md`; where a spec says [?], pick the rule, document it in a doc
+comment and list it in REVIEW.
+
+M3 commands (timeline adds them as additive API, announced with
+`API_CHANGE TimelineEngine`): ripple trim/move, magnetic tracks, a pure
+`Snapping` helper (clip edges, playhead, markers; frame grid), copy/paste
+(`ClipboardPayload` = JSON subtree + id remap), group/ungroup, stitch/unstitch,
+detach audio, clip speed, extend frame, markers, add/remove/reorder effects and
+effect parameters, add/remove transitions. Each command: expected-JSON test +
+byte-identical revert.
+
+## MediaEngine M2 (additive)
+
+- `StreamInfo` gains what `SourceDescriptor.Track` needs: stream timescale,
+  length in that timescale, bit depth (PlayerKit maps `MediaInfo` →
+  `SourceDescriptor`).
+- Waveform peaks: min/max per bucket for a stream, cached per URL.
+- Filmstrip thumbnails: batch API on a separate decoder pool so it never moves
+  playback lanes.
+- Playback throughput for high clip speeds (async `VTDecompressionSession`),
+  plus a documented "nearest decoded frame" policy the player can opt into.
+
+## TimelineUI
+
+`TimelineModel` (`@MainActor @Observable`) + `TimelineView` (`NSView`). The
+view never mutates JSON: every gesture becomes a TimelineEngine command on
+`model.undo`. Ticks everywhere; points only in the view. Thumbnails and
+waveforms come from MediaEngine via an injected provider so tests run without
+media.
+
+## RenderEngine M4+
+
+render extends the contract with `API_CHANGE RenderEngine` as needed:
+effects drawn per layer in `effects` order (layer → offscreen → effect passes),
+`LayerContent.shader` gets a time value, transitions in the plan, later
+`LayerContent.callout` (M5) and a cursor layer (M6). Every effect follows a
+published spec in `docs/specs/effects/<Name>.md`.
+
+## Recorder
+
+`RecordingSession` + `RecordingOptions`/`RecordingResult`
+(`Sources/Recorder/Contract.swift`). Output: MP4 screen (cursor not drawn by
+default), optional camera MP4, audio files, `cursor.json` in our own format
+(`docs/specs/cursor-log.md`, written by recorder). Recorder never touches
+projects; the app adds a result to a project via `importFile` + `AddSource` +
+`InsertClip`, under `recordings/<ts>/`.
