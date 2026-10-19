@@ -176,14 +176,19 @@ public struct CursorOverlay: Sendable, Equatable {
     public var position: CGPoint
     /// Source video size, px (the cursor log's `videoWidth`×`videoHeight`).
     public var sourceSize: CGSize
-    /// Extra cursor scale (cursor effects; 1 = as recorded).
+    /// Cursor size multiplier about the hot spot (`cursorScale` × click scaling; 1 = as recorded).
     public var scale: Double
     public var opacity: Double
+    /// Effects drawn on the cursor image (e.g. `DropShadow` for CursorShadow, `CursorColor`).
+    public var effects: [EffectInstance]
+    /// Hot-spot positions across the shutter (CursorMotionBlur), source video px; empty = no blur.
+    public var motion: [CGPoint]
 
     public init(image: URL, imageSize: CGSize, hotspot: CGPoint, position: CGPoint, sourceSize: CGSize,
-                scale: Double = 1, opacity: Double = 1) {
+                scale: Double = 1, opacity: Double = 1, effects: [EffectInstance] = [], motion: [CGPoint] = []) {
         self.image = image; self.imageSize = imageSize; self.hotspot = hotspot; self.position = position
-        self.sourceSize = sourceSize; self.scale = scale; self.opacity = opacity
+        self.sourceSize = sourceSize; self.scale = scale; self.opacity = opacity; self.effects = effects
+        self.motion = motion
     }
 }
 
@@ -207,13 +212,16 @@ public struct Layer: Sendable, Equatable {
     public var effects: [EffectInstance]
     /// Recorded cursor over this layer's video, if its recording has a cursor log.
     public var cursor: CursorOverlay?
+    /// Motion blur: `transform` sampled across the shutter; the layer is drawn at each with weight 1/N.
+    /// Empty = no motion blur.
+    public var motion: [CGAffineTransform]
 
     public init(clipID: Int64, content: LayerContent, size: CGSize, transform: CGAffineTransform = .identity,
                 sourceCrop: Insets = .zero, geometryCrop: Insets = .zero, opacity: Double = 1,
-                effects: [EffectInstance] = [], cursor: CursorOverlay? = nil) {
+                effects: [EffectInstance] = [], cursor: CursorOverlay? = nil, motion: [CGAffineTransform] = []) {
         self.clipID = clipID; self.content = content; self.size = size; self.transform = transform
         self.sourceCrop = sourceCrop; self.geometryCrop = geometryCrop; self.opacity = opacity; self.effects = effects
-        self.cursor = cursor
+        self.cursor = cursor; self.motion = motion
     }
 }
 
@@ -297,7 +305,8 @@ public struct SceneModel: Sendable {
 
     /// The scene at timeline time `ticks`. Pure and deterministic.
     public func evaluate(at ticks: Int64) -> RenderPlan {
-        let layers = SceneEvaluator(editRate: timebase.editRate).layers(tracks, at: Rational(ticks), space: canvasSize)
+        let layers = SceneEvaluator(editRate: timebase.editRate, frameRate: frameRate)
+            .layers(tracks, at: Rational(ticks), space: canvasSize)
         return RenderPlan(time: ticks, canvasSize: canvasSize, background: background, layers: layers)
     }
 

@@ -66,10 +66,14 @@ enum EffectRegistry {
         "DropShadow": DropShadowEffect(),
         "Mask": MaskEffect(),
         "ColorAdjustment": ColorAdjustmentEffect(),
+        "CursorColor": CursorColorEffect(),
     ]
 
     /// Layer-pass effects plus the compositing ones the compositor draws itself.
-    static var names: Set<String> { Set(renderers.keys).union([BlendModeSpec.name, MediaMatteSpec.name]) }
+    static var names: Set<String> {
+        Set(renderers.keys).union([BlendModeSpec.name, MediaMatteSpec.name, "MotionBlur", "CursorShadow",
+                                   "CursorMotionBlur", "LeftClickScaling"])
+    }
 
     static func renderer(_ name: String) -> (any EffectRenderer)? { renderers[name] }
 

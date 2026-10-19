@@ -14,6 +14,8 @@ struct SNode: Sendable {
     var scalar: Rational
     var params: SParams
     var effects: [SEffect]
+    /// Behaviours (`GenericBehaviorEffect` entries), kept apart from visual effects.
+    var behaviors: [SBehavior] = []
     /// `attributes.gain` (audio), 1 when absent.
     var gain: Double
     var keyframeBase: Conventions.KeyframeBase
@@ -143,16 +145,18 @@ struct SceneBuilder {
     func node(_ c: Clip) -> SNode {
         let o = c.object
         let params = SParams(o["parameters"]?.object)
-        let effects = (o["effects"]?.array?.items ?? []).compactMap(\.object).compactMap { e -> SEffect? in
+        let entries = (o["effects"]?.array?.items ?? []).compactMap(\.object)
+        let behaviors = entries.compactMap(SBehavior.init)
+        let effects = entries.compactMap { e -> SEffect? in
             let name = e["effectName"]?.string ?? ""
-            guard name != "dummy", !name.isEmpty else { return nil }
+            guard name != "dummy", !name.isEmpty, e["_type"]?.string != "GenericBehaviorEffect" else { return nil }
             let window: (Double, Double)? = e["duration"]?.double.map { (e["start"]?.double ?? 0, $0) }
             return SEffect(name: name, bypassed: e["bypassed"]?.bool ?? false,
-                           parameters: SParams(e["parameters"]?.object), window: window)
+                           parameters: SParams(e["parameters"]?.object), window: window, ramps: SEffect.ramps(e))
         }
         return SNode(id: c.id, type: c.kind.typeName, start: c.start, duration: max(c.duration, 0),
                      mediaStart: c.mediaStart, scalar: c.scalar.num == 0 ? Q.one : c.scalar,
-                     params: params, effects: effects,
+                     params: params, effects: effects, behaviors: behaviors,
                      gain: c.attributes?["gain"]?.double ?? 1,
                      keyframeBase: c.kind == .image
                         ? .timelineOffset(trimStartSum: o["trimStartSum"]?.double ?? 0) : .media,
@@ -170,8 +174,15 @@ struct SceneBuilder {
                 let p = SParams(c.object["sourceEffect"]?.object?["parameters"]?.object)
                 return .shader(url: src.url, parameters: p, size: size)
             }
-            return .video(url: src.url, stream: stream, size: size,
-                          cursor: Conventions.hasCursorSidecar(src.url) ? CursorTrack.sidecar(for: src.url) : nil)
+            var cursor: CursorTrack?
+            if Conventions.hasCursorSidecar(src.url) {
+                cursor = CursorTrack.sidecar(for: src.url)
+            } else if Conventions.hasTrecCursor(src.url, stream: stream) {
+                let tr = src.media.tracks.first
+                let seconds = tr.map { $0.durationSeconds }
+                cursor = TrecCursor.cached(src.url, duration: seconds.flatMap { $0 > 0 && $0.isFinite ? $0 : nil })
+            }
+            return .video(url: src.url, stream: stream, size: size, cursor: cursor)
         case .image:
             guard let src else { return .unsupported(type: c.kind.typeName, size: canvas) }
             return .image(url: src.url, size: Conventions.leafSize(source: src.media, trackNumber: stream,
@@ -202,6 +213,8 @@ struct SceneBuilder {
 
 struct SceneEvaluator {
     let editRate: Int64
+    /// Output frame rate (motion-blur shutter).
+    var frameRate: Rational = Rational(30)
 
     /// `space`: size of the parent coordinate space (canvas or group), px.
     func layers(_ tracks: [STrack], at t: Rational, space: CGSize) -> [Layer] {
@@ -226,18 +239,78 @@ struct SceneEvaluator {
                      size: space)
     }
 
+    /// The cursor over a recording clip at recording time `rt` seconds: clip-level `cursorScale`/`cursorOpacity`
+    /// (missing → 1, 1), click scaling, cursor effects and motion samples [cursor-effects.md §1–§2].
+    func cursorOverlay(_ n: SNode, _ track: CursorTrack, _ c: (position: CGPoint, image: CursorTrack.Image),
+                       at rt: Double, kt: Double) -> CursorOverlay {
+        let fx = n.effects.filter { $0.isActive(at: kt) && CursorEffects.isCursorEffect($0.name) && !$0.bypassed }
+            .map { $0.instance(at: kt) }
+        let click = CursorEffects.clickScale(fx.first { $0.name == "LeftClickScaling" }, leftDowns: track.leftDowns, at: rt)
+        var motion: [CGPoint] = []
+        if let mb = fx.first(where: { $0.name == "CursorMotionBlur" }), mb.value("intensity", 1) > 0 {
+            let shutter = mb.value("intensity", 1) * CursorEffects.Spec.motionShutterFrames / max(frameRate.double, 1)
+            if let a = track.position(at: rt - shutter / 2), let b = track.position(at: rt + shutter / 2) {
+                let d = ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).squareRoot()
+                if d >= 1 {
+                    let count = min(max(Int((d / 2).rounded(.up)), 2), 32)
+                    motion = (0..<count).compactMap { k in
+                        track.position(at: rt + (Double(k) / Double(count - 1) - 0.5) * shutter)
+                    }
+                }
+            }
+        }
+        return CursorOverlay(image: c.image.url, imageSize: c.image.size, hotspot: c.image.hotspot,
+                             position: c.position, sourceSize: track.videoSize,
+                             scale: max(n.params.value("cursorScale", at: kt, default: 1), 0) * click,
+                             opacity: Conventions.clamp01(n.params.value("cursorOpacity", at: kt, default: 1)),
+                             effects: CursorEffects.layerEffects(fx), motion: motion)
+    }
+
+    /// Motion-blur transforms for `n` at keyframe time `kt` (`docs/specs/effects/MotionBlur.md`): the
+    /// clip's own transform sampled over a shutter of `intensity` output frames centred on `kt` [inf].
+    /// Only transform motion blurs; a static transform gives none.
+    func motionSamples(_ n: SNode, effects: [EffectInstance], at kt: Double, size: CGSize) -> [CGAffineTransform] {
+        guard let mb = effects.first(where: { $0.name == "MotionBlur" && !$0.bypassed }) else { return [] }
+        let intensity = mb.value("intensity", 1)
+        guard intensity > 0,
+              ["translation0", "translation1", "rotation2", "scale0", "scale1"].contains(where: { n.params[$0]?.isAnimated == true })
+        else { return [] }
+        let fps = max(frameRate.double, 1)
+        let shutter = Double(editRate) / fps * intensity * Conventions.motionBlurShutterFrames
+        let a = Conventions.transform(n.params, at: kt - shutter / 2)
+        let b = Conventions.transform(n.params, at: kt + shutter / 2)
+        // Samples from the largest corner displacement across the shutter (≈ 2 px per sample).
+        let corners = [CGPoint(x: -size.width / 2, y: -size.height / 2), CGPoint(x: size.width / 2, y: -size.height / 2),
+                       CGPoint(x: size.width / 2, y: size.height / 2), CGPoint(x: -size.width / 2, y: size.height / 2)]
+        let disp = corners.map { p -> Double in
+            let u = p.applying(a), v = p.applying(b)
+            return ((u.x - v.x) * (u.x - v.x) + (u.y - v.y) * (u.y - v.y)).squareRoot()
+        }.max() ?? 0
+        guard disp >= 0.5 else { return [] }
+        let count = min(max(Int((disp / 2).rounded(.up)), 2), 32)
+        return (0..<count).map { k in
+            Conventions.transform(n.params, at: kt + (Double(k) / Double(count - 1) - 0.5) * shutter)
+        }
+    }
+
     /// `roll`: evaluate even when `t` lies outside the clip (transition handles); media
     /// times then extend the clip's mapping and MediaEngine clamps to the stream.
     func layer(_ n: SNode, at t: Rational, roll: Bool = false) -> Layer? {
         guard roll || n.contains(t) else { return nil }
         let kt = n.keyframeTime(t)
+        let span = (lo: n.keyframeTime(Rational(n.start)), hi: n.keyframeTime(Rational(n.end)))
         func make(_ content: LayerContent, _ size: CGSize) -> Layer {
-            Layer(clipID: n.id, content: content, size: size,
-                  transform: Conventions.transform(n.params, at: kt),
-                  sourceCrop: Conventions.sourceCrop(n.params, at: kt),
-                  geometryCrop: Conventions.geometryCrop(n.params, at: kt),
-                  opacity: Conventions.opacity(n.params, at: kt),
-                  effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt) })
+            let phase = Conventions.behaviorPhaseSeconds * Double(editRate)
+            let behave = n.behaviors.reduce(1.0) { $0 * $1.opacity(at: kt, span: span, phase: phase) }
+            // Cursor and click effects never touch the clip's pixels [cursor-effects.md].
+            let effects = n.effects.filter { $0.isActive(at: kt) && !CursorEffects.isCursorEffect($0.name) }
+                .map { $0.instance(at: kt, span: span) }
+            return Layer(clipID: n.id, content: content, size: size,
+                         transform: Conventions.transform(n.params, at: kt),
+                         sourceCrop: Conventions.sourceCrop(n.params, at: kt),
+                         geometryCrop: Conventions.geometryCrop(n.params, at: kt),
+                         opacity: Conventions.opacity(n.params, at: kt) * behave,
+                         effects: effects, motion: motionSamples(n, effects: effects, at: kt, size: size))
         }
         switch n.body {
         case .video(let url, let stream, let size, let cursor):
@@ -245,8 +318,7 @@ struct SceneEvaluator {
                                    time: Conventions.streamTime(ticks: n.mediaTime(t), editRate: editRate))
             var l = make(.video(req), size)
             if let cursor, let c = cursor.sample(at: req.time.seconds) {
-                l.cursor = CursorOverlay(image: c.image.url, imageSize: c.image.size, hotspot: c.image.hotspot,
-                                         position: c.position, sourceSize: cursor.videoSize)
+                l.cursor = cursorOverlay(n, cursor, c, at: req.time.seconds, kt: kt)
             }
             return l
         case .image(let url, let size):

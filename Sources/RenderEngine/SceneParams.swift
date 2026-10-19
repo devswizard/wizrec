@@ -107,10 +107,37 @@ struct SEffect: Sendable, Equatable {
     var parameters: SParams
     /// `start`/`duration` window on the keyframe axis, ticks; nil = whole clip.
     var window: (start: Double, duration: Double)? = nil
+    /// `leftEdgeMods` / `rightEdgeMods` ramps: parameter, fade in (true) or out, ramp length (ticks).
+    var ramps: [EdgeRamp] = []
+
+    struct EdgeRamp: Sendable, Equatable {
+        var parameter: String
+        var fadeIn: Bool
+        var duration: Double
+    }
 
     static func == (a: SEffect, b: SEffect) -> Bool {
         a.name == b.name && a.bypassed == b.bypassed && a.parameters == b.parameters
-            && a.window?.start == b.window?.start && a.window?.duration == b.window?.duration
+            && a.window?.start == b.window?.start && a.window?.duration == b.window?.duration && a.ramps == b.ramps
+    }
+
+    /// Reads `leftEdgeMods`/`rightEdgeMods` [effects/README.md §1]: `FadeInFunc` ramps the named parameter
+    /// up from 0 over `duration` at the effect's start, `FadeOutFunc` down to 0 at its end (linear [?]).
+    static func ramps(_ e: JSONObject) -> [EdgeRamp] {
+        var out: [EdgeRamp] = []
+        for key in ["leftEdgeMods", "rightEdgeMods"] {
+            for case let mod? in (e[key]?.array?.items ?? []).map(\.object) {
+                let d = mod["duration"]?.double ?? 0
+                guard d > 0 else { continue }
+                for case let p? in (mod["parameters"]?.array?.items ?? []).map(\.object) {
+                    guard let name = p["name"]?.string else { continue }
+                    let fn = p["func"]?.string ?? ""
+                    out.append(EdgeRamp(parameter: name, fadeIn: fn == "FadeInFunc" || (fn.isEmpty && key == "leftEdgeMods"),
+                                        duration: d))
+                }
+            }
+        }
+        return out
     }
 
     /// Whether the effect applies at keyframe time `t` (time-mapping.md §7).
@@ -119,7 +146,59 @@ struct SEffect: Sendable, Equatable {
         return Conventions.effectWindowContains(start: w.start, duration: w.duration, t)
     }
 
-    func instance(at t: Double) -> EffectInstance {
-        EffectInstance(name: name, parameters: parameters.evaluated(at: t), bypassed: bypassed)
+    /// `span`: the clip's extent on the keyframe axis, used for edge ramps when the effect has no window.
+    func instance(at t: Double, span: (lo: Double, hi: Double)? = nil) -> EffectInstance {
+        var p = parameters.evaluated(at: t)
+        if !ramps.isEmpty {
+            let lo = window?.start ?? span?.lo ?? -.infinity
+            let hi = window.map { $0.start + $0.duration } ?? span?.hi ?? .infinity
+            for r in ramps {
+                guard let v = p[r.parameter] else { continue }
+                let k = r.fadeIn ? (t - lo) / r.duration : (hi - t) / r.duration
+                p[r.parameter] = v * Conventions.clamp01(k)
+            }
+        }
+        return EffectInstance(name: name, parameters: p, bypassed: bypassed)
+    }
+}
+
+/// A `GenericBehaviorEffect` (behaviors.md). Rendered as an opacity fade over its in/out phases until
+/// experiments BH1/BH2 give the motion [behaviors.md §5: visually approximate].
+struct SBehavior: Sendable, Equatable {
+    var preset: String
+    var bypassed: Bool
+    /// `start`/`duration`, keyframe axis ticks; nil = whole clip.
+    var window: (start: Double, duration: Double)?
+    var inPhase: Bool
+    var outPhase: Bool
+
+    static func == (a: SBehavior, b: SBehavior) -> Bool {
+        a.preset == b.preset && a.bypassed == b.bypassed && a.inPhase == b.inPhase && a.outPhase == b.outPhase
+            && a.window?.start == b.window?.start && a.window?.duration == b.window?.duration
+    }
+
+    init?(_ e: JSONObject) {
+        guard e["_type"]?.string == "GenericBehaviorEffect" else { return nil }
+        preset = e["effectName"]?.string ?? ""
+        bypassed = e["bypassed"]?.bool ?? false
+        window = e["duration"]?.double.map { (e["start"]?.double ?? 0, $0) }
+        func on(_ k: String) -> Bool {
+            let n = e[k]?.object?["attributes"]?.object?["name"]?.string ?? "none"
+            return n != "none" && !n.isEmpty
+        }
+        inPhase = on("in"); outPhase = on("out")
+    }
+
+    /// Opacity multiplier at keyframe time `t`; `span` = the clip on the keyframe axis; `phase` = phase
+    /// length, ticks.
+    func opacity(at t: Double, span: (lo: Double, hi: Double), phase: Double) -> Double {
+        guard !bypassed else { return 1 }
+        let lo = window?.start ?? span.lo, hi = window.map { $0.start + $0.duration } ?? span.hi
+        guard t >= lo, t < hi, phase > 0 else { return 1 }
+        let d = min(phase, (hi - lo) / 2)
+        var k = 1.0
+        if inPhase { k = min(k, (t - lo) / d) }
+        if outPhase { k = min(k, (hi - t) / d) }
+        return Conventions.clamp01(k)
     }
 }

@@ -65,6 +65,14 @@ enum Conventions {
     /// `_TexCoord` (0, 0)]. `true` = y down.
     static let shaderTexCoordY = true
 
+    /// Motion-blur shutter at intensity 1, in output frames, centred on the frame time
+    /// [inf, weak: MotionBlur.md, EF6].
+    static let motionBlurShutterFrames = 1.0
+
+    /// Length of a behaviour's in/out phase, seconds [?: behaviors.md §3, BH1]. Behaviours render as
+    /// opacity fades over these phases until their motion is specified.
+    static let behaviorPhaseSeconds = 0.5
+
     /// Effect `start`/`duration` window, on the keyframe axis [inf, time-mapping.md §7]:
     /// active on `[start, start + duration)`.
     static func effectWindowContains(start: Double, duration: Double, _ t: Double) -> Bool {
@@ -95,6 +103,12 @@ enum Conventions {
     /// file gets the cursor (not `camera.mp4` in the same folder).
     static func hasCursorSidecar(_ video: URL) -> Bool {
         video.deletingPathExtension().lastPathComponent == "screen"
+    }
+
+    /// `.trec` recordings carry the cursor in `TSCM`; it belongs to the screen stream (index 0) only,
+    /// not the camera stream of the same file [trec.md §6].
+    static func hasTrecCursor(_ video: URL, stream: Int) -> Bool {
+        video.pathExtension.lowercased() == "trec" && stream == 0
     }
 
     // MARK: Geometry
