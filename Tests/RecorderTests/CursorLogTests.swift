@@ -101,6 +101,38 @@ import Testing
         #expect(r.width == 32 && r.height == 32 && r.hotspotX == 8 && r.hotspotY == 10)
     }
 
+    @Test func windowFrameMatchesWindowList() throws {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let w = list.first(where: { ($0[kCGWindowLayer as String] as? Int) == 0 }),
+              let id = w[kCGWindowNumber as String] as? Int,
+              let b = w[kCGWindowBounds as String] as? NSDictionary,
+              let expected = CGRect(dictionaryRepresentation: b as CFDictionary) else { return } // no windows (CI)
+        #expect(CursorLogger.windowFrame(CGWindowID(id)) == expected)
+        #expect(CursorLogger.windowFrame(0xFFFF_FFF0) == nil)
+    }
+
+    /// The live logger needs no Screen Recording permission: sample the real cursor briefly.
+    @MainActor @Test func liveLoggerSamplesCursor() throws {
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let clock = RecordingClock()
+        let main = CGDisplayBounds(CGMainDisplayID())
+        let g = CaptureGeometry(sourceRect: main, pixelWidth: Int(main.width) * 2, pixelHeight: Int(main.height) * 2)
+        let logger = CursorLogger(clock: clock, geometry: g, windowID: nil, sampleRate: 30, logKeystrokes: false, directory: dir)
+        try logger.startMonitoring()
+        clock.start(at: hostNow())
+        logger.segmentStarted()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        let log = logger.finish(duration: clock.stop(at: hostNow()))
+        #expect(log.pixelsPerPoint == 2)
+        #expect(log.events.first?.t == 0)
+        guard case .move = log.events.first?.kind else { Issue.record("first event is not a move"); return }
+        if let c = log.cursors.first {  // nil only without a window server session
+            #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent(c.file).path))
+            #expect(c.width > 0 && c.hotspotX >= 0)
+        }
+    }
+
     @Test func modifierNames() {
         #expect(CursorLogger.modifierNames([.maskCommand, .maskShift]) == ["shift", "command"])
     }

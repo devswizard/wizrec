@@ -113,6 +113,8 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         c.channelCount = 2
         c.excludesCurrentProcessAudio = true
         c.streamName = "WizRec"
+        // Window capture: frame = window bounds without its shadow, so cursor coordinates match.
+        c.ignoreShadowsSingleWindow = true
         return ScreenCapture(plan: plan, filter: filter, configuration: c, onVideo: onVideo,
                              onAudio: options.captureSystemAudio ? onAudio : nil)
     }
