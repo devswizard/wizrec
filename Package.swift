@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "TimelineEngine", targets: ["TimelineEngine"]),
         .executable(name: "tscproj", targets: ["tscproj"]),
         .executable(name: "WizRec", targets: ["WizRecApp"]),
+        .executable(name: "wizrec-testgen", targets: ["wizrec-testgen"]),
     ],
     targets: [
         // FFmpeg (libavcodec/libavformat/libavutil/libswscale), dynamically linked.
@@ -25,6 +26,9 @@ let package = Package(
         .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
+        // qa: synthetic test media + golden test-project generator (library shared with the tests).
+        .target(name: "TestGenKit", dependencies: ["TSCProjKit"]),
+        .executableTarget(name: "wizrec-testgen", dependencies: ["TestGenKit"]),
         .executableTarget(
             name: "WizRecApp",
             dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]
@@ -43,7 +47,12 @@ let package = Package(
         .testTarget(name: "TimelineEngineTests", dependencies: ["TimelineEngine", "TSCProjKit"]),
         .testTarget(
             name: "GoldenTests",
-            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit"]
+            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
+        ),
+        // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
+        .testTarget(
+            name: "PerfTests",
+            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit"]
         ),
     ]
 )
