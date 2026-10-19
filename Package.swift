@@ -85,7 +85,8 @@ let package = Package(
         ),
         .testTarget(
             name: "GoldenTests",
-            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "TimelineEngine"]
+            dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "TimelineEngine",
+                           "AudioEngine"]
         ),
         .testTarget(
             name: "TimelineUITests",
