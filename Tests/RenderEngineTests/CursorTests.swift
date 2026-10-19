@@ -58,6 +58,18 @@ private var moves: [[String: Any]] { [
         #expect(track.sample(at: 0)?.image.url.lastPathComponent == "cursor-0.png")
     }
 
+    /// `Fixtures/cursor-log-v1.json` was written by `Recorder.CursorLog.jsonData()`, so the mirrored
+    /// decoder cannot drift from the writer silently. Regenerate it when the format version changes.
+    @Test func readsTheRecorderWrittenFixture() throws {
+        let track = try #require(CursorTrack.load(try fixtureURL("cursor-log-v1.json")))
+        #expect(track.videoSize == CGSize(width: 640, height: 400))
+        #expect(track.images.count == 2 && track.images[1]?.hotspot == CGPoint(x: 20, y: 20))
+        #expect(track.sample(at: 0.7)?.position == CGPoint(x: 330.25, y: 210.5))
+        #expect(track.sample(at: 1.05)?.position == CGPoint(x: 340, y: 220))    // down carries a position
+        #expect(track.sample(at: 2.2)?.image.url.lastPathComponent == "cursor-1.png")
+        #expect(track.sample(at: 3)?.position == CGPoint(x: 100, y: 50))
+    }
+
     @Test func rejectsOtherJSON() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-cursor-\(UUID())")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
