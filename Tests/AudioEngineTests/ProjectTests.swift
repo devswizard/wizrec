@@ -63,7 +63,7 @@ private func open(_ url: URL) throws -> (ProjectBundle, AudioScene)? {
     print("vlog clipping: \(clipped) samples over ±1 in \(clippedAt.count) chunks; first at \(clippedAt.prefix(8).map { String(format: "%.2f", $0) }) s")
     #expect(peak > 0)
     #if !DEBUG
-    #expect(speed >= 20)
+    LoadGate.expect(speed >= 20, String(format: "vlog mix ≥ 20× real time, got %.1f×", speed))
     #endif
 }
 

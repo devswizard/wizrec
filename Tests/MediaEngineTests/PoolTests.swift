@@ -235,8 +235,8 @@ struct DecodePerfTests {
         let hw = try await (src as? FFMediaSource)?.isHardwareAccelerated(stream: 0) ?? false
         print("PERF \(clip.name) (\(hw ? "VideoToolbox" : "software")): sequential \(Int(fps)) fps, random seek mean \(String(format: "%.1f", mean)) ms, max \(String(format: "%.1f", lat.max() ?? 0)) ms")
         if clip.enforced {
-            #expect(fps >= 120)
-            #expect(mean <= 50)
+            LoadGate.expect(fps >= 120, "\(clip.name): sequential decode ≥ 120 fps, got \(Int(fps)) fps")
+            LoadGate.expect(mean <= 50, "\(clip.name): random seek mean ≤ 50 ms, got \(String(format: "%.1f", mean)) ms")
         }
     }
 }

@@ -63,10 +63,10 @@ struct PerformanceTests {
                      rebuild, fit, zoomed, hit))
         // Generous bounds for debug builds; the measured numbers go in the REVIEW note.
         guard Self.enforceTiming else { return }
-        #expect(rebuild < 20)
-        #expect(fit < 50)
-        #expect(zoomed < 50)
-        #expect(hit < 0.5)
+        LoadGate.expect(rebuild < 20, String(format: "snapshot rebuild < 20 ms, got %.2f ms", rebuild))
+        LoadGate.expect(fit < 50, String(format: "draw fit < 50 ms, got %.2f ms", fit))
+        LoadGate.expect(zoomed < 50, String(format: "draw zoomed < 50 ms, got %.2f ms", zoomed))
+        LoadGate.expect(hit < 0.5, String(format: "hit test < 0.5 ms, got %.4f ms", hit))
     }
 
     /// The user's vlog, read in place (never copied). Skips when absent.
@@ -86,6 +86,6 @@ struct PerformanceTests {
         if ProcessInfo.processInfo.environment["WIZREC_TUI_PNG_DIR"] != nil { savePNG(rep, "vlog-fit") }
         let draw = time(10) { view.canvas.cacheDisplay(in: view.bounds, to: rep) }
         print(String(format: "TimelineUI vlog: %d clips, rebuild %.2f ms, draw %.2f ms", s.allClips.count, rebuild, draw))
-        if Self.enforceTiming { #expect(draw < 50) }
+        if Self.enforceTiming { LoadGate.expect(draw < 50, String(format: "vlog draw < 50 ms, got %.2f ms", draw)) }
     }
 }

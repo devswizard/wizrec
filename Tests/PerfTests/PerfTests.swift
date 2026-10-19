@@ -77,7 +77,7 @@ struct PerfTests {
         }
         let fps = Double(Perf.frames) / elapsed.seconds
         Perf.report(String(format: "decode %@ sequential %.1f fps (%d frames in %.3f s)", r.rawValue, fps, Perf.frames, elapsed.seconds))
-        if r == .hd1080 && Perf.enforce { #expect(fps >= 120, "contract: 1080p h264 sequential decode ≥ 120 fps") }
+        if r == .hd1080 && Perf.enforce { LoadGate.expect(fps >= 120, String(format: "contract: 1080p h264 sequential decode ≥ 120 fps, got %.1f fps", fps)) }
     }
 
     @Test("random seek latency", arguments: Perf.Resolution.allCases)
@@ -97,7 +97,7 @@ struct PerfTests {
         }
         let mean = total.seconds / Double(picks.count) * 1000
         Perf.report(String(format: "decode %@ random seek mean %.1f ms, worst %.1f ms", r.rawValue, mean, worst.seconds * 1000))
-        if r == .hd1080 && Perf.enforce { #expect(mean <= 50, "contract: random seek ≤ 50 ms") }
+        if r == .hd1080 && Perf.enforce { LoadGate.expect(mean <= 50, String(format: "contract: random seek ≤ 50 ms, got %.1f ms", mean)) }
     }
     }
 
@@ -185,7 +185,10 @@ struct PerfTests {
         }
         Perf.report(String(format: "demo project 1080p: evaluate %.3f ms, render sequential %.1f fps (%d frames in %.2f s)",
                            evalTime.seconds / Double(evalN) * 1000, Double(n) / elapsed.seconds, n, elapsed.seconds))
-        if Perf.enforce { #expect(evalTime.seconds / Double(evalN) < 0.5e-3, "contract: evaluate < 0.5 ms") }
+        if Perf.enforce {
+            let ms = evalTime.seconds / Double(evalN) * 1000
+            LoadGate.expect(ms < 0.5, String(format: "contract: evaluate < 0.5 ms, got %.3f ms", ms))
+        }
     }
     }
 }

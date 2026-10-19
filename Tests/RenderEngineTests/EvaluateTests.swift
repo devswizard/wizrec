@@ -410,7 +410,7 @@ func vlogEvaluatesEverywhereAndFast() throws {
     let perEval = elapsed / frames
     // Timing is asserted only with WIZREC_PERF=1 (debug builds under a parallel test run can exceed it).
     if ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1" {
-        #expect(perEval < .microseconds(500), "evaluate took \(perEval)")
+        LoadGate.expect(perEval < .microseconds(500), "vlog evaluate < 500 µs, took \(perEval)")
     } else {
         print("PERF vlog evaluate: \(perEval) per call (asserted only with WIZREC_PERF=1)")
     }

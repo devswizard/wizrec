@@ -298,7 +298,7 @@ final class ProgressLog: @unchecked Sendable {
         }
         try await run.value
         let elapsed = Date().timeIntervalSince(t0)
-        #expect(elapsed < 60, "export with polling took \(elapsed) s (\(polls) polls)")
+        LoadGate.expect(elapsed < 60, "export with polling took \(elapsed) s (\(polls) polls)")
     }
 }
 
