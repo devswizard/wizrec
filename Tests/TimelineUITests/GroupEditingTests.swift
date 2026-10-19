@@ -64,9 +64,9 @@ struct GroupEditingTests {
         // Header flags go to the inner track.
         #expect(editor().toggle(.audioMuted, track: 1))
         #expect(TimelineSnapshot(project: m.project, openGroups: [50]).tracks[1].audioMuted)
-        // No adding/removing tracks inside a group yet.
-        #expect(!editor().addTrack(at: 0))
-        #expect(!editor().removeTrack(at: 0))
+        // Tracks are added/removed inside the group (GroupTrackUITests covers the details).
+        #expect(editor().addTrack(at: 2))
+        #expect(m.project.tracks[0].clips.first { $0.id == 50 }?.tracks.count == 3)
     }
 
     @Test func nestedEditsStopAtInnerTimeZero() throws {
