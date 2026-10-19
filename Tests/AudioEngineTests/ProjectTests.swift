@@ -66,3 +66,12 @@ private func open(_ url: URL) throws -> (ProjectBundle, AudioScene)? {
     #expect(speed >= 20)
     #endif
 }
+
+/// `AudioScene.sampleRate` is the project's `audioFormatSampleRate` when it is a usable rate.
+@Test(arguments: [("44100", 44_100.0), ("48000", 48_000.0), ("96000.0", 96_000.0), ("0", nil), ("-48000", nil),
+                  ("1e9", nil), ("\"48000\"", nil), ("null", nil), (nil, nil)] as [(String?, Double?)])
+func sceneSampleRateFromProject(_ raw: String?, _ want: Double?) throws {
+    let p = try P.project(tracks: [], sources: [])
+    p.root["audioFormatSampleRate"] = try raw.map { try JSON.parse($0) }
+    #expect(P.scene(p).sampleRate == want)
+}

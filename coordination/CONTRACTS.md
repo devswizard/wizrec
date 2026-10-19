@@ -227,12 +227,22 @@ Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.s
   removal with an open model, e.g. RNNoise BSD-3, never TechSmith's VST).
   `AudioMixer.render(range)` is deterministic and chunk-seamless. The player
   (PlayerKit) and Exporter both use it.
+  - Session 3 (additive, approved): `AudioScene.sampleRate: Double?` = the
+    project's `audioFormatSampleRate` in Hz, nil when absent, not a number or
+    outside 8000…384000.
 - **Exporter**: `ExportSession` drives `OfflineRenderer` frames + `AudioMixer`
   audio into AVAssetWriter (H.264/HEVC/ProRes, VideoToolbox), GIF (palette per
   segment) and audio-only (m4a/wav; mp3 through libavcodec `libmp3lame`, which
   the Homebrew FFmpeg already has — add `libavformat` muxing via CFFmpeg if
   needed). Export frame N must equal the preview frame N; A/V sync within 1
   frame. Progress + cancel (partial file removed).
+  - Session 3: audio is mixed and written at `AudioScene.sampleRate ?? 48_000`
+    Hz (presets carry no sample rate).
+  - Session 3 (additive): `ExportSession` and `ExportBatch` expose
+    `cancellationLosesWork: Bool` (running and not yet cancelled) and
+    `cancelAndWait() async` (returns once `run()` stopped and removed its
+    partial output; immediate when idle; a finished file is kept). The app
+    confirms before closing when it is true.
 - **Captions**: `SpeechRecognizer` backends: Apple Speech on-device first (no
   new dependency; needs Speech Recognition permission), whisper.cpp second
   (MIT; ask the lead before installing anything or downloading models).

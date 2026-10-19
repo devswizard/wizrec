@@ -42,8 +42,9 @@ enum ClickTrack {
 }
 
 /// Clip A (video, 3 s) on track 0 and the click track as an `AMFile` on track 1.
+/// `sampleRate` is the raw JSON of `audioFormatSampleRate` (nil removes the key).
 @MainActor
-func avProject() throws -> TestProject {
+func avProject(sampleRate: String? = "48000") throws -> TestProject {
     guard let media = SharedMedia.set, let click = ClickTrack.url else {
         throw ExportError.failed("test media not generated")
     }
@@ -65,6 +66,7 @@ func avProject() throws -> TestProject {
         """).object)
     b.tracks = [[b.video(a, start: 0, duration: 90 * tpf)], [am]]
     let project = b.build()
+    project.root["audioFormatSampleRate"] = try sampleRate.map { try JSON.parse($0) }
     let resolve: (SourceMedia) -> URL = { s in
         let name = (s.src as NSString).lastPathComponent
         return name == "click.wav" ? click : media.directory.appendingPathComponent(name)
@@ -136,6 +138,40 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         #expect(onsets(a.samples, rate: a.rate) == [48_000, 96_000])
     }
 
+    /// S3-EXP-1: the output rate is the project's `audioFormatSampleRate`; 48 kHz when absent/invalid.
+    /// (The click is a 24 kHz burst, so rates below 48 kHz near Nyquist would filter it away.)
+    @Test(arguments: [("44100", 44_100), ("48000", 48_000), ("96000", 96_000), (nil, 48_000), ("0", 48_000),
+                      ("\"44100\"", 48_000)] as [(String?, Int)])
+    func wavUsesProjectSampleRate(_ raw: String?, _ want: Int) async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await avProject(sampleRate: raw)
+        let out = dir.appendingPathComponent("a.wav")
+        try await export(p, ExportSettings(format: .audio(container: "wav")), to: out)
+        let file = try AVAudioFile(forReading: out)
+        #expect(file.fileFormat.sampleRate == Double(want))
+        #expect(file.length == AVAudioFramePosition(3 * want))
+        let a = try await decodeAudio(out)
+        let found = onsets(a.samples, rate: a.rate)
+        #expect(found.count == 2)
+        // Within 0.1 ms (resampler ringing can cross the onset threshold a few samples early).
+        let tol = want / 10_000 + 1
+        for (f, w) in zip(found, [want, 2 * want]) { #expect(abs(f - w) <= tol, "onset \(f), want \(w)") }
+    }
+
+    @Test(arguments: ["m4a", "mp3"])
+    func compressedAudioUsesProjectSampleRate(_ container: String) async throws {
+        if container == "mp3" && !mp3Available { return }
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await avProject(sampleRate: "44100")
+        let out = dir.appendingPathComponent("a.\(container)")
+        try await export(p, ExportSettings(format: .audio(container: container)), to: out)
+        let a = try await decodeAudio(out)
+        #expect(a.rate == 44_100)
+        let found = onsets(a.samples, rate: a.rate).map { a.start + Double($0) / a.rate }
+        #expect(found.count == 2)
+        for (f, want) in zip(found, [1.0, 2.0]) { #expect(abs(f - want) < 1.0 / 30, "click at \(f), want \(want)") }
+    }
+
     @Test func m4aKeepsTimingWithinOneFrame() async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject()
@@ -165,10 +201,11 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
 
     /// Acceptance: A/V sync within 1 frame. The click at timeline 1.0 s must sound at the output
     /// time of the video frame that shows timeline frame 30 (source frame 30 of clip A).
-    @Test(.enabled(if: hasGPU), arguments: [ExportFormat.mp4(codec: "h264", bitrate: nil), .mov(profile: "422")])
-    func audioAndVideoStayInSync(_ format: ExportFormat) async throws {
+    @Test(.enabled(if: hasGPU), arguments: [ExportFormat.mp4(codec: "h264", bitrate: nil), .mov(profile: "422")],
+          ["44100", "48000"])
+    func audioAndVideoStayInSync(_ format: ExportFormat, _ rate: String) async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
-        let p = try await avProject()
+        let p = try await avProject(sampleRate: rate)
         var s = ExportSettings(format: format)
         s.range = (tpf * 10 + 12_345)..<(tpf * 75)  // off-grid start
         let out = dir.appendingPathComponent("av.\(format.fileExtension)")
@@ -185,6 +222,7 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         let a = try await decodeAudio(out)
         let click = try #require(onsets(a.samples, rate: a.rate).first.map { a.start + Double($0) / a.rate })
         #expect(abs(click - video) <= 1.0 / 30, "audio \(click) s vs video \(video) s")
+        #expect(a.rate == Double(rate))
         let f = try await movieFacts(out)
         #expect(f.hasAudio)
     }

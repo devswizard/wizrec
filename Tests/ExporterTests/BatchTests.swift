@@ -71,4 +71,24 @@ struct PresetTests {
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
         #expect(files == jobs[..<done].map(\.output.lastPathComponent))
     }
+
+    /// S3-EXP-2 at batch level.
+    @Test func batchConfirmBeforeCancelHook() async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await movingProject(frames: 290)
+        var s = ExportSettings(format: .mp4(codec: "h264", bitrate: nil)); s.includeAudio = false
+        let jobs = (0..<3).map { ExportBatch.Job(settings: s, output: dir.appendingPathComponent("\($0).mp4")) }
+        let batch = ExportBatch(scene: p.scene, audio: p.audio, pool: MediaPool(), jobs: jobs)
+        #expect(await batch.cancellationLosesWork == false)
+        let run = Task { await batch.run() }
+        while await batch.progress == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        #expect(await batch.cancellationLosesWork)
+        await batch.cancelAndWait()
+        #expect(await batch.cancellationLosesWork == false)
+        let outcomes = await run.value
+        let done = outcomes.prefix { if case .completed = $0 { true } else { false } }.count
+        #expect(done < jobs.count)
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+        #expect(files == jobs[..<done].map(\.output.lastPathComponent))
+    }
 }

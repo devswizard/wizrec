@@ -21,6 +21,9 @@ public struct AudioScene: Sendable {
     public let timebase: Timebase
     /// Timeline length, ticks.
     public let duration: Int64
+    /// The project's `audioFormatSampleRate`, Hz; nil when absent, not a number or outside
+    /// 8000…384000 (callers then pick their own default).
+    public let sampleRate: Double?
 
     /// Top-level tracks, `trackIndex` ascending.
     let tracks: [ATrack]
@@ -31,9 +34,16 @@ public struct AudioScene: Sendable {
     public init(project: Project, resolve: (SourceMedia) -> URL) {
         timebase = project.timebase
         duration = project.duration
+        sampleRate = Self.validSampleRate(project.root["audioFormatSampleRate"]?.double)
         var b = AudioSceneBuilder(project: project, resolve: resolve)
         tracks = b.tracks(project.tracks, attributes: project.timeline?.trackAttributes ?? [])
         masterGain = project.timeline?.object["gain"]?.double ?? 1
+    }
+
+    /// `rate` when it is a finite sample rate in 8000…384000 Hz, else nil.
+    static func validSampleRate(_ rate: Double?) -> Double? {
+        guard let rate, rate.isFinite, (8_000...384_000).contains(rate) else { return nil }
+        return rate
     }
 }
 
