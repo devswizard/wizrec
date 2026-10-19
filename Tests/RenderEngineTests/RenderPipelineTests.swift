@@ -164,9 +164,42 @@ actor RequestLog {
         #expect(try await pipe.next() == nil)
     }
 
+    /// After `cancel()` returns, the pipeline holds none of the buffers it was given.
+    @Test func cancelReleasesBuffers() async throws {
+        let tracker = ReleaseTracker()
+        let renderer = OfflineRenderer(scene: try scene(), pool: MediaPool()) { r in
+            try await Task.sleep(nanoseconds: 1_000_000)
+            return Self.source(r)
+        }
+        let pipe = renderer.pipeline(ticks: frameTicks(20), maxInFlight: 6) { _ in
+            let pb = try Buffers.make(64, 36)
+            CVBufferSetAttachment(pb, "WizRecTestToken" as CFString, tracker.token(), .shouldNotPropagate)
+            return pb
+        }
+        do { _ = try await pipe.next() }  // frame 0 delivered and dropped; later frames in flight
+        #expect(tracker.made > 1)
+        await pipe.cancel()
+        #expect(tracker.alive == 0, "\(tracker.alive) of \(tracker.made) buffers still held")
+    }
+
     @Test func emptyTicks() async throws {
         let renderer = OfflineRenderer(scene: try scene(), pool: MediaPool()) { Self.source($0) }
         let pipe = renderer.pipeline(ticks: [], maxInFlight: 3) { _ in try Buffers.make(32, 18) }
         #expect(try await pipe.next() == nil)
     }
+}
+
+/// Counts live tokens attached to buffers (a token dies with its buffer).
+// @unchecked: counters are guarded by `lock`.
+final class ReleaseTracker: @unchecked Sendable {
+    final class Token: NSObject {
+        let owner: ReleaseTracker
+        init(_ o: ReleaseTracker) { owner = o }
+        deinit { owner.lock.withLock { owner.liveCount -= 1 } }
+    }
+    let lock = NSLock()
+    var liveCount = 0, madeCount = 0
+    func token() -> Token { lock.withLock { liveCount += 1; madeCount += 1 }; return Token(self) }
+    var alive: Int { lock.withLock { liveCount } }
+    var made: Int { lock.withLock { madeCount } }
 }

@@ -3,8 +3,9 @@ import Foundation
 import MediaEngine
 
 /// One frame delivered by `RenderPipeline`, in frame order.
-// @unchecked: the pipeline stops touching `pixelBuffer` once the frame is delivered; from then on
-// the consumer owns it exclusively (CVPixelBuffer itself is not `Sendable`).
+// @unchecked: CVPixelBuffer is not `Sendable`. The pipeline writes `pixelBuffer` only inside the
+// frame's draw task and stops touching it before the frame is delivered; from then on the consumer
+// owns it exclusively, so there is never concurrent access.
 public struct PipelineFrame: @unchecked Sendable {
     /// Position in the pipeline's `ticks` list.
     public let index: Int
@@ -39,7 +40,8 @@ struct OutputBox: @unchecked Sendable { let buffer: CVPixelBuffer }
 public actor RenderPipeline {
     /// Timeline times to render, ticks, in output order.
     public nonisolated let ticks: [Int64]
-    /// Frames started but not yet returned by `next()` (fetching, drawing or done), ≥ 1.
+    /// Most frames started but not yet returned by `next()` (fetching, drawing or done), ≥ 1.
+    /// Also the most output buffers the pipeline holds at once.
     public nonisolated let maxInFlight: Int
     private let renderer: OfflineRenderer
     private let makeBuffer: @Sendable (Int) throws -> CVPixelBuffer
@@ -68,7 +70,7 @@ public actor RenderPipeline {
     /// frame being returned (or `CancellationError` if the calling task is cancelled).
     public func next() async throws -> PipelineFrame? {
         if finished { return nil }
-        if Task.isCancelled { cancel(); throw CancellationError() }
+        if Task.isCancelled { await cancel(); throw CancellationError() }
         do {
             try fill()
             guard !pending.isEmpty else { finished = true; return nil }
@@ -77,17 +79,21 @@ public actor RenderPipeline {
             try fill()
             return frame
         } catch {
-            cancel()
+            await cancel()
             throw error
         }
     }
 
-    /// Stops the pipeline: frames in flight are cancelled and `next()` returns nil.
-    public func cancel() {
-        for s in pending { s.fetch.cancel(); s.draw.cancel() }
+    /// Stops the pipeline: frames in flight are cancelled, and `next()` returns nil from now on.
+    /// Returns once every started frame has stopped (a fetch or GPU pass already running is let
+    /// finish, so decoders stay consistent), after which the pipeline holds no output buffer.
+    public func cancel() async {
+        finished = true
+        let slots = pending
         pending.removeAll()
         lastFetch = nil
-        finished = true
+        for s in slots { s.fetch.cancel(); s.draw.cancel() }
+        for s in slots { _ = await s.draw.result; _ = await s.fetch.result }
     }
 
     /// Starts frames until `maxInFlight` are pending.
@@ -117,8 +123,8 @@ public actor RenderPipeline {
 }
 
 extension OfflineRenderer {
-    /// A pipeline rendering `ticks` in order with up to `maxInFlight` frames in flight.
-    /// See `RenderPipeline`.
+    /// A pipeline rendering timeline times `ticks` (ticks) in order with up to `maxInFlight`
+    /// frames in flight. See `RenderPipeline`.
     public nonisolated func pipeline(ticks: [Int64], maxInFlight: Int = 4,
                                      makeBuffer: @escaping @Sendable (Int) throws -> CVPixelBuffer)
         -> RenderPipeline {
