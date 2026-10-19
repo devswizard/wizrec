@@ -93,6 +93,8 @@ enum MainMenu {
         timeline.addItem(withTitle: String(localized: "Extend Frame"), action: #selector(TimelineView.extendFrame(_:)), keyEquivalent: "")
         timeline.addItem(.separator())
         timeline.addItem(withTitle: String(localized: "Add Track"), action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
+        // Removes the selected clip's track (inside an open group: its inner track).
+        timeline.addItem(withTitle: String(localized: "Remove Track"), action: #selector(TimelineView.removeTrack(_:)), keyEquivalent: "")
         timeline.addItem(withTitle: String(localized: "Snapping"), action: #selector(TimelineView.toggleSnapping(_:)), keyEquivalent: "")
         timeline.addItem(.separator())
         timeline.addItem(withTitle: String(localized: "Zoom In"), action: #selector(TimelineView.zoomIn(_:)), keyEquivalent: "=")

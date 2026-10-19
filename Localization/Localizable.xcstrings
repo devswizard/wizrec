@@ -112,6 +112,9 @@
     "Cancelled" : {
 
     },
+    "Cannot add to the group: %arg" : {
+
+    },
     "Cannot export captions: %arg" : {
 
     },
@@ -454,6 +457,9 @@
 
     },
     "Relink…" : {
+
+    },
+    "Remove Track" : {
 
     },
     "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
