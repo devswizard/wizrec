@@ -127,3 +127,18 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M11-SHIP-2 | ship | claimed | — | Release engineering: `scripts/make-app.sh` release build with bundled FFmpeg dylibs (rpath fix, licence notices), codesign/notarize script taking identity from env (no secrets in repo), DMG, Sparkle (MIT) integration plan behind a flag, CI update |
 | M11-SHIP-3 | ship | claimed | — | Docs: README refresh, CONTRIBUTING.md (clean-room rules), user guide (`docs/user-guide/`), keyboard shortcut map, third-party notices |
 | M11-APP-1 | app | todo | M2-APP-4 | Preferences, onboarding, accessibility pass, localisation scaffolding (String Catalog), Open Recent, crash reporting opt-in (local only) |
+
+# Session 2 (2026-10-19) — resume of waves B and C
+
+Main green at start: 486 tests (40 golden, 1 known issue). Stale session-1
+worktrees removed; branches kept.
+
+| Agent | Branch | From | Claimed |
+|---|---|---|---|
+| audio | `agent/audio3` | `agent/audio` b51f2c3 | M8-AUD-1..4 |
+| export | `agent/export3` | `agent/export` 5109ba8 (+452bd37) | M9-EXP-1..3 |
+| captions | `agent/captions3` | `agent/captions` 59b4eb6 | M10-CAP-1..2 |
+| timelineui | `agent/timelineui3` | `agent/timelineui` 9430f6c | M3-TUI-1 rest |
+| app | `agent/app3` | `agent/app2` 45b8b3a | M2-APP-4, AUD-4 app side, export sheet, M11-APP-1 |
+| ship | `agent/ship3` | `agent/ship` dec60fa | M11-SHIP-1..3 |
+| qa | `agent/qa3` | `main` | QA-7, QA-8, wave-B integration, timing audit |
