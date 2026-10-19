@@ -21,6 +21,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/WizRec"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+# SwiftPM resource bundles (e.g. WizRec_WizRecAssets.bundle) go in Contents/Resources, where
+# the modules' locators look first (Bundle.module would look at the .app root, which breaks codesign).
+for b in "$(dirname "$BIN")"/*.bundle; do
+    [ -d "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
+done
 
 VERSION=${VERSION:-0.1.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
