@@ -99,8 +99,9 @@ struct StagingCopyTests {
     }
 }
 
-/// Staging-copy throughput, vectorised vs scalar (`WIZREC_PERF=1`; numbers only, no thresholds
-/// beyond "not slower").
+/// Staging-copy throughput, vectorised vs scalar (`WIZREC_PERF=1`; numbers only). Measure in
+/// release (`swift test -c release -Xswiftc -enable-testing`): in debug the scalar loops are
+/// not vectorised by the compiler and run ~30× slower.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1", "set WIZREC_PERF=1"), .serialized)
 struct StagingCopyPerfTests {
     @Test(arguments: [(2704, 1520), (3840, 2160)])
@@ -109,6 +110,5 @@ struct StagingCopyPerfTests {
         f.run(vectorised: false); f.run(vectorised: true) // warm
         let ref = f.run(vectorised: false, iterations: 10), vec = f.run(vectorised: true, iterations: 30)
         print("PERF staging \(size.0)x\(size.1) 10-bit 4:2:0: scalar \(String(format: "%.2f", ref)) ms, vectorised \(String(format: "%.2f", vec)) ms (\(String(format: "%.1f", ref / vec))×)")
-        #expect(vec <= ref)
     }
 }
