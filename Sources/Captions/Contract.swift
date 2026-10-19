@@ -5,17 +5,9 @@ import Foundation
 import MediaEngine
 import TSCProjKit
 
-/// One recognised word, times in seconds of the source's media time.
-public struct TranscriptWord: Sendable, Equatable {
-    public var text: String
-    public var start: Double
-    public var end: Double
-    /// 0–1.
-    public var confidence: Double
-    public init(text: String, start: Double, end: Double, confidence: Double = 1) {
-        self.text = text; self.start = start; self.end = end; self.confidence = confidence
-    }
-}
+// `TranscriptWord` (one recognised word, seconds of source media time) lives in CaptionLayout
+// (approved API_CHANGE, 2026-10-19) and is re-exported here, so `import Captions` still provides it.
+@_exported import CaptionLayout
 
 public enum CaptionsError: Error, Sendable, Equatable {
     case notImplemented
@@ -40,8 +32,20 @@ public struct CaptionCue: Sendable, Equatable {
 
 /// SRT / WebVTT import and export.
 public enum SubtitleFile {
-    public static func parseSRT(_ text: String) throws -> [CaptionCue] { throw CaptionsError.notImplemented }
-    public static func parseVTT(_ text: String) throws -> [CaptionCue] { throw CaptionsError.notImplemented }
-    public static func srt(_ cues: [CaptionCue]) -> String { "" }
-    public static func vtt(_ cues: [CaptionCue]) -> String { "WEBVTT\n" }
+    /// Plain-text cues of an SRT file (markup stripped); see `SubtitleDocument.parseSRT` for tolerance.
+    public static func parseSRT(_ text: String) throws -> [CaptionCue] { try SubtitleDocument.parseSRT(text).captionCues }
+    /// Plain-text cues of a WebVTT file (markup stripped, entities decoded).
+    public static func parseVTT(_ text: String) throws -> [CaptionCue] { try SubtitleDocument.parseVTT(text).captionCues }
+    /// SRT, cues numbered from 1, millisecond times.
+    public static func srt(_ cues: [CaptionCue]) -> String {
+        SubtitleDocument(format: .srt, blocks: cues.enumerated().map { i, c in
+            .cue(.init(identifier: String(i + 1), start: c.start, end: c.end, rawText: SubtitleFile.payload(c.text)))
+        }).text()
+    }
+    /// WebVTT; text is escaped (`&`, `<`, `>`).
+    public static func vtt(_ cues: [CaptionCue]) -> String {
+        SubtitleDocument(format: .vtt, blocks: cues.map { c in
+            .cue(.init(start: c.start, end: c.end, rawText: SubtitleFile.payload(SubtitleMarkup.escapeVTT(c.text))))
+        }).text()
+    }
 }

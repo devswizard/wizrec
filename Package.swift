@@ -29,7 +29,7 @@ let package = Package(
         ),
         .target(name: "TSCProjKit"),
         .target(name: "MediaEngine", dependencies: ["TSCProjKit", "CFFmpeg"]),
-        .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine"]),
+        .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine", "CaptionLayout"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
         // M2: timeline view (agent "timelineui").
         .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine"]),
@@ -42,7 +42,9 @@ let package = Package(
         // M9: MP4/MOV/GIF/audio export (agent "export").
         .target(name: "Exporter", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "AudioEngine"]),
         // M10: transcription + captions (agent "captions").
-        .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine"]),
+        .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine", "CaptionLayout"]),
+        // M10: pure dynamic-caption layout/state + transcript decoding, shared with RenderEngine (agent "captions").
+        .target(name: "CaptionLayout", dependencies: ["TSCProjKit"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
         // qa: synthetic test media + golden test-project generator (library shared with the tests).
         .target(name: "TestGenKit", dependencies: ["TSCProjKit", "TimelineEngine"]),
@@ -89,7 +91,7 @@ let package = Package(
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
         .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine"]),
         .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine"]),
-        .testTarget(name: "CaptionsTests", dependencies: ["Captions", "TSCProjKit"]),
+        .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
             name: "PerfTests",
