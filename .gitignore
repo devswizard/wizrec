@@ -5,3 +5,4 @@ DerivedData/
 Design/AppIcon/build/
 .DS_Store
 .claude/worktrees/
+/build/

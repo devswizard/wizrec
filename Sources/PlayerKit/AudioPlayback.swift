@@ -1,0 +1,154 @@
+import AVFoundation
+import Foundation
+import MediaEngine
+import RenderEngine
+
+/// Plays the project's audio through `AVAudioEngine` and serves as the master
+/// clock while it runs.
+///
+/// The timeline is mixed in fixed chunks (`chunkSeconds`) from
+/// `SceneModel.audioSegments(in:)` and `MediaSource.audio`, honouring each
+/// segment's `rate` and `gain`, and fed to one `AVAudioPlayerNode` about
+/// `lookaheadSeconds` ahead of what is audible.
+@MainActor
+public final class AudioPlayback {
+    public let scene: SceneModel
+    public let pool: MediaPool
+    /// Output sample rate, Hz (the project's `audioFormatSampleRate`).
+    public let sampleRate: Double
+    public let channels = 2
+    public let chunkFrames: Int
+    public let lookaheadSeconds: Double
+
+    private let engine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    private let format: AVAudioFormat
+    private var generation = 0
+    private var originTicks: Int64 = 0
+    private var scheduledFrames: Int64 = 0
+    private var pumpTask: Task<Void, Never>?
+    public private(set) var isPlaying = false
+    /// Source reads that failed (missing media, decode errors); those parts play as silence.
+    public private(set) var failedReads = 0
+
+    /// Nil when no audio output is available.
+    public init?(scene: SceneModel, pool: MediaPool, sampleRate: Double,
+                 chunkSeconds: Double = 0.25, lookaheadSeconds: Double = 1.0) {
+        let rate = sampleRate > 0 ? sampleRate : 44100
+        guard let f = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else { return nil }
+        self.scene = scene; self.pool = pool; self.sampleRate = rate; self.format = f
+        self.chunkFrames = max(256, Int(rate * chunkSeconds))
+        self.lookaheadSeconds = lookaheadSeconds
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: f)
+        engine.prepare()
+    }
+
+    /// Starts playing the timeline from `ticks`. Returns once the first chunks are
+    /// scheduled and the player is running; false if audio could not start.
+    public func start(at ticks: Int64) async -> Bool {
+        stop()
+        let gen = generation
+        originTicks = ticks
+        scheduledFrames = 0
+        do {
+            if !engine.isRunning { try engine.start() }
+        } catch {
+            return false
+        }
+        for _ in 0..<2 { await scheduleNext(gen) }
+        guard gen == generation else { return false }
+        player.play()
+        isPlaying = true
+        pumpTask = Task { [weak self] in await self?.pump(gen) }
+        return true
+    }
+
+    /// Stops playback and drops scheduled audio.
+    public func stop() {
+        generation += 1
+        pumpTask?.cancel()
+        pumpTask = nil
+        if isPlaying || player.isPlaying { player.stop() }
+        isPlaying = false
+    }
+
+    /// Shuts the engine down (document closing).
+    public func shutdown() {
+        stop()
+        engine.stop()
+    }
+
+    /// Timeline time audible at host time `host` (seconds), or nil before the
+    /// first sample has been rendered.
+    public func timelineTicks(atHost host: Double) -> Int64? {
+        guard isPlaying, let nodeTime = player.lastRenderTime, nodeTime.isHostTimeValid,
+              let pt = player.playerTime(forNodeTime: nodeTime), pt.isSampleTimeValid else { return nil }
+        let pos = PlaybackClock.audioPosition(
+            sampleTime: pt.sampleTime, sampleRate: pt.sampleRate,
+            renderHost: AVAudioTime.seconds(forHostTime: nodeTime.hostTime),
+            atHost: host, latency: engine.outputNode.presentationLatency)
+        guard pos >= 0 else { return nil }
+        return originTicks + Int64((pos * Double(scene.timebase.editRate)).rounded())
+    }
+
+    private var playedFrames: Int64 {
+        guard let nodeTime = player.lastRenderTime, let pt = player.playerTime(forNodeTime: nodeTime) else { return 0 }
+        return max(0, pt.sampleTime)
+    }
+
+    private func pump(_ gen: Int) async {
+        while !Task.isCancelled, gen == generation {
+            if Double(scheduledFrames - playedFrames) / sampleRate < lookaheadSeconds {
+                await scheduleNext(gen)
+            } else {
+                try? await Task.sleep(nanoseconds: 40_000_000)
+            }
+        }
+    }
+
+    private func scheduleNext(_ gen: Int) async {
+        let chunk = AudioChunk(originTicks: originTicks, startSample: scheduledFrames, frameCount: chunkFrames)
+        let samples = await render(chunk)
+        guard gen == generation,
+              let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(chunk.frameCount)),
+              let data = buf.floatChannelData else { return }
+        buf.frameLength = AVAudioFrameCount(chunk.frameCount)
+        for c in 0..<channels {
+            samples[c].withUnsafeBufferPointer { src in
+                data[c].update(from: src.baseAddress!, count: min(src.count, chunk.frameCount))
+            }
+        }
+        enqueue(buf)
+        scheduledFrames += Int64(chunk.frameCount)
+    }
+
+    /// Synchronous on purpose: the buffer is queued; completion is tracked via `playedFrames`.
+    private func enqueue(_ buf: AVAudioPCMBuffer) {
+        player.scheduleBuffer(buf, completionHandler: nil)
+    }
+
+    /// Mixed PCM for `chunk`: `channels` arrays of `chunk.frameCount` samples.
+    func render(_ chunk: AudioChunk) async -> [[Float]] {
+        let editRate = scene.timebase.editRate
+        let span = AudioMix.tickRange(of: chunk, sampleRate: sampleRate, editRate: editRate)
+        let parts = AudioMix.parts(for: chunk, segments: scene.audioSegments(in: span),
+                                   sampleRate: sampleRate, editRate: editRate)
+        var inputs: [(AudioMixPart, PCMBuffer)] = []
+        for p in parts {
+            do {
+                let src = try await pool.source(for: p.url)
+                let pcm = try await src.audio(stream: p.stream, range: p.mediaRange,
+                                              format: PCMFormat(sampleRate: p.requestSampleRate, channels: channels))
+                inputs.append((p, pcm))
+            } catch {
+                failedReads += 1
+            }
+        }
+        let n = chunk.frameCount, ch = channels
+        let captured = inputs
+        return await Task.detached(priority: .userInitiated) {
+            AudioMix.mix(captured, frameCount: n, channels: ch)
+        }.value
+    }
+}
