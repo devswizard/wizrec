@@ -103,8 +103,25 @@ private func writeImage(_ url: URL) throws {
         let info = try await MediaPool().probe(url)
         let d = SourceDescriptor(info: info, src: "./still.png")
         #expect(d.tracks == [SourceDescriptor.Track(type: 1, editRate: 600, rangeEnd: 1, width: 320, height: 200,
-                                                     sampleRate: Rational(0), bitDepth: 24, channelCount: 0)])
+                                                     sampleRate: Rational(0), bitDepth: 0, channelCount: 0)])
         #expect(d.naturalDuration(editRate: 705_600_000) == 5 * 705_600_000)
+    }
+
+    @Test func probeMetadataWins() {
+        let info = MediaInfo(url: URL(fileURLWithPath: "/r.trec"), kind: .recording, streams: [
+            StreamInfo(index: 0, kind: .video, codec: "tscc2", pixelSize: CGSize(width: 3024, height: 1964),
+                       nominalFrameRate: 5.3352, duration: CMTime(value: 1_132_415, timescale: 44100),
+                       timescale: 44100, length: 1_132_415, frameRate: Rational(6669, 1250), bitDepth: 24),
+            StreamInfo(index: 1, kind: .audio, codec: "aac", sampleRate: 44100, channelCount: 1,
+                       duration: CMTime(value: 1_133_222, timescale: 44100),
+                       timescale: 44100, length: 1_133_222, bitDepth: 16),
+        ], duration: CMTime(value: 1_133_222, timescale: 44100))
+        let d = SourceDescriptor(info: info, src: "./recordings/1/r.trec", lastModified: Date())
+        #expect(d.tracks[0] == SourceDescriptor.Track(type: 0, editRate: 44100, rangeEnd: 1_132_415, width: 3024,
+                                                       height: 1964, sampleRate: Rational(6669, 1250), bitDepth: 24,
+                                                       channelCount: 0))
+        #expect(d.tracks[1] == SourceDescriptor.Track(type: 2, editRate: 44100, rangeEnd: 1_133_222, width: 0, height: 0,
+                                                       sampleRate: Rational(44100), bitDepth: 16, channelCount: 1))
     }
 
     @Test func audioAndOddRates() {
@@ -120,7 +137,7 @@ private func writeImage(_ url: URL) throws {
         #expect(d.tracks[0].editRate == 60000 && d.tracks[0].rangeEnd == 1_253_252)
         #expect(d.tracks[0].sampleRate == Rational(2997, 50))
         #expect(d.tracks[1].type == 2 && d.tracks[1].editRate == 48000 && d.tracks[1].rangeEnd == 480_000)
-        #expect(d.tracks[1].channelCount == 2 && d.tracks[1].bitDepth == 16)
+        #expect(d.tracks[1].channelCount == 2 && d.tracks[1].bitDepth == 0)
     }
 }
 

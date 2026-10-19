@@ -32,6 +32,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var keyMonitor: Any?
     private var didAnnounce = false
     private var lastPlayheadSync: Int64 = -1
+    private var lastTimelineRedraw: CFTimeInterval = 0
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
 
@@ -71,6 +72,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         model.onChange = { [weak self] in self?.projectDidChange() }
         inspector.timebase = model.project.timebase
 
+        engine.highSpeedPolicyEnabled = options.framePolicy != "exact"
+        engine.useNearestDecoded = options.framePolicy == "nearest"
         if let s = options.seekSeconds { engine.seek(toTicks: model.scene.timebase.ticks(seconds: s)) }
         if options.statsLog {
             let name = model.bundle.directory.lastPathComponent
@@ -193,7 +196,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if t != lastPlayheadSync {
             lastPlayheadSync = t
             timelineModel.playhead = t
-            timelineArea.needsDisplay = true
+            // The fallback overview redraws every clip: ~10 Hz while playing is plenty.
+            if !engine.isPlaying || link.timestamp - lastTimelineRedraw > 0.1 {
+                lastTimelineRedraw = link.timestamp
+                timelineArea.needsDisplay = true
+            }
             if !engine.isPlaying { refreshInspector() }
         }
     }

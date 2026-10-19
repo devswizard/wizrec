@@ -340,9 +340,13 @@ public final class PlaybackEngine {
         let s = seq
         let pool = pool
         let t0 = CACurrentMediaTime()
+        // High-speed policy active: accept the newest decoded frame within 0.5 s of stream time
+        // while the decoder catches up (MediaPool `.nearestDecoded`); exact otherwise.
+        let policy: FramePolicy = isPlaying && lane.thin > 1 && useNearestDecoded
+            ? .nearestDecoded(maxLag: CMTime(value: 1, timescale: 2)) : .exact
         Task { [weak self] in
             let result: Result<VideoFrame, any Error>
-            do { result = .success(try await pool.frame(r)) } catch { result = .failure(error) }
+            do { result = .success(try await pool.frame(r, policy: policy)) } catch { result = .failure(error) }
             self?.laneFinished(k, r, result, seq: s, ms: (CACurrentMediaTime() - t0) * 1000)
         }
     }
@@ -352,7 +356,10 @@ public final class PlaybackEngine {
         var lane = lanes[k] ?? Lane()
         lane.current = nil
         acc.fetch(ms: ms)
-        if case .success = result { lane.avgMs = lane.avgMs.map { $0 * 0.8 + ms * 0.2 } ?? ms }
+        // Decode throughput from exact results only (a `.nearestDecoded` stale return is instant).
+        if case .success(let f) = result, Self.covers(f, r.time) {
+            lane.avgMs = lane.avgMs.map { $0 * 0.8 + ms * 0.2 } ?? ms
+        }
         switch result {
         case .success(let f):
             if !lane.ready.contains(where: { $0.frame.presentationTime == f.presentationTime }) {
@@ -364,6 +371,14 @@ public final class PlaybackEngine {
             // Present it if the current plan wants it.
             for want in plan.frameRequests where key(want) == k && Self.covers(f, want.time) {
                 if (held[k]?.seq ?? -1) < s || !(held[k].map { Self.covers($0.frame, want.time) } ?? false) {
+                    held[k] = Held(request: want, frame: f, seq: s)
+                    dirty = true
+                }
+            }
+            // High-speed policy: a nearer (not exact) frame still beats an older one on screen.
+            if isPlaying, lane.thin > 1 {
+                for want in plan.frameRequests where key(want) == k && f.presentationTime <= want.time {
+                    if let h = held[k], h.frame.presentationTime >= f.presentationTime || Self.covers(h.frame, want.time) { continue }
                     held[k] = Held(request: want, frame: f, seq: s)
                     dirty = true
                 }
@@ -412,6 +427,8 @@ public final class PlaybackEngine {
 
     /// Opt-out switch for the high-speed policy (tests, diagnostics).
     @ObservationIgnored public var highSpeedPolicyEnabled = true
+    /// With the policy active, fetch through MediaPool's `.nearestDecoded` (else exact, thinned only).
+    @ObservationIgnored public var useNearestDecoded = true
     /// Overlay line describing lanes that currently drop frames, or nil.
     public private(set) var framePolicyNote: String?
 

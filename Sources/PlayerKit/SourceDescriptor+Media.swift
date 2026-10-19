@@ -11,43 +11,44 @@ extension SourceDescriptor {
     /// - `src`: project-relative path from `ProjectBundle.importFile`, or an absolute path.
     /// - `lastModified`: the file's modification date (`lastMod`).
     ///
-    /// Rules (until MediaEngine reports stream timescale, length and bit depth):
-    /// - Images: one type-1 track, `editRate` 600, `range` [0, 1], `sampleRate` 0.
-    /// - Shaders: one type-0 track, `editRate` 30, endless `range` (2^63 − 1), bit depth 32.
-    /// - Video: `editRate` = the duration's timescale (the container's own unit), `rangeEnd`
-    ///   its value; `sampleRate` = average fps rounded to 1/100 [?]; bit depth 24.
-    /// - Audio: `editRate` = the sample rate, `rangeEnd` = length in samples; bit depth 16.
-    /// - Other streams are skipped, so the index stays equal to `trackNumber`.
+    /// Each audio/video stream becomes one track (other streams are skipped, so the index
+    /// stays equal to `trackNumber`): `type` = `trackType`, `editRate` = `timescale`,
+    /// `rangeEnd` = `length`, `bitDepth` as MediaEngine reports it. Video `sampleRate` is the
+    /// average fps rounded to 1/100 (59.94 → `2997/50`), 1/10000 for recordings; audio `sampleRate` is in Hz.
+    /// Streams without that metadata fall back to: video = duration timescale/value, audio =
+    /// sample rate/samples, images 600/[0, 1], shaders 30/[0, 2^63 − 1].
     public init(info: MediaInfo, src: String, lastModified: Date) {
         var tracks: [Track] = []
-        switch info.kind {
-        case .image:
-            let size = info.streams.first?.pixelSize ?? .zero
-            tracks = [Track(type: 1, editRate: 600, rangeEnd: 1, width: Int(size.width), height: Int(size.height),
-                            sampleRate: Rational(0), bitDepth: 24, channelCount: 0)]
-        case .shader:
-            let size = info.streams.first?.pixelSize ?? CGSize(width: 1920, height: 1080)
-            tracks = [Track(type: 0, editRate: 30, rangeEnd: Int64.max, width: Int(size.width), height: Int(size.height),
-                            sampleRate: Rational(30), bitDepth: 32, channelCount: 0)]
-        default:
-            for s in info.streams {
-                switch s.kind {
-                case .video:
-                    let (rate, end) = Self.unitsAndLength(s.duration, fallbackRate: 600)
-                    tracks.append(Track(type: 0, editRate: rate, rangeEnd: end,
-                                        width: Int(s.pixelSize.width), height: Int(s.pixelSize.height),
-                                        sampleRate: Self.frameRate(s.nominalFrameRate), bitDepth: 24, channelCount: 0))
-                case .audio:
+        for s in info.streams where s.kind != .other {
+            let isImage = s.trackType == 1 || info.kind == .image
+            let type = isImage ? 1 : (s.kind == .audio ? 2 : 0)
+            var rate = Int64(s.timescale)
+            var end = s.length
+            if rate <= 0 || end <= 0 {
+                switch type {
+                case 1: (rate, end) = (600, 1)
+                case 2:
                     let hz = Int64(s.sampleRate.rounded())
-                    let rate = hz > 0 ? hz : 48000
-                    let seconds = s.duration.isNumeric ? max(0, s.duration.seconds) : 0
-                    tracks.append(Track(type: 2, editRate: rate, rangeEnd: Int64((seconds * Double(rate)).rounded()),
-                                        width: 0, height: 0, sampleRate: Rational(rate), bitDepth: 16,
-                                        channelCount: max(1, s.channelCount)))
-                case .other:
-                    continue
+                    rate = hz > 0 ? hz : 48000
+                    end = Int64(((s.duration.isNumeric ? max(0, s.duration.seconds) : 0) * Double(rate)).rounded())
+                default:
+                    if info.kind == .shader { (rate, end) = (30, Int64.max) }
+                    else { (rate, end) = Self.unitsAndLength(s.duration, fallbackRate: 600) }
                 }
             }
+            let sampleRate: Rational = switch type {
+            case 1: Rational(0)
+            case 2: Rational(max(1, Int64(s.sampleRate.rounded())))
+            default: Self.frameRate(s.frameRate?.double ?? s.nominalFrameRate, decimals: info.kind == .recording ? 4 : 2)
+            }
+            tracks.append(Track(type: type, editRate: rate, rangeEnd: end,
+                                width: type == 2 ? 0 : Int(s.pixelSize.width), height: type == 2 ? 0 : Int(s.pixelSize.height),
+                                sampleRate: sampleRate, bitDepth: s.bitDepth,
+                                channelCount: type == 2 ? max(1, s.channelCount) : 0))
+        }
+        if tracks.isEmpty, info.kind == .shader {
+            tracks = [Track(type: 0, editRate: 30, rangeEnd: Int64.max, width: 1920, height: 1080,
+                            sampleRate: Rational(30), bitDepth: 32, channelCount: 0)]
         }
         self.init(src: src, lastModified: lastModified, tracks: tracks)
     }
@@ -74,10 +75,14 @@ extension SourceDescriptor {
         return (Int64(d.timescale), d.value)
     }
 
-    /// Average fps as a rational with denominator 100, reduced (59.94 → 2997/50). Whole rates stay whole.
-    static func frameRate(_ fps: Double) -> Rational {
+    /// Average fps rounded to `decimals` places as a reduced rational: 2 for movies
+    /// (60000/1001 → 2997/50), 4 for `.trec` recordings (5.33524 → 6669/1250) [obs, media-streams.md §3].
+    /// Whole rates stay whole.
+    static func frameRate(_ fps: Double, decimals: Int = 2) -> Rational {
         guard fps.isFinite, fps > 0 else { return Rational(0) }
         if abs(fps - fps.rounded()) < 1e-6 { return Rational(Int64(fps.rounded())) }
-        return Rational(Int64((fps * 100).rounded()), 100)
+        var den: Int64 = 1
+        for _ in 0..<max(0, decimals) { den *= 10 }
+        return Rational(Int64((fps * Double(den)).rounded()), den)
     }
 }

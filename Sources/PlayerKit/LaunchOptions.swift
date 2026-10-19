@@ -15,6 +15,7 @@ import Foundation
 /// - `--nudge <dx,dy>`: move the imported/selected clip by canvas px.
 /// - `--select-last`: select the last clip when nothing else is selected (shows the inspector).
 /// - `--save`: File ▸ Save after the scripted steps.
+/// - `--frame-policy exact|thin|nearest`: high-speed playback policy (default nearest).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -37,6 +38,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var select = false
     /// Save after the scripted steps.
     public var save = false
+    /// High-speed policy: "exact" (off), "thin" (subsample only), "nearest" (thin + `.nearestDecoded`).
+    public var framePolicy = "nearest"
 
     public init() {}
 
@@ -45,7 +48,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.overlay == b.overlay && a.audio == b.audio && a.quitAfter == b.quitAfter
             && a.snapshotDir == b.snapshotDir && a.snapshotTimes == b.snapshotTimes && a.drawAlways == b.drawAlways
             && a.importPaths == b.importPaths && a.nudge?.x == b.nudge?.x && a.nudge?.y == b.nudge?.y
-            && a.select == b.select && a.save == b.save
+            && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
     }
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
@@ -75,6 +78,7 @@ public struct LaunchOptions: Sendable, Equatable {
                 if xy.count == 2 { nudge = (xy[0], xy[1]) }
             case "--select-last": select = true
             case "--save": save = true
+            case "--frame-policy": framePolicy = value() ?? framePolicy
             default:
                 if a.hasPrefix("-psn_") { break }
                 if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }
