@@ -65,6 +65,10 @@ enum Conventions {
     /// `_TexCoord` (0, 0)]. `true` = y down.
     static let shaderTexCoordY = true
 
+    /// Motion-blur shutter at intensity 1, in output frames, centred on the frame time
+    /// [inf, weak: MotionBlur.md, EF6].
+    static let motionBlurShutterFrames = 1.0
+
     /// Length of a behaviour's in/out phase, seconds [?: behaviors.md §3, BH1]. Behaviours render as
     /// opacity fades over these phases until their motion is specified.
     static let behaviorPhaseSeconds = 0.5

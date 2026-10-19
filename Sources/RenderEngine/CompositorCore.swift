@@ -57,9 +57,9 @@ final class CompositorCore {
     // MARK: Pipelines
 
     /// Quad pipeline (premultiplied source-over) for a core fragment function or a given one.
-    private func pipeline(_ name: String, function: (any MTLFunction)? = nil, format: MTLPixelFormat) throws
-        -> any MTLRenderPipelineState {
-        let key = "\(name)|\(format.rawValue)"
+    private func pipeline(_ name: String, function: (any MTLFunction)? = nil, format: MTLPixelFormat,
+                          additive: Bool = false) throws -> any MTLRenderPipelineState {
+        let key = "\(name)|\(format.rawValue)|\(additive)"
         if let p = pipelines[key] { return p }
         guard let frag = function ?? library.makeFunction(name: name) else {
             throw RenderError.shaderCompile("missing function \(name)")
@@ -72,8 +72,8 @@ final class CompositorCore {
         a.isBlendingEnabled = true
         a.rgbBlendOperation = .add; a.alphaBlendOperation = .add
         a.sourceRGBBlendFactor = .one; a.sourceAlphaBlendFactor = .one
-        a.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        a.destinationRGBBlendFactor = additive ? .one : .oneMinusSourceAlpha
+        a.destinationAlphaBlendFactor = additive ? .one : .oneMinusSourceAlpha
         do {
             let p = try device.makeRenderPipelineState(descriptor: d)
             pipelines[key] = p
@@ -227,6 +227,12 @@ final class CompositorCore {
             }
 
             let active = EffectRegistry.active(layer.effects)
+            if layer.motion.count > 1 {
+                if let item = try motionBlurred(layer, active, parent: parent, space: space, frames: frames, pass: pass) {
+                    items.append(item)
+                }
+                continue
+            }
             if !active.isEmpty {
                 if case .transition = layer.content {} else {
                     if let r = try effectLayer(layer, active, m: m, space: space, frames: frames, pass: pass) {
@@ -288,6 +294,39 @@ final class CompositorCore {
             }
         }
         return items
+    }
+
+    /// The layer (with its effects) rendered once in local space, then accumulated at each motion sample with
+    /// weight 1/N into a pass-sized texture.
+    private func motionBlurred(_ layer: Layer, _ effects: [(EffectInstance, any EffectRenderer)], parent: CGAffineTransform,
+                               space: Space, frames: [FrameRequest: VideoFrame], pass: Pass) throws -> Item? {
+        var still = layer
+        still.motion = []
+        // Resolution: the largest sample scale, so no sample is magnified.
+        let m = layer.motion.max { Self.scale(of: $0) < Self.scale(of: $1) }.map { $0.concatenating(parent) }
+            ?? layer.transform.concatenating(parent)
+        guard let r = try effectLayer(still, effects, m: m, space: space, frames: frames, pass: pass) else { return nil }
+        let acc = try fx.pool.take(width: space.size.0, height: space.size.1, format: EffectGPU.format,
+                                   commandBuffer: pass.commandBuffer)
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = acc
+        rp.colorAttachments[0].loadAction = .clear
+        rp.colorAttachments[0].storeAction = .store
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        guard let enc = pass.commandBuffer.makeRenderCommandEncoder(descriptor: rp) else { return nil }
+        enc.setRenderPipelineState(try pipeline("texture_fs", format: acc.pixelFormat, additive: true))
+        enc.setFragmentSamplerState(sampler, index: 0)
+        enc.setFragmentTexture(r.texture, index: 0)
+        let w = layer.opacity / Double(layer.motion.count)
+        for t in layer.motion {
+            var q = Self.rectQuad(r.rect, m: t.concatenating(parent).concatenating(space.toNDC), opacity: w)
+            let size = MemoryLayout<Shaders.Quad>.stride
+            enc.setVertexBytes(&q, length: size, index: 0)
+            enc.setFragmentBytes(&q, length: size, index: 0)
+            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
+        enc.endEncoding()
+        return Item(fill: .texture(acc), quad: Self.fullPassQuad)
     }
 
     /// Covers the whole pass target (NDC −1…1), texture right side up.

@@ -206,6 +206,8 @@ struct SceneBuilder {
 
 struct SceneEvaluator {
     let editRate: Int64
+    /// Output frame rate (motion-blur shutter).
+    var frameRate: Rational = Rational(30)
 
     /// `space`: size of the parent coordinate space (canvas or group), px.
     func layers(_ tracks: [STrack], at t: Rational, space: CGSize) -> [Layer] {
@@ -230,6 +232,33 @@ struct SceneEvaluator {
                      size: space)
     }
 
+    /// Motion-blur transforms for `n` at keyframe time `kt` (`docs/specs/effects/MotionBlur.md`): the
+    /// clip's own transform sampled over a shutter of `intensity` output frames centred on `kt` [inf].
+    /// Only transform motion blurs; a static transform gives none.
+    func motionSamples(_ n: SNode, effects: [EffectInstance], at kt: Double, size: CGSize) -> [CGAffineTransform] {
+        guard let mb = effects.first(where: { $0.name == "MotionBlur" && !$0.bypassed }) else { return [] }
+        let intensity = mb.value("intensity", 1)
+        guard intensity > 0,
+              ["translation0", "translation1", "rotation2", "scale0", "scale1"].contains(where: { n.params[$0]?.isAnimated == true })
+        else { return [] }
+        let fps = max(frameRate.double, 1)
+        let shutter = Double(editRate) / fps * intensity * Conventions.motionBlurShutterFrames
+        let a = Conventions.transform(n.params, at: kt - shutter / 2)
+        let b = Conventions.transform(n.params, at: kt + shutter / 2)
+        // Samples from the largest corner displacement across the shutter (≈ 2 px per sample).
+        let corners = [CGPoint(x: -size.width / 2, y: -size.height / 2), CGPoint(x: size.width / 2, y: -size.height / 2),
+                       CGPoint(x: size.width / 2, y: size.height / 2), CGPoint(x: -size.width / 2, y: size.height / 2)]
+        let disp = corners.map { p -> Double in
+            let u = p.applying(a), v = p.applying(b)
+            return ((u.x - v.x) * (u.x - v.x) + (u.y - v.y) * (u.y - v.y)).squareRoot()
+        }.max() ?? 0
+        guard disp >= 0.5 else { return [] }
+        let count = min(max(Int((disp / 2).rounded(.up)), 2), 32)
+        return (0..<count).map { k in
+            Conventions.transform(n.params, at: kt + (Double(k) / Double(count - 1) - 0.5) * shutter)
+        }
+    }
+
     /// `roll`: evaluate even when `t` lies outside the clip (transition handles); media
     /// times then extend the clip's mapping and MediaEngine clamps to the stream.
     func layer(_ n: SNode, at t: Rational, roll: Bool = false) -> Layer? {
@@ -239,12 +268,13 @@ struct SceneEvaluator {
         func make(_ content: LayerContent, _ size: CGSize) -> Layer {
             let phase = Conventions.behaviorPhaseSeconds * Double(editRate)
             let behave = n.behaviors.reduce(1.0) { $0 * $1.opacity(at: kt, span: span, phase: phase) }
+            let effects = n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt, span: span) }
             return Layer(clipID: n.id, content: content, size: size,
                          transform: Conventions.transform(n.params, at: kt),
                          sourceCrop: Conventions.sourceCrop(n.params, at: kt),
                          geometryCrop: Conventions.geometryCrop(n.params, at: kt),
                          opacity: Conventions.opacity(n.params, at: kt) * behave,
-                         effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt, span: span) })
+                         effects: effects, motion: motionSamples(n, effects: effects, at: kt, size: size))
         }
         switch n.body {
         case .video(let url, let stream, let size, let cursor):
