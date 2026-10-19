@@ -77,20 +77,76 @@ struct StreamClock: Sendable, Equatable {
 /// Owns an `AVFormatContext` opened on a file, with stream info read.
 final class FormatContext {
     let ctx: UnsafeMutablePointer<AVFormatContext>
+    /// True when the extension's demuxer replaced the content-probed one.
+    private(set) var usedExtensionHint = false
 
+    /// Opens with libav's content probe. When the file's extension names a demuxer, the probed
+    /// demuxer is not it (or the open fails), and the named demuxer opens the file with
+    /// audio/video streams, that one wins: the content probe can misdetect valid files
+    /// (e.g. a float WAV whose samples look like MPEG-TS sync bytes, scored 100 vs WAV's 99).
     init(url: URL) throws {
+        let auto = Result { try Self.open(url, format: nil) }
+        let hinted = Self.demuxer(forExtensionOf: url)
+        if case .success(let c) = auto, let fmt = c.pointee.iformat,
+           hinted == nil || fmt == hinted || Self.claimsExtension(fmt, url) {
+            ctx = c
+            return
+        }
+        if let hinted, let c = try? Self.open(url, format: hinted) {
+            if Self.hasAudioVideo(c) {
+                if case .success(let a) = auto { Self.close(a) }
+                ctx = c
+                usedExtensionHint = true
+                return
+            }
+            Self.close(c)
+        }
+        ctx = try auto.get()
+    }
+
+    private static func close(_ c: UnsafeMutablePointer<AVFormatContext>) {
+        var q: UnsafeMutablePointer<AVFormatContext>? = c
+        avformat_close_input(&q)
+    }
+
+    private static func open(_ url: URL, format: UnsafePointer<AVInputFormat>?) throws -> UnsafeMutablePointer<AVFormatContext> {
         var p: UnsafeMutablePointer<AVFormatContext>? = nil
-        let rc = avformat_open_input(&p, url.path, nil, nil)
+        let rc = avformat_open_input(&p, url.path, format, nil)
         guard rc >= 0, let opened = p else {
             throw MediaError.unsupported("libavformat cannot open \(url.lastPathComponent): \(avErrorString(rc))")
         }
         let rc2 = avformat_find_stream_info(opened, nil)
         if rc2 < 0 {
-            var q: UnsafeMutablePointer<AVFormatContext>? = opened
-            avformat_close_input(&q)
+            close(opened)
             throw MediaError.unsupported("no stream info in \(url.lastPathComponent): \(avErrorString(rc2))")
         }
-        ctx = opened
+        return opened
+    }
+
+    /// True when `fmt` lists the file's extension.
+    private static func claimsExtension(_ fmt: UnsafePointer<AVInputFormat>?, _ url: URL) -> Bool {
+        guard let fmt, let exts = fmt.pointee.extensions else { return false }
+        return av_match_ext(url.lastPathComponent, exts) > 0
+    }
+
+    /// The demuxer the file's extension names: the first registered demuxer listing it, else the
+    /// demuxer named like the muxer libav picks for it (the `wav` demuxer lists no extensions).
+    static func demuxer(forExtensionOf url: URL) -> UnsafePointer<AVInputFormat>? {
+        guard !url.pathExtension.isEmpty else { return nil }
+        var opaque: UnsafeMutableRawPointer? = nil
+        while let fmt = av_demuxer_iterate(&opaque) {
+            if claimsExtension(fmt, url) { return fmt }
+        }
+        guard let mux = av_guess_format(nil, url.lastPathComponent, nil), let name = mux.pointee.name else { return nil }
+        return av_find_input_format(name)
+    }
+
+    private static func hasAudioVideo(_ c: UnsafeMutablePointer<AVFormatContext>) -> Bool {
+        for i in 0..<Int(c.pointee.nb_streams) {
+            guard let t = c.pointee.streams?[i]?.pointee.codecpar?.pointee.codec_type else { continue }
+            if t == AVMEDIA_TYPE_AUDIO || t == AVMEDIA_TYPE_VIDEO { return true }
+        }
+        return false
     }
 
     deinit {
