@@ -14,6 +14,8 @@ struct SNode: Sendable {
     var scalar: Rational
     var params: SParams
     var effects: [SEffect]
+    /// Behaviours (`GenericBehaviorEffect` entries), kept apart from visual effects.
+    var behaviors: [SBehavior] = []
     /// `attributes.gain` (audio), 1 when absent.
     var gain: Double
     var keyframeBase: Conventions.KeyframeBase
@@ -143,16 +145,18 @@ struct SceneBuilder {
     func node(_ c: Clip) -> SNode {
         let o = c.object
         let params = SParams(o["parameters"]?.object)
-        let effects = (o["effects"]?.array?.items ?? []).compactMap(\.object).compactMap { e -> SEffect? in
+        let entries = (o["effects"]?.array?.items ?? []).compactMap(\.object)
+        let behaviors = entries.compactMap(SBehavior.init)
+        let effects = entries.compactMap { e -> SEffect? in
             let name = e["effectName"]?.string ?? ""
-            guard name != "dummy", !name.isEmpty else { return nil }
+            guard name != "dummy", !name.isEmpty, e["_type"]?.string != "GenericBehaviorEffect" else { return nil }
             let window: (Double, Double)? = e["duration"]?.double.map { (e["start"]?.double ?? 0, $0) }
             return SEffect(name: name, bypassed: e["bypassed"]?.bool ?? false,
-                           parameters: SParams(e["parameters"]?.object), window: window)
+                           parameters: SParams(e["parameters"]?.object), window: window, ramps: SEffect.ramps(e))
         }
         return SNode(id: c.id, type: c.kind.typeName, start: c.start, duration: max(c.duration, 0),
                      mediaStart: c.mediaStart, scalar: c.scalar.num == 0 ? Q.one : c.scalar,
-                     params: params, effects: effects,
+                     params: params, effects: effects, behaviors: behaviors,
                      gain: c.attributes?["gain"]?.double ?? 1,
                      keyframeBase: c.kind == .image
                         ? .timelineOffset(trimStartSum: o["trimStartSum"]?.double ?? 0) : .media,
@@ -231,13 +235,16 @@ struct SceneEvaluator {
     func layer(_ n: SNode, at t: Rational, roll: Bool = false) -> Layer? {
         guard roll || n.contains(t) else { return nil }
         let kt = n.keyframeTime(t)
+        let span = (lo: n.keyframeTime(Rational(n.start)), hi: n.keyframeTime(Rational(n.end)))
         func make(_ content: LayerContent, _ size: CGSize) -> Layer {
-            Layer(clipID: n.id, content: content, size: size,
-                  transform: Conventions.transform(n.params, at: kt),
-                  sourceCrop: Conventions.sourceCrop(n.params, at: kt),
-                  geometryCrop: Conventions.geometryCrop(n.params, at: kt),
-                  opacity: Conventions.opacity(n.params, at: kt),
-                  effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt) })
+            let phase = Conventions.behaviorPhaseSeconds * Double(editRate)
+            let behave = n.behaviors.reduce(1.0) { $0 * $1.opacity(at: kt, span: span, phase: phase) }
+            return Layer(clipID: n.id, content: content, size: size,
+                         transform: Conventions.transform(n.params, at: kt),
+                         sourceCrop: Conventions.sourceCrop(n.params, at: kt),
+                         geometryCrop: Conventions.geometryCrop(n.params, at: kt),
+                         opacity: Conventions.opacity(n.params, at: kt) * behave,
+                         effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt, span: span) })
         }
         switch n.body {
         case .video(let url, let stream, let size, let cursor):

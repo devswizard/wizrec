@@ -65,6 +65,10 @@ enum Conventions {
     /// `_TexCoord` (0, 0)]. `true` = y down.
     static let shaderTexCoordY = true
 
+    /// Length of a behaviour's in/out phase, seconds [?: behaviors.md §3, BH1]. Behaviours render as
+    /// opacity fades over these phases until their motion is specified.
+    static let behaviorPhaseSeconds = 0.5
+
     /// Effect `start`/`duration` window, on the keyframe axis [inf, time-mapping.md §7]:
     /// active on `[start, start + duration)`.
     static func effectWindowContains(start: Double, duration: Double, _ t: Double) -> Bool {
