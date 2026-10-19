@@ -17,6 +17,7 @@ let package = Package(
         .executable(name: "tscproj", targets: ["tscproj"]),
         .executable(name: "WizRec", targets: ["WizRecApp"]),
         .executable(name: "wizrec-testgen", targets: ["wizrec-testgen"]),
+        .executable(name: "wizrec-record", targets: ["wizrec-record"]),
     ],
     targets: [
         // FFmpeg (libavcodec/libavformat/libavutil/libswscale), dynamically linked.
@@ -34,6 +35,8 @@ let package = Package(
         .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine"]),
         // M7: screen/camera/mic capture + cursor log (agent "recorder").
         .target(name: "Recorder"),
+        // recorder: manual capture check from Terminal (`swift run wizrec-record --list`).
+        .executableTarget(name: "wizrec-record", dependencies: ["Recorder"]),
         // M8: mixing, gain/volume keyframes, loudness, audio effects (agent "audio").
         .target(name: "AudioEngine", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
         // M9: MP4/MOV/GIF/audio export (agent "export").
