@@ -77,7 +77,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | id | owner | status | depends-on | acceptance |
 |---|---|---|---|---|
 | M2-TL-1 | timeline | done | — | `ProjectBundle.create/importFile/saveWithBackup`; new project opens in our app; round-trip tests |
-| M2-TL-2 | timeline | claimed | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
+| M2-TL-2 | timeline | done | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
 | M3-TL-1 | timeline | claimed | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
 | M2-MED-1 | media | claimed | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
 | M2-MED-2 | media | claimed | — | high-speed playback throughput (async VT) + nearest-frame policy |
