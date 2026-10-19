@@ -28,7 +28,7 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 | M1-REN-1 | render | done | — | `SceneModel` + `evaluate`: transform, crops, opacity, keyframes; UnifiedMedia, StitchedMedia, Group, scalar; unit tests on hand-built JSON + demo fixture |
 | M1-REN-2 | render | done | REN-1 | `audioSegments(in:)` with nested scalars and gains |
 | M1-REN-3 | render | done | REN-1 | `Compositor`: transform, crops, opacity, offscreen groups, shader fallback; GPU tests on synthetic frames (pixel probes) |
-| M1-REN-4 | render | claimed | REN-3, MED-4 | `OfflineRenderer.image`; renders demo frame 0/mid/end to PNG |
+| M1-REN-4 | render | done | REN-3, MED-4 | `OfflineRenderer.image`; renders demo frame 0/mid/end to PNG |
 | M1-TL-1 | timeline | claimed | — | `UndoStack` tests (perform/undo/redo/limit/redo-clear) |
 | M1-TL-2 | timeline | claimed | TL-1 | `SplitClip`, `TrimClip`, `MoveClip` with expected-JSON tests; undo restores byte-identical serialisation; id allocation above `maxID` |
 | M1-QA-1 | qa | claimed | — | Golden harness: SSIM + PSNR, frame extraction from reference MP4, skips without `REFS_DIR` |
