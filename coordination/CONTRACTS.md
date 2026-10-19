@@ -72,8 +72,15 @@ Time mapping, per clip, from the parent's time *t* (ticks):
 - `UnifiedMedia`: the `video` child is the visual layer (its `clipID`); the
   `audio` child becomes an `AudioSegment`.
 - Leaf video clip: `FrameRequest(url, stream: trackNumber, time: m → CMTime)`.
-- Keyframe times are relative to the clip's own `start` [inf]; evaluate with
-  `Parameter.value(at:)` (eioe ≈ smoothstep until `docs/specs/animation.md`).
+- **Published spec: `docs/specs/time-mapping.md`** (wins over this summary).
+- Keyframe time base is the clip's **media time**: `mediaStart + (t − start)`
+  for scalar 1 [obs], `inner(c, t)` for sped-up clips until experiment X4.
+  First keyframe animates from `defaultValue`. Evaluate with
+  `Parameter.value(at:)` (eioe ≈ smoothstep until `docs/specs/animation.md`;
+  `bnce` exists, treat as linear in M1). `animationTracks` can be ignored by
+  the renderer.
+- `UnifiedMedia` children have the parent's `start`; evaluate them at the
+  parent's track time with their own fields.
 
 Layer geometry (**published spec: `docs/specs/transform.md`** — it wins over this summary):
 

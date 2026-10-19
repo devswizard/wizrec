@@ -35,7 +35,7 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 | M1-QA-2 | qa | claimed | — | Generator for small effect-free test projects (built with TSCProjKit) + list of exports needed from the user |
 | M1-QA-3 | qa | claimed | — | `.github/workflows/ci.yml` macOS runner: brew ffmpeg, `swift build`, `swift test` |
 | M1-QA-4 | qa | claimed | REN-4 | Perf tests: decode + composite throughput 1080p/4K |
-| M1-FMT-1 | format | claimed | — | `docs/specs/time-mapping.md`: groups, stitched, scalar, keyframe time base, `mediaStart` floats/rationals |
+| M1-FMT-1 | format | done | — | `docs/specs/time-mapping.md`: groups, stitched, scalar, keyframe time base, `mediaStart` floats/rationals |
 | M1-FMT-2 | format | done | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
 | M1-FMT-3 | format | claimed | — | `docs/specs/media-streams.md`: `trackNumber` ↔ stream, stream time origin, `sourceTracks.range`, VFR in `.trec` |
 | M1-APP-1 | app | todo | MED-4, REN-3 | Player window: open `.cmproj`, canvas, play/pause/scrub, 60 fps at 1080p, audio clock |
