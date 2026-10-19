@@ -21,6 +21,13 @@ final class WizRecDocumentController: NSDocumentController {
     override var documentClassNames: [String] { [NSStringFromClass(ProjectDocument.self)] }
     override var defaultType: String? { ProjectDocument.cmprojType }
 
+    /// File ▸ New Project: an untitled package in a temporary folder (see `ProjectDocument.makeUntitled`).
+    override func makeUntitledDocument(ofType typeName: String) throws -> NSDocument {
+        let doc = ProjectDocument()
+        try MainActor.assumeIsolated { try doc.makeUntitled() }
+        return doc
+    }
+
     override func beginOpenPanel(_ openPanel: NSOpenPanel, forTypes inTypes: [String]?,
                                  completionHandler: @escaping (Int) -> Void) {
         openPanel.allowedContentTypes = ProjectDocument.contentTypes

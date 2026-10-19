@@ -1,0 +1,626 @@
+import AppKit
+import MetalKit
+import PlayerKit
+import QuartzCore
+import SwiftUI
+import TimelineEngine
+import TimelineUI
+import TSCProjKit
+import UniformTypeIdentifiers
+
+/// The editor window: media bin | canvas + transport | inspector, timeline below.
+///
+/// Split positions and the window frame persist in UserDefaults (never in the project).
+/// The canvas is an `MTKView` drawn on demand from a display link that drives
+/// `PlaybackEngine.tick`. After every project change the scene is rebuilt
+/// (`EditorDocumentModel.onChange`) and swapped into the engine at the same playhead.
+@MainActor
+final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
+    let model: EditorDocumentModel
+    let engine: PlaybackEngine
+    let ui = EditorUIState()
+    let timelineModel: TimelineModel
+    let inspector = InspectorState()
+    private weak var projectDocument: ProjectDocument?
+    private let options: LaunchOptions
+    private let canvas: EditorCanvasView
+    private let selectionOverlay = SelectionOverlayView()
+    private let timelineView: TimelineUI.TimelineView
+    private var providerDirectory: URL?
+    private let thumbnails: ThumbnailStore
+    private var renderer: CanvasRenderer?
+    private var link: CADisplayLink?
+    private var keyMonitor: Any?
+    private var didAnnounce = false
+    private var lastPlayheadSync: Int64 = -1
+    private var lastSelection: Set<Int64> = []
+    private var lastTimelineError: String?
+    private var relinkWindow: NSWindow?
+    private var relinkStatus: String?
+
+    init(document: ProjectDocument, model: EditorDocumentModel, options: LaunchOptions) {
+        self.model = model
+        self.options = options
+        projectDocument = document
+        engine = model.makeEngine(audio: options.audio)
+        timelineModel = TimelineModel(undo: model.undo)
+        thumbnails = ThumbnailStore(pool: model.thumbnailPool)
+        ui.showOverlay = options.overlay
+        canvas = EditorCanvasView(frame: NSRect(x: 0, y: 0, width: 960, height: 540), device: MTLCreateSystemDefaultDevice())
+        timelineView = TimelineUI.TimelineView(model: timelineModel)
+
+        let window = EditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  backing: .buffered, defer: false)
+        window.contentMinSize = NSSize(width: 900, height: 560)
+        window.tabbingMode = .disallowed
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        window.editor = self
+        window.delegate = self
+        canvas.editor = self
+        selectionOverlay.editor = self
+        canvas.registerForDraggedTypes(MediaDrop.types)
+
+        renderer = CanvasRenderer(view: canvas)
+        renderer?.engine = engine
+        if renderer == nil { ui.compositorError = "Metal is not available on this Mac." }
+        buildLayout(in: window)
+        shouldCascadeWindows = false
+        windowFrameAutosaveName = "WizRec.EditorWindow"
+
+        timelineModel.onSeek = { [weak self] t in self?.engine.seek(toTicks: t) }
+        timelineModel.onDrop = { [weak self] payload, track, ticks in
+            guard let self else { return false }
+            switch payload {
+            case .files(let urls): self.place(.files(urls), track: track, at: ticks)
+            case .sources(let ids): self.place(.sources(ids), track: track, at: ticks)
+            }
+            return true
+        }
+        updateMediaProvider()
+        model.onChange = { [weak self] in self?.projectDidChange() }
+        inspector.timebase = model.project.timebase
+
+        engine.highSpeedPolicyEnabled = options.framePolicy != "exact"
+        engine.useNearestDecoded = options.framePolicy == "nearest"
+        if let s = options.seekSeconds { engine.seek(toTicks: model.scene.timebase.ticks(seconds: s)) }
+        if options.statsLog {
+            let name = model.bundle.directory.lastPathComponent
+            engine.onStats = { s in print("stats [\(name)] \(s.line)"); fflush(stdout) }
+        }
+        refreshInspector()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    // MARK: Layout
+
+    private func buildLayout(in window: NSWindow) {
+        let bar = NSHostingView(rootView: TransportBar(engine: engine))
+        let overlay = PassthroughHostingView(rootView: CanvasOverlay(engine: engine, model: model, ui: ui,
+                                                            relink: { [weak self] in self?.showRelink(nil) }))
+        let center = NSView()
+        for v in [canvas, selectionOverlay, overlay, bar] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            center.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            canvas.leadingAnchor.constraint(equalTo: center.leadingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: center.trailingAnchor),
+            canvas.topAnchor.constraint(equalTo: center.topAnchor),
+            canvas.bottomAnchor.constraint(equalTo: bar.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: center.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: center.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: center.bottomAnchor),
+            bar.heightAnchor.constraint(equalToConstant: TransportBar.height),
+        ])
+        for v in [selectionOverlay, overlay] as [NSView] {
+            NSLayoutConstraint.activate([
+                v.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
+                v.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
+                v.topAnchor.constraint(equalTo: canvas.topAnchor),
+                v.bottomAnchor.constraint(equalTo: canvas.bottomAnchor),
+            ])
+        }
+        center.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+
+        let bin = NSHostingView(rootView: MediaBinView(model: model, thumbnails: thumbnails, actions: BinActions(
+            importMedia: { [weak self] in self?.importMedia(nil) },
+            importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
+            insert: { [weak self] id in self?.insertSource(id) },
+            relink: { [weak self] id in self?.locate(id) })))
+        let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
+            preview: { [weak self] f, v in self?.previewField(f, v) },
+            commit: { [weak self] in self?.commitPreview() },
+            set: { [weak self] f, v in self?.setField(f, v) })))
+        bin.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        props.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+
+        let top = EditorSplitView()
+        top.isVertical = true
+        top.dividerStyle = .thin
+        for v in [bin, center, props] { top.addArrangedSubview(v) }
+        top.setHoldingPriority(.defaultLow + 10, forSubviewAt: 0)
+        top.setHoldingPriority(.defaultLow - 10, forSubviewAt: 1)
+        top.setHoldingPriority(.defaultLow + 10, forSubviewAt: 2)
+        top.defaultSizes = { size in [250, max(360, size.width - 250 - 290 - 2)] }
+        top.persist(as: "WizRec.EditorSplit.Panes")
+
+        let root = EditorSplitView()
+        root.isVertical = false
+        root.dividerStyle = .thick
+        timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        for v in [top, timelineView] as [NSView] { root.addArrangedSubview(v) }
+        root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
+        root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
+        root.defaultSizes = { size in [max(360, size.height - 230)] }
+        root.persist(as: "WizRec.EditorSplit.Timeline")
+        window.contentView = root
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        guard !didAnnounce, let window else { return }
+        didAnnounce = true
+        if !window.setFrameUsingName("WizRec.EditorWindow") { window.center() }
+        window.layoutIfNeeded()
+        if let root = window.contentView as? EditorSplitView {
+            root.applyDefaultsIfNeeded()
+            root.layoutSubtreeIfNeeded()
+            (root.arrangedSubviews.first as? EditorSplitView)?.applyDefaultsIfNeeded()
+        }
+        timelineView.zoomToFit(nil)
+        startDisplayLink()
+        installKeys()
+        print("WizRec: opened \(model.bundle.directory.lastPathComponent) window=\(window.windowNumber) "
+              + "canvas=\(Int(model.scene.canvasSize.width))x\(Int(model.scene.canvasSize.height)) "
+              + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
+        fflush(stdout)
+        if options.snapshotDir != nil || !options.importPaths.isEmpty {
+            Task { await runScript() }
+        } else {
+            if options.autoplay { engine.play() }
+            if !model.missing.isEmpty { showRelink(nil) }
+        }
+    }
+
+    override func windowTitle(forDocumentDisplayName displayName: String) -> String {
+        model.isUntitled ? "Untitled Project" : displayName
+    }
+
+    private func startDisplayLink() {
+        let l = canvas.displayLink(target: self, selector: #selector(displayTick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    @objc private func displayTick(_ link: CADisplayLink) {
+        let needsDraw = engine.tick(host: link.targetTimestamp, timestamp: link.timestamp, period: link.duration)
+        if needsDraw || options.drawAlways {
+            canvas.draw()
+            selectionOverlay.needsDisplay = true
+            if let e = renderer?.compositorError, ui.compositorError != e { ui.compositorError = e }
+        }
+        if timelineModel.selection != lastSelection {
+            lastSelection = timelineModel.selection
+            refreshInspector()
+            selectionOverlay.needsDisplay = true
+        }
+        if timelineModel.lastError != lastTimelineError {
+            lastTimelineError = timelineModel.lastError
+            if let e = lastTimelineError { ui.show(e) }
+        }
+        let t = engine.currentTicks
+        if t != lastPlayheadSync {
+            lastPlayheadSync = t
+            timelineModel.playhead = t
+            if !engine.isPlaying { refreshInspector() }
+        }
+    }
+
+    // MARK: Project changes
+
+    /// Timeline thumbnails/waveforms resolve media against the bundle folder, which moves on Save As.
+    private func updateMediaProvider() {
+        let dir = model.bundle.directory
+        guard dir != providerDirectory else { return }
+        providerDirectory = dir
+        timelineView.mediaProvider = MediaPoolTimelineProvider(pool: model.thumbnailPool, bundleDirectory: dir)
+    }
+
+    private func projectDidChange() {
+        engine.replaceScene(model.scene)
+        updateMediaProvider()
+        projectDocument?.refreshEditedState()
+        let kept = timelineModel.selection.filter { ClipInspection.make(project: model.project, clipID: $0, playhead: 0) != nil }
+        if kept != timelineModel.selection { timelineModel.selection = kept }
+        refreshInspector()
+        selectionOverlay.needsDisplay = true
+        window?.title = windowTitle(forDocumentDisplayName: projectDocument?.displayName ?? "")
+    }
+
+    func select(_ ids: Set<Int64>) {
+        timelineModel.selection = ids
+        refreshInspector()
+        selectionOverlay.needsDisplay = true
+    }
+
+    func inspection(of clipID: Int64) -> ClipInspection? {
+        ClipInspection.make(project: model.project, clipID: clipID, playhead: engine.currentTicks)
+    }
+
+    private func refreshInspector() {
+        let sel = timelineModel.selection
+        inspector.selectionCount = sel.count
+        let next = sel.count == 1 ? sel.first.flatMap(inspection(of:)) : nil
+        if next != inspector.inspection { inspector.inspection = next }
+    }
+
+    // MARK: Edits
+
+    private func run(_ what: String, _ body: () throws -> Void) {
+        do {
+            try body()
+            inspector.error = nil
+        } catch {
+            inspector.error = "\(what): \(Self.describe(error))"
+            ui.show("\(what) failed: \(Self.describe(error))")
+        }
+    }
+
+    static func describe(_ error: any Error) -> String {
+        switch error {
+        case let e as DocumentError: e.description
+        case let e as EditError:
+            switch e {
+            case .invalid(let s): s
+            case .clipNotFound(let id): "clip \(id) not found"
+            case .trackNotFound(let i): "track \(i + 1) not found"
+            }
+        case let e as BundleWriteError:
+            switch e {
+            case .notImplemented: "not implemented yet"
+            case .exists(let u): "\(u.lastPathComponent) already exists"
+            case .copyFailed(let s): s
+            }
+        default: (error as NSError).localizedDescription
+        }
+    }
+
+    func preview(_ changes: [EditorDocumentModel.ParameterChange]) {
+        guard !changes.isEmpty else { return }
+        run("Change property") { try model.preview(changes) }
+    }
+
+    func commitPreview() { run("Change property") { try model.commitPreview() } }
+
+    private func previewField(_ f: InspectorField, _ v: Double) {
+        guard let i = inspector.inspection else { return }
+        preview(i.changes(f, v))
+    }
+
+    private func setField(_ f: InspectorField, _ v: Double) {
+        guard let i = inspector.inspection else { return }
+        let changes = i.changes(f, v)
+        guard !changes.isEmpty else { return }
+        run("Change property") { try model.set(changes) }
+    }
+
+    func undoEdit() { run("Undo") { try model.undoLast() } }
+    func redoEdit() { run("Redo") { try model.redoLast() } }
+
+    // MARK: Import and placement
+
+    @objc func importMedia(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.movie, .audio, .image, .audiovisualContent]
+        panel.message = "Choose media to add to the project's media bin."
+        panel.beginSheetModal(for: window) { [weak self] r in
+            guard r == .OK else { return }
+            MainActor.assumeIsolated { self?.importFiles(panel.urls, place: false) }
+        }
+    }
+
+    /// Imports `urls` into the bin; with `place`, also onto the timeline at `ticks`.
+    func importFiles(_ urls: [URL], place: Bool, track: Int? = nil, at ticks: Int64? = nil) {
+        ui.isImporting = true
+        Task {
+            var failures: [String] = []
+            var t = ticks ?? engine.currentTicks
+            for u in urls {
+                do {
+                    if place {
+                        let clip = try await model.importAndInsert(u, at: t, track: track)
+                        if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
+                        select([clip])
+                    } else {
+                        try await model.importMedia(u)
+                    }
+                } catch {
+                    failures.append("\(u.lastPathComponent): \(Self.describe(error))")
+                }
+            }
+            ui.isImporting = false
+            if !failures.isEmpty { ui.show("Import failed — " + failures.joined(separator: "; "), seconds: 10) }
+        }
+    }
+
+    /// Places a bin item at the playhead.
+    func insertSource(_ id: Int64) { place(.sources([id]), track: nil, at: engine.currentTicks) }
+
+    /// Handles a drop on the canvas or timeline: files are imported, then placed;
+    /// bin items are placed one after another from `ticks`.
+    func place(_ drop: MediaDrop, track: Int?, at ticks: Int64) {
+        switch drop {
+        case .files(let urls):
+            importFiles(urls, place: true, track: track, at: ticks)
+        case .sources(let ids):
+            var t = ticks
+            run("Add to timeline") {
+                for id in ids {
+                    let clip = try model.insertSource(id, at: t, track: track)
+                    if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
+                    select([clip])
+                }
+            }
+        }
+    }
+
+    // MARK: Relink
+
+    @objc func showRelink(_ sender: Any?) {
+        guard let window else { return }
+        if let w = relinkWindow { window.beginSheet(w); return }
+        let host = NSHostingController(rootView: relinkView())
+        let sheet = NSWindow(contentViewController: host)
+        relinkWindow = sheet
+        window.beginSheet(sheet) { [weak self] _ in MainActor.assumeIsolated { self?.relinkWindow = nil } }
+    }
+
+    private func relinkView() -> RelinkView {
+        RelinkView(model: model, actions: RelinkActions(
+            locate: { [weak self] id in self?.locate(id) },
+            searchFolder: { [weak self] in self?.searchFolder() },
+            close: { [weak self] in
+                guard let self, let w = self.relinkWindow else { return }
+                self.window?.endSheet(w)
+            }), status: relinkStatus)
+    }
+
+    private func refreshRelinkSheet() {
+        (relinkWindow?.contentViewController as? NSHostingController<RelinkView>)?.rootView = relinkView()
+    }
+
+    /// Picks a replacement file for source `id`.
+    func locate(_ id: Int64) {
+        guard let host = relinkWindow ?? window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        let src = model.project.source(id: id)?.src ?? ""
+        panel.message = "Locate \((src.replacingOccurrences(of: "\\", with: "/") as NSString).lastPathComponent)"
+        panel.beginSheetModal(for: host) { [weak self] r in
+            guard r == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task {
+                    do {
+                        try await self.model.relink(id, to: url)
+                        self.thumbnails.reset(url)
+                        self.relinkStatus = "Relinked \(url.lastPathComponent)."
+                    } catch {
+                        self.relinkStatus = "Cannot relink: \(Self.describe(error))"
+                        self.ui.show(self.relinkStatus ?? "")
+                    }
+                    self.refreshRelinkSheet()
+                }
+            }
+        }
+    }
+
+    private func searchFolder() {
+        guard let host = relinkWindow ?? window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Choose a folder that holds the missing files (searched with subfolders)."
+        panel.beginSheetModal(for: host) { [weak self] r in
+            guard r == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task {
+                    do {
+                        let n = try await self.model.relinkAll(in: url).count
+                        self.relinkStatus = n == 0 ? "No missing files found in \(url.lastPathComponent)."
+                            : "Relinked \(n) file\(n == 1 ? "" : "s") from \(url.lastPathComponent)."
+                    } catch {
+                        self.relinkStatus = "Cannot relink: \(Self.describe(error))"
+                    }
+                    self.refreshRelinkSheet()
+                }
+            }
+        }
+    }
+
+    // MARK: Script (verification without UI interaction)
+
+    /// `--import` files (placed at the playhead), `--nudge` the result, `--save`, then
+    /// snapshots at `--snapshot-at` times into `--snapshot-dir`.
+    private func runScript() async {
+        try? await Task.sleep(nanoseconds: 300_000_000)  // let the window lay out
+        for path in options.importPaths {
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            do {
+                let clip = try await model.importAndInsert(url, at: engine.currentTicks)
+                select([clip])
+                print("script: imported \(url.lastPathComponent) as clip \(clip)")
+            } catch {
+                print("script: import \(url.lastPathComponent) failed: \(Self.describe(error))")
+            }
+        }
+        if let n = options.nudge, let id = timelineModel.selection.first, let i = inspection(of: id) {
+            let x = (i.values[.positionX] ?? 0) + n.x, y = (i.values[.positionY] ?? 0) + n.y
+            run("Move") { try model.set(i.changes(.positionX, x) + i.changes(.positionY, y)) }
+            print("script: moved clip \(id) by \(n.x),\(n.y) px; error=\(inspector.error ?? "none")")
+        }
+        if options.select, timelineModel.selection.isEmpty, let first = model.project.tracks.flatMap(\.clips).last {
+            select([first.id])
+        }
+        if options.save {
+            projectDocument?.save(nil)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            print("script: saved dirty=\(model.isDirty) edited=\(projectDocument?.isDocumentEdited ?? false)")
+        }
+        fflush(stdout)
+        guard let dir = options.snapshotDir else { return }
+        let out = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath)
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        for t in options.snapshotTimes.isEmpty ? [0] : options.snapshotTimes {
+            engine.seek(toTicks: model.scene.timebase.ticks(seconds: t))
+            let settled = await engine.waitUntilSettled(timeout: 10)
+            canvas.draw()
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            refreshInspector()
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            writeSnapshot(to: out.appendingPathComponent(String(format: "frame-%06.2fs.png", t)),
+                          note: settled ? "" : " (frames still decoding)")
+        }
+        if options.autoplay {
+            engine.seek(toTicks: model.scene.timebase.ticks(seconds: options.seekSeconds ?? 0))
+            engine.play()
+            for n in 1...3 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                writeSnapshot(to: out.appendingPathComponent("playing-\(n).png"), note: "")
+            }
+        }
+    }
+
+    /// Window content as PNG, with the Metal canvas rendered offscreen into its frame
+    /// (Metal layers are not captured by `cacheDisplay`).
+    private func writeSnapshot(to url: URL, note: String) {
+        guard let root = window?.contentView, let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
+        root.cacheDisplay(in: root.bounds, to: rep)
+        let scale = window?.backingScaleFactor ?? 2
+        let rect = canvas.convert(canvas.bounds, to: root)
+        let image = renderer?.renderImage(size: CGSize(width: rect.width * scale, height: rect.height * scale))
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = ctx
+            // `rect` is in the root's (flipped or not) space; bitmap reps use bottom-left origin.
+            let r = root.isFlipped ? NSRect(x: rect.minX, y: root.bounds.height - rect.maxY, width: rect.width, height: rect.height) : rect
+            if let image { ctx.cgContext.draw(image, in: r) }
+            let overlays = canvas.superview?.subviews.filter { $0 is PassthroughHostingView<CanvasOverlay> } ?? []
+            for v in [selectionOverlay] + overlays {
+                if let top = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: top)
+                    top.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        do {
+            try png.write(to: url)
+            print("snapshot \(url.path) t=\(model.scene.timebase.timecode(engine.currentTicks))\(note)")
+        } catch {
+            print("snapshot failed \(url.path): \(error)")
+        }
+        fflush(stdout)
+    }
+
+    // MARK: Keys
+
+    private func installKeys() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let self, event.window === self.window, !(self.window?.firstResponder is NSText) else { return false }
+                return self.handleKey(event)
+            }
+            return handled ? nil : event
+        }
+    }
+
+    /// Space play/pause, ←/→ frame step (⇧ = 1 s), Home/End or ⌘←/⌘→ start/end.
+    private func handleKey(_ e: NSEvent) -> Bool {
+        let mods = e.modifierFlags.intersection([.command, .option, .control, .shift])
+        let fps = max(1, Int64(engine.grid.fps.double.rounded()))
+        switch (e.keyCode, mods) {
+        case (49, []): engine.togglePlay()
+        case (123, []): engine.step(by: -1)
+        case (124, []): engine.step(by: 1)
+        case (123, [.shift]): engine.step(by: -fps)
+        case (124, [.shift]): engine.step(by: fps)
+        case (115, []), (123, [.command]): engine.goToStart()
+        case (119, []), (124, [.command]): engine.goToEnd()
+        case (1, []): timelineView.splitAtPlayhead(nil)       // S
+        default: return false
+        }
+        return true
+    }
+
+    // MARK: Menu actions
+
+    @objc func playPause(_ sender: Any?) { engine.togglePlay() }
+    @objc func stepForward(_ sender: Any?) { engine.step(by: 1) }
+    @objc func stepBackward(_ sender: Any?) { engine.step(by: -1) }
+    @objc func goToStart(_ sender: Any?) { engine.goToStart() }
+    @objc func goToEnd(_ sender: Any?) { engine.goToEnd() }
+    @objc func togglePerformanceOverlay(_ sender: Any?) { ui.showOverlay.toggle() }
+
+    /// Edit ▸ Delete: removes the selected clips (the timeline view handles it first when focused).
+    @objc func delete(_ sender: Any?) {
+        let ids = Array(timelineModel.selection)
+        guard !ids.isEmpty else { return }
+        run("Delete") { try model.perform(DeleteClips(clipIDs: ids)) }
+    }
+
+    // Timeline actions arriving here (the timeline is not first responder): forward them.
+    @objc func splitAtPlayhead(_ sender: Any?) { timelineView.splitAtPlayhead(sender) }
+    @objc func rippleDelete(_ sender: Any?) { timelineView.rippleDelete(sender) }
+    @objc func addTrack(_ sender: Any?) { timelineView.addTrack(sender) }
+    @objc func toggleSnapping(_ sender: Any?) { timelineView.toggleSnapping(sender) }
+    @objc func zoomIn(_ sender: Any?) { timelineView.zoomIn(sender) }
+    @objc func zoomOut(_ sender: Any?) { timelineView.zoomOut(sender) }
+    @objc func zoomToFit(_ sender: Any?) { timelineView.zoomToFit(sender) }
+    @objc func deselectAll(_ sender: Any?) { select([]) }
+
+    private static let forwarded: Set<Selector> = [
+        #selector(splitAtPlayhead(_:)), #selector(rippleDelete(_:)), #selector(addTrack(_:)),
+        #selector(toggleSnapping(_:)), #selector(zoomIn(_:)), #selector(zoomOut(_:)), #selector(zoomToFit(_:)),
+        #selector(deselectAll(_:)),
+    ]
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let a = item.action, Self.forwarded.contains(a) { return timelineView.validateMenuItem(item) }
+        switch item.action {
+        case #selector(togglePerformanceOverlay(_:)):
+            item.title = ui.showOverlay ? "Hide Performance Overlay" : "Show Performance Overlay"
+        case #selector(delete(_:)):
+            return !timelineModel.selection.isEmpty
+        case #selector(showRelink(_:)):
+            return relinkWindow == nil
+        default: break
+        }
+        return true
+    }
+
+    // MARK: Lifecycle
+
+    func windowWillClose(_ notification: Notification) { shutdown() }
+
+    /// Stops the display link, audio and decoding. Idempotent.
+    func shutdown() {
+        link?.invalidate()
+        link = nil
+        if let m = keyMonitor { NSEvent.removeMonitor(m) }
+        keyMonitor = nil
+        engine.shutdown()
+        let thumbs = model.thumbnailPool
+        Task { await thumbs.purge() }
+    }
+}

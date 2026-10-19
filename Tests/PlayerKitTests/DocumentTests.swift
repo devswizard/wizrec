@@ -31,7 +31,7 @@ private func snapshot(_ dir: URL) -> [String: String] {
 
 @MainActor @Suite struct DocumentTests {
     @Test func bareFixtureLoadsAndReportsMissingMedia() throws {
-        let doc = try PlayerDocumentModel(url: fixture)
+        let doc = try EditorDocumentModel(url: fixture)
         #expect(doc.scene.canvasSize == CGSize(width: 1920, height: 1080))
         #expect(doc.scene.frameRate == Rational(30))
         #expect(doc.missing.count == 2)              // media/ and recordings/ are not vendored
@@ -40,7 +40,7 @@ private func snapshot(_ dir: URL) -> [String: String] {
     }
 
     @Test func engineTransportOnFixture() throws {
-        let doc = try PlayerDocumentModel(url: fixture)
+        let doc = try EditorDocumentModel(url: fixture)
         let e = doc.makeEngine(audio: false)
         let g = e.grid
         #expect(g.frameCount == 770)                 // 25.667 s at 30 fps
@@ -59,7 +59,7 @@ private func snapshot(_ dir: URL) -> [String: String] {
     }
 
     @Test func playsOnHostClockWithoutAudio() throws {
-        let doc = try PlayerDocumentModel(url: fixture)
+        let doc = try EditorDocumentModel(url: fixture)
         let e = doc.makeEngine(audio: false)
         e.play()
         #expect(e.isPlaying)
@@ -79,7 +79,7 @@ private func snapshot(_ dir: URL) -> [String: String] {
     @Test(.enabled(if: hasDemo, "~/Documents/demo project.cmproj not present"))
     func demoBundleLoadsFramesWithoutWriting() async throws {
         let before = snapshot(demoBundle)
-        let doc = try PlayerDocumentModel(url: demoBundle)
+        let doc = try EditorDocumentModel(url: demoBundle)
         #expect(doc.missing.isEmpty)
         let e = doc.makeEngine(audio: false)
         e.seek(toTicks: Timebase.camtasia.ticks(seconds: 5))
@@ -103,7 +103,7 @@ private func snapshot(_ dir: URL) -> [String: String] {
 
     @Test(.enabled(if: hasDemo, "~/Documents/demo project.cmproj not present"))
     func demoAudioChunkHasSignal() async throws {
-        let doc = try PlayerDocumentModel(url: demoBundle)
+        let doc = try EditorDocumentModel(url: demoBundle)
         guard let audio = AudioPlayback(scene: doc.scene, pool: doc.pool, sampleRate: doc.audioSampleRate) else { return }
         // 2–3 s into the demo: the screen recording's microphone track.
         let chunk = AudioChunk(originTicks: Timebase.camtasia.ticks(seconds: 2), startSample: 0, frameCount: 44100)

@@ -13,8 +13,9 @@ import RenderEngine
 /// each layer draws the newest frame received for its stream.
 @MainActor @Observable
 public final class PlaybackEngine {
-    public let scene: SceneModel
-    public let grid: FrameGrid
+    /// The scene being played; replace it after every edit with `replaceScene(_:)`.
+    public private(set) var scene: SceneModel
+    public private(set) var grid: FrameGrid
     @ObservationIgnored public let pool: MediaPool
 
     public private(set) var isPlaying = false
@@ -26,6 +27,8 @@ public final class PlaybackEngine {
     public private(set) var stats = PlaybackStats()
     /// Last frame-fetch error, for the UI.
     public private(set) var lastError: String?
+    /// The media pool's frame-cache counters, refreshed with `stats`.
+    public private(set) var cacheStats: CacheStats?
     /// Seconds of frames requested ahead of the playhead during playback.
     @ObservationIgnored public var prefetchSeconds = 0.5
     /// Called with every new stats window (e.g. to log).
@@ -48,6 +51,15 @@ public final class PlaybackEngine {
         var queue: [FrameRequest] = []
         var current: FrameRequest?
         var ready: [Held] = []
+        /// Smoothed wall time per fetch, ms (decode throughput = 1000 / avgMs).
+        var avgMs: Double?
+        /// Smoothed distinct stream times requested per timeline frame during playback.
+        var demandPerFrame: Double = 0
+        /// Newest stream time seen by the look-ahead (demand counting).
+        var lastSeen: CMTime = .negativeInfinity
+        /// High-speed policy: queue every `thin`-th distinct request (1 = all).
+        var thin = 1
+        var thinCounter = 0
     }
     @ObservationIgnored private var lanes: [StreamKey: Lane] = [:]
     @ObservationIgnored private var failedURLs: Set<URL> = []
@@ -135,6 +147,27 @@ public final class PlaybackEngine {
     public func goToStart() { seek(toFrame: 0) }
     public func goToEnd() { pause(); setFrame(grid.lastFrame, playing: false) }
 
+    /// Swaps in a scene rebuilt after an edit. Keeps the playhead (clamped to the new
+    /// length) and the frames already on screen; playback continues from the same time.
+    public func replaceScene(_ newScene: SceneModel) {
+        let wasPlaying = isPlaying
+        if wasPlaying { pause() }
+        let ticks = currentTicks
+        scene = newScene
+        grid = FrameGrid(timebase: newScene.timebase, fps: newScene.frameRate, duration: newScene.duration)
+        clock = PlaybackClock(editRate: newScene.timebase.editRate)
+        audio?.replaceScene(newScene)
+        failedURLs.removeAll()
+        dropQueuedFetches()
+        prefetchedThrough = -1
+        warmedThrough = -1
+        currentFrame = grid.clamp(frame: grid.index(of: ticks))
+        plan = scene.evaluate(at: grid.ticks(ofFrame: currentFrame))
+        dirty = true
+        request(plan.frameRequests)
+        if wasPlaying { play() }
+    }
+
     /// Releases audio and cached media (document closing).
     public func shutdown() {
         pause()
@@ -169,6 +202,11 @@ public final class PlaybackEngine {
             s.audioUnderruns = audio?.underruns ?? 0
             stats = s
             onStats?(s)
+            let pool = pool
+            Task { [weak self] in
+                let c = await pool.cacheStats
+                self?.cacheStats = c
+            }
         }
         defer { dirty = false }
         return dirty
@@ -235,7 +273,10 @@ public final class PlaybackEngine {
         for k in lanes.keys {
             lanes[k]?.queue.removeAll()
             lanes[k]?.ready.removeAll()
+            lanes[k]?.lastSeen = .negativeInfinity
+            lanes[k]?.thin = 1
         }
+        framePolicyNote = nil
     }
 
     private func key(_ r: FrameRequest) -> StreamKey { StreamKey(url: r.url, stream: r.stream) }
@@ -267,6 +308,8 @@ public final class PlaybackEngine {
             if let h = lane.ready.first(where: { Self.covers($0.frame, r.time) }) {
                 held[k] = Held(request: r, frame: h.frame, seq: h.seq)
                 dirty = true
+            } else if isPlaying, lane.thin > 1, lane.current != nil || !lane.queue.isEmpty {
+                // High-speed policy: keep the nearest decoded frame; the lane is already moving forward.
             } else if lane.current != r, lane.queue.first != r {
                 lane.queue.removeAll { $0 == r }
                 lane.queue.insert(r, at: 0)
@@ -297,9 +340,13 @@ public final class PlaybackEngine {
         let s = seq
         let pool = pool
         let t0 = CACurrentMediaTime()
+        // High-speed policy active: accept the newest decoded frame within 0.5 s of stream time
+        // while the decoder catches up (MediaPool `.nearestDecoded`); exact otherwise.
+        let policy: FramePolicy = isPlaying && lane.thin > 1 && useNearestDecoded
+            ? .nearestDecoded(maxLag: CMTime(value: 1, timescale: 2)) : .exact
         Task { [weak self] in
             let result: Result<VideoFrame, any Error>
-            do { result = .success(try await pool.frame(r)) } catch { result = .failure(error) }
+            do { result = .success(try await pool.frame(r, policy: policy)) } catch { result = .failure(error) }
             self?.laneFinished(k, r, result, seq: s, ms: (CACurrentMediaTime() - t0) * 1000)
         }
     }
@@ -309,6 +356,10 @@ public final class PlaybackEngine {
         var lane = lanes[k] ?? Lane()
         lane.current = nil
         acc.fetch(ms: ms)
+        // Decode throughput from exact results only (a `.nearestDecoded` stale return is instant).
+        if case .success(let f) = result, Self.covers(f, r.time) {
+            lane.avgMs = lane.avgMs.map { $0 * 0.8 + ms * 0.2 } ?? ms
+        }
         switch result {
         case .success(let f):
             if !lane.ready.contains(where: { $0.frame.presentationTime == f.presentationTime }) {
@@ -320,6 +371,14 @@ public final class PlaybackEngine {
             // Present it if the current plan wants it.
             for want in plan.frameRequests where key(want) == k && Self.covers(f, want.time) {
                 if (held[k]?.seq ?? -1) < s || !(held[k].map { Self.covers($0.frame, want.time) } ?? false) {
+                    held[k] = Held(request: want, frame: f, seq: s)
+                    dirty = true
+                }
+            }
+            // High-speed policy: a nearer (not exact) frame still beats an older one on screen.
+            if isPlaying, lane.thin > 1 {
+                for want in plan.frameRequests where key(want) == k && f.presentationTime <= want.time {
+                    if let h = held[k], h.frame.presentationTime >= f.presentationTime || Self.covers(h.frame, want.time) { continue }
                     held[k] = Held(request: want, frame: f, seq: s)
                     dirty = true
                 }
@@ -343,20 +402,60 @@ public final class PlaybackEngine {
         let from = max(prefetchedThrough, currentFrame) + 1
         guard from <= horizon else { return }
         var touched: Set<StreamKey> = []
+        var distinct: [StreamKey: Int] = [:]
         for f in from...horizon {
             for r in scene.evaluate(at: grid.ticks(ofFrame: f)).frameRequests where !failedURLs.contains(r.url) {
                 let k = key(r)
                 var lane = lanes[k] ?? Lane()
+                defer { lanes[k] = lane }
+                if r.time > lane.lastSeen { lane.lastSeen = r.time; distinct[k, default: 0] += 1 }
                 if lane.ready.contains(where: { Self.covers($0.frame, r.time) }) { continue }
                 if let last = lane.queue.last, last.time >= r.time { continue }
+                if lane.thin > 1 {
+                    lane.thinCounter += 1
+                    if lane.thinCounter % lane.thin != 0 { continue }
+                }
                 lane.queue.append(r)
-                lanes[k] = lane
                 touched.insert(k)
             }
         }
+        updateFramePolicy(distinct, frames: Int(horizon - from + 1))
         prefetchedThrough = horizon
         for k in touched { runLane(k) }
         warmUpcomingClips()
+    }
+
+    /// Opt-out switch for the high-speed policy (tests, diagnostics).
+    @ObservationIgnored public var highSpeedPolicyEnabled = true
+    /// With the policy active, fetch through MediaPool's `.nearestDecoded` (else exact, thinned only).
+    @ObservationIgnored public var useNearestDecoded = true
+    /// Overlay line describing lanes that currently drop frames, or nil.
+    public private(set) var framePolicyNote: String?
+
+    /// High-speed frame policy: when a stream needs more distinct frames per second than
+    /// its lane decodes (clip speed × source fps > decode rate), queue only every n-th
+    /// frame and, at the playhead, show the nearest frame already decoded instead of
+    /// queueing the exact one ahead of the look-ahead. n = ⌈demand / rate × 1.15⌉.
+    private func updateFramePolicy(_ distinct: [StreamKey: Int], frames: Int) {
+        guard frames > 0 else { return }
+        var notes: [String] = []
+        for (k, var lane) in lanes {
+            let per = Double(distinct[k] ?? 0) / Double(frames)
+            lane.demandPerFrame = lane.demandPerFrame == 0 ? per : lane.demandPerFrame * 0.9 + per * 0.1
+            let demandFPS = lane.demandPerFrame / grid.frameSeconds
+            var thin = 1
+            if highSpeedPolicyEnabled, isPlaying, let ms = lane.avgMs, ms > 0 {
+                let load = demandFPS * ms / 1000
+                if load > 1 { thin = Int((load * 1.15).rounded(.up)) }
+            }
+            if thin != lane.thin { lane.thin = thin; lane.thinCounter = 0 }
+            if thin > 1 {
+                notes.append("\(k.url.lastPathComponent)#\(k.stream) 1/\(thin) (need \(Int(demandFPS)) fps, decode \(Int(1000 / (lane.avgMs ?? 1))) fps)")
+            }
+            lanes[k] = lane
+        }
+        let note = notes.isEmpty ? nil : "high-speed: " + notes.sorted().joined(separator: "; ")
+        if note != framePolicyNote { framePolicyNote = note }
     }
 
     /// Finds streams that come on screen within `warmupSeconds` and queues their

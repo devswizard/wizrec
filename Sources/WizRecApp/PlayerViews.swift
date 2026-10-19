@@ -55,34 +55,44 @@ struct TransportBar: View {
     }
 }
 
-/// Missing-media and compositor banners plus the optional performance overlay.
+/// Missing-media, status and compositor banners plus the optional performance overlay.
 struct CanvasOverlay: View {
     let engine: PlaybackEngine
-    let ui: PlayerUIState
+    let model: EditorDocumentModel
+    let ui: EditorUIState
+    let relink: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !ui.missing.isEmpty {
-                banner(color: .orange, text: missingText)
+            if !model.missing.isEmpty {
+                HStack(spacing: 8) {
+                    banner(color: .orange, text: missingText)
+                    Button("Relink…", action: relink).controlSize(.small)
+                }
             }
             if let e = ui.compositorError {
                 banner(color: .red, text: "Canvas cannot draw clips: \(e)")
             }
+            if let m = ui.message {
+                banner(color: .black.opacity(0.75), text: m)
+            }
+            if ui.isImporting {
+                banner(color: .blue, text: "Importing…")
+            }
             if ui.showOverlay {
-                stats
+                stats.allowsHitTesting(false)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .allowsHitTesting(false)
     }
 
     private var missingText: String {
-        let names = ui.missing.prefix(3).map { ($0.src as NSString).lastPathComponent }
-        let more = ui.missing.count > 3 ? " and \(ui.missing.count - 3) more" : ""
-        return "\(ui.missing.count) media file\(ui.missing.count == 1 ? " is" : "s are") missing: "
-            + names.joined(separator: ", ") + more + ". Playing without them."
+        let names = model.missing.prefix(3).map { ($0.src.replacingOccurrences(of: "\\", with: "/") as NSString).lastPathComponent }
+        let more = model.missing.count > 3 ? " and \(model.missing.count - 3) more" : ""
+        return "\(model.missing.count) media file\(model.missing.count == 1 ? " is" : "s are") missing: "
+            + names.joined(separator: ", ") + more + "."
     }
 
     private func banner(color: Color, text: String) -> some View {
@@ -91,18 +101,25 @@ struct CanvasOverlay: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+            .allowsHitTesting(false)
     }
 
     private var stats: some View {
         let s = engine.stats
         func f(_ v: Double, _ d: Int = 1) -> String { String(format: "%.\(d)f", v) }
-        let lines = [
+        var lines = [
             "draw \(f(s.drawFPS)) fps   content \(f(s.contentFPS)) fps (project \(f(engine.grid.fps.double, 2)))",
             "cpu \(f(s.cpuMs, 2)) ms   gpu \(f(s.gpuMs, 2)) ms",
             "dropped \(s.droppedDisplayFrames)   skipped \(s.skippedFrames)   stale \(s.staleDraws)",
             "fetch \(s.fetches)/s   cache≈\(f(s.fastFetchRatio * 100, 0))%   avg \(f(s.fetchMs, 2)) ms",
             "clock \(s.clock)   resyncs \(s.resyncs)   audio underruns \(s.audioUnderruns)" + (engine.lastError.map { "   error: \($0)" } ?? ""),
         ]
+        if let c = engine.cacheStats {
+            let total = c.hits + c.misses
+            let rate = total > 0 ? Double(c.hits) / Double(total) * 100 : 0
+            lines.append("pool hits \(c.hits)  misses \(c.misses) (\(f(rate, 0))%)  frames \(c.frames)  \(f(Double(c.bytes) / 1_048_576, 0)) MB")
+        }
+        if let p = engine.framePolicyNote { lines.append(p) }
         return Text(lines.joined(separator: "\n"))
             .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(.white)

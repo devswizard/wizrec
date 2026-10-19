@@ -11,6 +11,11 @@ import Foundation
 /// - `--quit-after <seconds>`: quit this long after launch (benchmarks).
 /// - `--snapshot-dir <dir>` / `--snapshot-at <s,s,…>`: write window snapshots (verification).
 /// - `--draw-always`: redraw every refresh (render-loop stress test).
+/// - `--import <file>` (repeatable): import and place at the playhead (scripted verification).
+/// - `--nudge <dx,dy>`: move the imported/selected clip by canvas px.
+/// - `--select-last`: select the last clip when nothing else is selected (shows the inspector).
+/// - `--save`: File ▸ Save after the scripted steps.
+/// - `--frame-policy exact|thin|nearest`: high-speed playback policy (default nearest).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -25,8 +30,26 @@ public struct LaunchOptions: Sendable, Equatable {
     public var snapshotTimes: [Double] = []
     /// Redraw on every display refresh even when nothing changed (render-loop stress test).
     public var drawAlways = false
+    /// Files to import and place at the playhead after opening.
+    public var importPaths: [String] = []
+    /// Canvas px to move the selected clip by after the imports.
+    public var nudge: (x: Double, y: Double)?
+    /// Select the last clip if nothing is selected (inspector snapshot).
+    public var select = false
+    /// Save after the scripted steps.
+    public var save = false
+    /// High-speed policy: "exact" (off), "thin" (subsample only), "nearest" (thin + `.nearestDecoded`).
+    public var framePolicy = "nearest"
 
     public init() {}
+
+    public static func == (a: LaunchOptions, b: LaunchOptions) -> Bool {
+        a.paths == b.paths && a.autoplay == b.autoplay && a.seekSeconds == b.seekSeconds && a.statsLog == b.statsLog
+            && a.overlay == b.overlay && a.audio == b.audio && a.quitAfter == b.quitAfter
+            && a.snapshotDir == b.snapshotDir && a.snapshotTimes == b.snapshotTimes && a.drawAlways == b.drawAlways
+            && a.importPaths == b.importPaths && a.nudge?.x == b.nudge?.x && a.nudge?.y == b.nudge?.y
+            && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
+    }
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
     /// / `-AppleKey value` pairs and `-psn_…` are skipped.
@@ -49,6 +72,13 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--snapshot-at":
                 snapshotTimes = (value() ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
             case "--draw-always": drawAlways = true
+            case "--import": if let v = value() { importPaths.append(v) }
+            case "--nudge":
+                let xy = (value() ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                if xy.count == 2 { nudge = (xy[0], xy[1]) }
+            case "--select-last": select = true
+            case "--save": save = true
+            case "--frame-policy": framePolicy = value() ?? framePolicy
             default:
                 if a.hasPrefix("-psn_") { break }
                 if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }

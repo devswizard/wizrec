@@ -1,16 +1,20 @@
 import AppKit
 import PlayerKit
+import TSCProjKit
 import UniformTypeIdentifiers
 
-/// A `.cmproj` package or `.tscproj` file, opened read-only (M1).
+/// A `.cmproj` package or `.tscproj` file, read-write (M2).
 ///
-/// Never writes: no autosave, no versions, no save actions; the bundle is read
-/// once through `ProjectBundle`.
+/// - Reads once through `ProjectBundle`; writes only when the user saves:
+///   Save = `saveWithBackup` in place, Save As = `ProjectBundle.saveAs` (package copy).
+///   No autosave, no versions, no drafts.
+/// - New Project creates an untitled package in a temporary folder; its first save is a Save As.
+/// - Dirty state comes from the undo history (`EditorDocumentModel.tracker`).
 @objc(ProjectDocument)
 final class ProjectDocument: NSDocument {
     /// Our imported type identifiers (declared in the app's Info.plist).
-    static let cmprojType = "com.devswizard.wizrec.cmproj"
-    static let tscprojType = "com.devswizard.wizrec.tscproj"
+    nonisolated static let cmprojType = "com.devswizard.wizrec.cmproj"
+    nonisolated static let tscprojType = "com.devswizard.wizrec.tscproj"
 
     static var contentTypes: [UTType] {
         [UTType(cmprojType), UTType(tscprojType),
@@ -18,65 +22,139 @@ final class ProjectDocument: NSDocument {
             .compactMap { $0 }
     }
 
-    private(set) var model: PlayerDocumentModel?
+    private(set) var model: EditorDocumentModel?
 
     override class var autosavesInPlace: Bool { false }
     override class var autosavesDrafts: Bool { false }
     override class var preservesVersions: Bool { false }
     override class var readableTypes: [String] { [cmprojType, tscprojType] }
-    override class var writableTypes: [String] { [] }
-    override class func isNativeType(_ type: String) -> Bool { false }
+    override class var writableTypes: [String] { [cmprojType, tscprojType] }
+    override class func isNativeType(_ type: String) -> Bool { true }
+    override nonisolated func canAsynchronouslyWrite(to url: URL, ofType typeName: String,
+                                                     for saveOperation: NSDocument.SaveOperationType) -> Bool { false }
 
-    /// NSDocument may call this off the main thread in principle; the model lives on the main actor.
+    override init() {
+        super.init()
+        hasUndoManager = false
+    }
+
+    /// New Project: an empty 1920×1080 30 fps package in a temporary folder.
+    func makeUntitled() throws {
+        fileType = Self.cmprojType
+        model = try EditorDocumentModel.untitled()
+    }
+
     override nonisolated func read(from url: URL, ofType typeName: String) throws {
-        if Thread.isMainThread {
-            try MainActor.assumeIsolated { try load(url) }
-        } else {
-            try DispatchQueue.main.sync { try MainActor.assumeIsolated { try load(url) } }
+        try onMain { self.model = try EditorDocumentModel(url: url) }
+    }
+
+    // MARK: Writing
+
+    override nonisolated func writableTypes(for saveOperation: NSDocument.SaveOperationType) -> [String] {
+        (try? onMain { () -> [String] in
+            guard let model = self.model, !model.isUntitled else { return [Self.cmprojType] }
+            return [model.bundle.isPackage ? Self.cmprojType : Self.tscprojType]
+        }) ?? [Self.cmprojType]
+    }
+
+    override func fileNameExtension(forType typeName: String, saveOperation: NSDocument.SaveOperationType) -> String? {
+        typeName == Self.tscprojType ? "tscproj" : "cmproj"
+    }
+
+    override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
+        savePanel.allowedContentTypes = writableTypes(for: .saveAsOperation).compactMap { UTType($0) }
+        savePanel.isExtensionHidden = false
+        savePanel.treatsFilePackagesAsDirectories = false
+        return true
+    }
+
+    /// Our own write path: never NSDocument's temp-copy-and-swap (it would copy all media).
+    override nonisolated func writeSafely(to url: URL, ofType typeName: String,
+                                          for saveOperation: NSDocument.SaveOperationType) throws {
+        try onMain { try self.write(url, operation: saveOperation) }
+    }
+
+    private func write(_ url: URL, operation: NSDocument.SaveOperationType) throws {
+        guard let model else { throw Self.error("Nothing to save.") }
+        switch operation {
+        case .saveOperation where !model.isUntitled && Self.same(url, model.bundle.isPackage ? model.bundle.directory : model.bundle.projectFile):
+            try model.save()
+        case .saveOperation, .saveAsOperation:
+            let current = model.bundle.isPackage ? model.bundle.directory : model.bundle.projectFile
+            if Self.same(url, current) && !model.isUntitled {
+                try model.save()
+                break
+            }
+            // The save panel already asked whether to replace an existing item: move it to the Trash.
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            }
+            let lost = try model.saveAs(to: url)
+            if !lost.isEmpty {
+                let names = lost.prefix(5).map { ($0.src as NSString).lastPathComponent }.joined(separator: ", ")
+                DispatchQueue.main.async {
+                    let a = NSAlert()
+                    a.messageText = "Some media no longer resolves"
+                    a.informativeText = "This .tscproj refers to media by relative path, and \(lost.count) file(s) "
+                        + "are not next to the new location: \(names). Use File ▸ Relink Missing Media, or save as a .cmproj package."
+                    a.runModal()
+                }
+            }
+        default:
+            throw Self.error("WizRec does not save copies or autosave in this version.")
         }
+        updateChangeCount(.changeCleared)
     }
 
-    private func load(_ url: URL) throws {
-        model = try PlayerDocumentModel(url: url)
-    }
+    override func data(ofType typeName: String) throws -> Data { throw Self.error("Use Save.") }
 
-    private nonisolated var readOnlyError: NSError {
-        NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError, userInfo: [
-            NSLocalizedDescriptionKey: "WizRec opens projects read-only in this version.",
-        ])
-    }
-
-    override func data(ofType typeName: String) throws -> Data { throw readOnlyError }
-    override func write(to url: URL, ofType typeName: String) throws { throw readOnlyError }
-    override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
-                       completionHandler: @escaping (Error?) -> Void) {
-        completionHandler(readOnlyError)
-    }
     override func autosave(withImplicitCancellability autosavingIsImplicitlyCancellable: Bool,
                            completionHandler: @escaping (Error?) -> Void) {
         completionHandler(nil)
     }
     override var hasUnautosavedChanges: Bool { false }
-    override var isDocumentEdited: Bool { false }
 
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
-        case #selector(save(_:)), #selector(saveAs(_:)), #selector(saveTo(_:)), #selector(revertToSaved(_:)),
-             #selector(duplicate(_:)), #selector(rename(_:)), #selector(move(_:)), #selector(lock(_:)),
-             #selector(unlock(_:)), #selector(browseVersions(_:)):
+        case #selector(saveTo(_:)), #selector(revertToSaved(_:)), #selector(duplicate(_:)), #selector(rename(_:)),
+             #selector(move(_:)), #selector(lock(_:)), #selector(unlock(_:)), #selector(browseVersions(_:)):
             return false
         default:
             return super.validateUserInterfaceItem(item)
         }
     }
 
+    /// Mirrors the model's dirty state into NSDocument (title-bar dot, close confirmation).
+    func refreshEditedState() {
+        guard let model else { return }
+        let edited = model.isDirty || model.isUntitled && model.undo.canUndo
+        if edited != isDocumentEdited { updateChangeCount(edited ? .changeDone : .changeCleared) }
+    }
+
     override func makeWindowControllers() {
         guard let model else { return }
-        addWindowController(PlayerWindowController(model: model, options: AppEnvironment.options))
+        addWindowController(EditorWindowController(document: self, model: model, options: AppEnvironment.options))
     }
 
     override func close() {
-        for wc in windowControllers { (wc as? PlayerWindowController)?.shutdown() }
+        for wc in windowControllers { (wc as? EditorWindowController)?.shutdown() }
+        model?.discardUntitled()
         super.close()
     }
+
+    // MARK: Helpers
+
+    private static func same(_ a: URL, _ b: URL) -> Bool {
+        a.standardizedFileURL.resolvingSymlinksInPath().path == b.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    static func error(_ text: String) -> NSError {
+        NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError, userInfo: [NSLocalizedDescriptionKey: text])
+    }
+}
+
+/// Runs `body` on the main actor. NSDocument calls readers and writers on the main thread
+/// here (no concurrent reading, `canAsynchronouslyWrite` false); this traps if it ever does not.
+nonisolated func onMain<T: Sendable>(_ body: @MainActor () throws -> T) throws -> T {
+    try MainActor.assumeIsolated(body)
 }
