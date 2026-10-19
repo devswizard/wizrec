@@ -39,3 +39,8 @@ Dated log. Newest last.
   `timeline` from the user's vlog (both non-unit scalars match exactly; the M0
   assumption matched neither). Fixed in `Clip.mediaTime`, its test, FORMAT.md
   and CONTRACTS.md.
+- **2026-10-19 · One demux/decode path:** MediaEngine uses libavformat for every
+  container and libavcodec for every codec (VideoToolbox hwaccel for
+  h264/hevc/prores), instead of AVAssetReader for movies. One path gives exact
+  container stream order, exact PTS and one frame rule for all media.
+  (`media`, approved by lead.)
