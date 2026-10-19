@@ -48,6 +48,9 @@ enum Palette {
         }
     }
 
+    static let banner = dynamic(light: 0xFCE9C8, dark: 0x3A2E1A)
+    static let bannerText = dynamic(light: 0x7A4A00, dark: 0xFFC46B)
+    static let outsideGroup = dynamic(light: 0x000000, dark: 0x000000, alpha: 0.28)
     static let marker = dynamic(light: 0x0F9F8F, dark: 0x3DD6C3)
     static let waveform = NSColor(white: 1, alpha: 0.85)
 }

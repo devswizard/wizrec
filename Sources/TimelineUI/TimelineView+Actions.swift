@@ -78,6 +78,23 @@ extension TimelineView: NSMenuItemValidation {
         let secs = ((sender as? NSMenuItem)?.representedObject as? NSNumber)?.doubleValue ?? 1
         if !editor.extendFrame(seconds: secs) { NSSound.beep() }
     }
+    /// Opens the selected group for editing (or double-click it).
+    @objc public func openGroup(_ sender: Any?) {
+        guard let id = selectedGroup else { NSSound.beep(); return }
+        editor.openGroup(id)
+    }
+    /// Closes the innermost open group. Key: Esc.
+    @objc public func closeGroup(_ sender: Any?) {
+        let editor = self.editor
+        if !editor.closeGroups(toLevel: canvas.snapshot.groupPath.count - 1) { NSSound.beep() }
+    }
+
+    var selectedGroup: Int64? {
+        canvas.rebuildIfNeeded()
+        let groups = canvas.snapshot.allClips.filter { $0.style == .group && model.selection.contains($0.id) }
+        return groups.count == 1 ? groups[0].id : nil
+    }
+
     /// Renames the marker under (or nearest within 6 pt of) the playhead.
     @objc public func renameMarker(_ sender: Any?) {
         guard let m = editor.marker(near: model.playhead, tolerance: canvas.layout.ticks(forWidth: 6)) else {
@@ -100,6 +117,7 @@ extension TimelineView: NSMenuItemValidation {
     @objc public func deselectAll(_ sender: Any?) { model.selection = [] }
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        canvas.rebuildIfNeeded()  // the model may have changed since the last draw
         switch item.action {
         case #selector(splitAtPlayhead(_:)): return !editor.splitTargets(at: model.playhead).isEmpty
         case #selector(delete(_:)), #selector(rippleDelete(_:)): return !editor.deletableSelection.isEmpty
@@ -108,6 +126,9 @@ extension TimelineView: NSMenuItemValidation {
         case #selector(toggleSnapping(_:)):
             item.state = model.snappingEnabled ? .on : .off
             return true
+        case #selector(openGroup(_:)): return selectedGroup != nil
+        case #selector(closeGroup(_:)): return !canvas.snapshot.groupPath.isEmpty
+        case #selector(addTrack(_:)): return canvas.snapshot.groupPath.isEmpty
         case #selector(setClipSpeed(_:)): return !editor.retimableSelection.isEmpty
         case #selector(extendFrame(_:)):
             return editor.retimableSelection.contains { canvas.snapshot.clip($0).map { !$0.clip.videoSpans.isEmpty } ?? false }
