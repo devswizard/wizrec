@@ -42,6 +42,7 @@ extension ExportSession {
     func perform() async throws {
         let r = try resolve()
         let work = Self.workDirectory(for: output)
+        Self.sweepStaleWorkDirectories(near: output)
         let partial = work.appendingPathComponent(output.lastPathComponent)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
@@ -86,9 +87,29 @@ extension ExportSession {
 
     /// Hidden sibling directory of `output` that receives the file (and any writer temp files)
     /// while it is written; removed afterwards whatever happens. Same volume, so the final move is atomic.
+    /// Named `.wizrec-export-<pid>-<uuid>` so `sweepStaleWorkDirectories` can tell live ones apart.
     static func workDirectory(for output: URL) -> URL {
-        output.deletingLastPathComponent()
-            .appendingPathComponent(".wizrec-export-\(UUID().uuidString)", isDirectory: true)
+        output.deletingLastPathComponent().appendingPathComponent(
+            "\(workPrefix)\(ProcessInfo.processInfo.processIdentifier)-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    static let workPrefix = ".wizrec-export-"
+
+    /// Removes work directories next to `output` left by exports whose process no longer runs
+    /// (a crash or hard kill). Directories of live processes, this one included, are kept.
+    static func sweepStaleWorkDirectories(near output: URL) {
+        let fm = FileManager.default
+        let parent = output.deletingLastPathComponent()
+        guard let names = try? fm.contentsOfDirectory(atPath: parent.path) else { return }
+        for name in names where name.hasPrefix(workPrefix) {
+            let rest = name.dropFirst(workPrefix.count)
+            guard let pid = rest.split(separator: "-", maxSplits: 1).first.flatMap({ Int32($0) }), pid > 0 else {
+                continue  // pre-pid name or not ours: leave it
+            }
+            if kill(pid, 0) == -1 && errno == ESRCH {
+                try? fm.removeItem(at: parent.appendingPathComponent(name, isDirectory: true))
+            }
+        }
     }
 
     static func moveIntoPlace(_ partial: URL, _ output: URL) throws {
