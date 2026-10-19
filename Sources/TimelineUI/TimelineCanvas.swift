@@ -579,8 +579,8 @@ final class TimelineCanvas: NSView {
             needsDisplay = true
             return libraryTarget == nil ? [] : .copy
         }
-        // Media drops add top-level clips; not inside an open group.
-        guard model.onDrop != nil, snapshot.groupPath.isEmpty, dropPayload(sender) != nil else { dropTarget = nil; return [] }
+        // Media drops: top level through `onDrop`, inside an open group through `onGroupDrop`.
+        guard acceptsMediaDrops, dropPayload(sender) != nil else { dropTarget = nil; return [] }
         dropTarget = dropLocation(convert(sender.draggingLocation, from: nil))
         needsDisplay = true
         return .copy
@@ -599,8 +599,24 @@ final class TimelineCanvas: NSView {
             guard let drop = libraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
             return perform(drop)
         }
-        guard snapshot.groupPath.isEmpty, let payload = dropPayload(sender), let onDrop = model.onDrop else { return false }
-        let loc = dropLocation(convert(sender.draggingLocation, from: nil))
-        return onDrop(payload, loc.track, loc.ticks)
+        guard let payload = dropPayload(sender) else { return false }
+        return performMediaDrop(payload, at: convert(sender.draggingLocation, from: nil))
+    }
+
+    /// Media drops are possible at the shown level (a handler is set for it).
+    var acceptsMediaDrops: Bool { snapshot.groupPath.isEmpty ? model.onDrop != nil : model.onGroupDrop != nil }
+
+    /// Hands a media drop at view point `p` to `onDrop` (top level) or `onGroupDrop` (open group,
+    /// inner track and ticks). False when no handler accepts it.
+    func performMediaDrop(_ payload: DropPayload, at p: CGPoint) -> Bool {
+        rebuildIfNeeded()
+        let loc = dropLocation(p)
+        if snapshot.groupPath.isEmpty {
+            guard let onDrop = model.onDrop else { return false }
+            return onDrop(payload, loc.track, loc.ticks)
+        }
+        guard let onGroupDrop = model.onGroupDrop,
+              let target = editor.groupDropTarget(track: loc.track, ticks: loc.ticks) else { return false }
+        return onGroupDrop(payload, target)
     }
 }

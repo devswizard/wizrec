@@ -36,6 +36,14 @@ public final class TimelineModel {
     /// While a group is open, track indices and `selection` refer to its inner tracks/clips.
     public var openGroups: [Int64] = []
 
+    // Additive (API_CHANGE TimelineUI, session 3, S3-TUI-1).
+
+    /// Called instead of `onDrop` when media is dropped while a group is open (inner track and
+    /// inner ticks of the innermost open group). Nil: drops inside groups are refused.
+    public var onGroupDrop: ((DropPayload, GroupDropTarget) -> Bool)?
+    /// Builds inner-track add/remove commands (seam over TimelineEngine's group-track commands).
+    @ObservationIgnored var groupTracks: any GroupTrackCommands = EngineGroupTracks()
+
     public init(undo: UndoStack) { self.undo = undo }
 }
 
