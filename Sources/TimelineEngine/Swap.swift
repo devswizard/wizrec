@@ -100,6 +100,9 @@ struct TrackEdits {
 
     var isEmpty: Bool { tops.isEmpty }
 
+    /// Top-level track indices edited so far, in first-edit order.
+    var editedTopIndices: [Int] { order }
+
     func commit(_ swap: inout TrackSwap) throws {
         try swap.commit(order.compactMap { i in tops[i].map { (JSONPath.sceneTracks.appending(.index(i)), $0) } },
                         in: project)

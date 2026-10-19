@@ -55,7 +55,21 @@ public final class TrimClip: EditCommand {
     }
 
     public func apply(to project: Project) throws {
+        appliedEdge = try Self.trim(clipID, edge, target, ripple: false, project: project, swap: &swap)
+    }
+
+    /// Shared by `TrimClip` and `RippleTrim`. Without `ripple`, neighbours
+    /// limit growth (except on a magnetic top-level track, which ripples and
+    /// is packed). With `ripple`, neighbours never limit: later clips on the
+    /// track shift by the length change, and a start-edge trim keeps the
+    /// clip's `start` (only its in-point moves). Returns the applied edge
+    /// position (for a rippled start edge: where the edge would sit without
+    /// the ripple shift).
+    static func trim(_ clipID: Int64, _ edge: TrimEdge, _ target: Int64, ripple wantRipple: Bool,
+                     project: Project, swap: inout TrackSwap) throws -> Int64 {
         let loc = try Locator.locate(clipID, in: project)
+        let magnetic = loc.topLevelTrack.map { Magnetic.isMagnetic(project, track: $0) } ?? false
+        let ripple = wantRipple || magnetic
         let t = try Timing(loc.clip)
         let grid = FrameGrid(project)
         let want = grid.nearest(target)
@@ -69,7 +83,9 @@ public final class TrimClip: EditCommand {
         switch edge {
         case .end:
             var limit = Int64.max
-            for o in others where (o["start"]?.int ?? 0) >= t.start { limit = min(limit, o["start"]?.int ?? 0) }
+            for o in others where !ripple && (o["start"]?.int ?? 0) >= t.start {
+                limit = min(limit, o["start"]?.int ?? 0)
+            }
             for p in parts where !Retime.isStill(p) {
                 guard let len = MediaExtent.length(of: p, in: project) else { continue }
                 let pt = try Timing(p)
@@ -82,9 +98,11 @@ public final class TrimClip: EditCommand {
             guard newEnd > t.start else { throw EditError.invalid("trim leaves clip \(clipID) empty") }
             edgeTick = newEnd
             for p in Self.timedParts(clip) { try Self.setEnd(p, to: newEnd) }
+            if ripple { shiftLater(in: track, except: loc.index, from: t.end, by: newEnd - t.end) }
         case .start:
-            var limit: Int64 = 0  // a track starts at tick 0
-            for o in others where (o["start"]?.int ?? 0) < t.start {
+            // A track starts at tick 0; a rippled start edge does not move the clip, so no floor.
+            var limit: Int64 = ripple ? Int64.min / 4 : 0
+            for o in others where !ripple && (o["start"]?.int ?? 0) < t.start {
                 limit = max(limit, (o["start"]?.int ?? 0) + (o["duration"]?.int ?? 0))
             }
             for p in parts where !Retime.isStill(p) {
@@ -97,10 +115,25 @@ public final class TrimClip: EditCommand {
             guard newStart < t.end else { throw EditError.invalid("trim leaves clip \(clipID) empty") }
             edgeTick = newStart
             for p in Self.timedParts(clip) { try Self.setStart(p, to: newStart) }
+            if ripple {
+                let delta = newStart - t.start
+                Magnetic.shift(clip, by: -delta)
+                shiftLater(in: track, except: loc.index, from: t.end, by: -delta)
+            }
         }
-
+        if magnetic { Magnetic.pack(track) }
         try swap.commit([(loc.trackPath, track)], in: project)
-        appliedEdge = edgeTick
+        return edgeTick
+    }
+
+    /// Shifts every clip of `track` (except `medias[index]`) that starts at
+    /// or after `from` by `delta` ticks.
+    static func shiftLater(in track: JSONObject, except index: Int, from: Int64, by delta: Int64) {
+        guard delta != 0 else { return }
+        for (i, m) in (track["medias"]?.array?.items ?? []).enumerated() where i != index {
+            guard let o = m.object, (o["start"]?.int ?? 0) >= from else { continue }
+            Magnetic.shift(o, by: delta)
+        }
     }
 
     public func revert(on project: Project) throws {
