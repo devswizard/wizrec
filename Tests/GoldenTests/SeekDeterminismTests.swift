@@ -48,8 +48,6 @@ private func bgra(_ pb: CVPixelBuffer) -> [UInt8] {
             let f = bgra(try await fresh.frame(stream: v.index, at: CMTime(value: Int64(n), timescale: 30)).pixelBuffer)
             if f != sequential[n] { differing.append(n) }
         }
-        withKnownIssue("MediaEngine: seeked H.264 frames differ from forward-decoded ones (reported to main)") {
-            #expect(differing.isEmpty, "seek vs sequential differs at frames \(differing)")
-        }
+        #expect(differing.isEmpty, "seek vs sequential differs at frames \(differing)")
     }
 }
