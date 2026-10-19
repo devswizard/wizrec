@@ -21,7 +21,7 @@ enum MainMenu {
         file.addItem(withTitle: "New Project", action: #selector(NSDocumentController.newDocument(_:)), keyEquivalent: "n")
         file.addItem(withTitle: "Open…", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
         let recent = NSMenu(title: "Open Recent")
-        recent.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+        recent.delegate = OpenRecentMenu.shared
         let recentItem = file.addItem(withTitle: "Open Recent", action: nil, keyEquivalent: "")
         recentItem.submenu = recent
         file.addItem(.separator())

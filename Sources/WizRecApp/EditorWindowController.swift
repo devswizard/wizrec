@@ -134,7 +134,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             importMedia: { [weak self] in self?.importMedia(nil) },
             importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
             insert: { [weak self] id in self?.insertSource(id) },
-            relink: { [weak self] id in self?.locate(id) })))
+            relink: { [weak self] id in self?.locate(id) }),
+            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false })))
         let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
@@ -323,6 +324,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     func undoEdit() { run("Undo") { try model.undoLast() } }
     func redoEdit() { run("Redo") { try model.redoLast() } }
+
+    // MARK: Library
+
+    /// Library double-click: an effect goes onto every selected clip as one undo step.
+    /// Transitions are placed by dragging onto a cut or clip edge.
+    func applyLibraryItem(_ kind: LibraryItem.Kind, _ name: String) -> Bool {
+        switch kind {
+        case .effect:
+            let ids = timelineModel.selection.sorted()
+            guard !ids.isEmpty else {
+                ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
+                return false
+            }
+            let preset = TimelineLibrary.effect(named: name)
+            let cmds: [any EditCommand] = ids.map {
+                AddEffect(clipID: $0, name: name, category: preset?.category ?? "categoryVisualEffects",
+                          parameters: (preset?.parameters ?? []).map { ($0.key, $0.value) })
+            }
+            var ok = false
+            run("Add Effect") {
+                try model.perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Add Effect", cmds))
+                ok = true
+            }
+            return ok
+        case .transition:
+            ui.show(String(localized: "Drag the transition onto the cut between two clips, or onto a clip's start or end."))
+            return false
+        }
+    }
 
     // MARK: Import and placement
 
