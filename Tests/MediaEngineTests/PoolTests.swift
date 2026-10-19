@@ -183,6 +183,33 @@ struct DecodePerfTests {
         print("PERF DJI 2688x1512 hevc10: cold seek \(Int(cold)) ms, sequential \(Int(fps)) fps, random seek mean \(Int(lat.reduce(0, +) / Double(lat.count))) ms max \(Int(lat.max() ?? 0)) ms, lanes \(String(describing: lanes))")
     }
 
+    /// The vlog's 6.4x clip case: 60 fps output over DJI 59.94 fps footage needs ~384 decoded
+    /// pictures/s. Requests come back to back (as the player's lane issues them); reports output
+    /// frames/s and decoded pictures/s. `WIZREC_VT_ASYNC=0` measures libav's hwaccel instead.
+    @Test(.enabled(if: Vlog.sample != nil), arguments: [1.0, 4.0, 6.4, 8.0])
+    func djiHighSpeedPlayback(speed: Double) async throws {
+        let url = try #require(Vlog.sample)
+        let pool = MediaPool(cacheLimitBytes: 1)
+        let src = try await pool.source(for: url)
+        let dur = src.info.streams[0].duration.seconds
+        let start = min(5.0, dur * 0.2)
+        let outputs = Int(min(180, (dur - start - 0.5) / speed * 60))
+        // Play forward from `start` a moment first so the hardware lane is positioned (handover).
+        for i in 0..<12 { _ = try await pool.frame(FrameRequest(url: url, stream: 0, time: CMTime(seconds: start + Double(i) / 60, preferredTimescale: 60000))) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let t0 = Date()
+        for i in 0..<outputs {
+            let t = start + 0.2 + Double(i) * speed / 60
+            _ = try await pool.frame(FrameRequest(url: url, stream: 0, time: CMTime(seconds: t, preferredTimescale: 60000)))
+        }
+        let secs = Date().timeIntervalSince(t0)
+        let outFPS = Double(outputs) / secs
+        let pictures = outFPS * speed * 60000 / 1001 / 60
+        let lanes = try await (src as? FFMediaSource)?.laneCounts(stream: 0)
+        let rate = await pool.decodeRate(url: url, stream: 0) ?? 0
+        print("PERF DJI \(speed)x (VT async \(ProcessInfo.processInfo.environment["WIZREC_VT_ASYNC"] != "0"), depth \(VideoDecodeCore.asyncDepth)): \(outputs) outputs, \(Int(outFPS)) output fps, \(Int(pictures)) decoded pictures/s, decodeRate \(Int(rate)), lanes \(String(describing: lanes))")
+    }
+
     @Test(arguments: clips)
     func sequentialAndRandomSeek(clip: Clip) async throws {
         let dir = try Synth.tempDir()

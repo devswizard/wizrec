@@ -51,6 +51,9 @@ actor VideoDecoder {
 
     /// True when frames come from VideoToolbox.
     var isHardwareAccelerated: Bool { core.usingHardware }
+
+    /// True when frames come from the asynchronous VideoToolbox path (several in flight).
+    var isAsyncVideoToolbox: Bool { core.usingAsyncVideoToolbox }
 }
 
 /// One video stream, served by up to two decoders ("lanes"):
@@ -58,9 +61,9 @@ actor VideoDecoder {
 /// - a VideoToolbox lane — cheap and fast while decoding forward (playback);
 /// - a multithreaded software lane, created on the first seek.
 ///
-/// libav's VideoToolbox path decodes synchronously frame by frame, so its seeks can be slow
-/// (synthetic 1080p hevc: ~135 ms mean vs ~40 ms in software on an M3 Pro). For other
-/// streams software is the slow one (2688×1512 10-bit hevc: ~20 ms/frame vs ~10 ms). So each
+/// h264/hevc with ISO extradata decode on the asynchronous VideoToolbox path (`VTPictureDecoder`,
+/// several frames in flight); other hardware codecs use libav's synchronous hwaccel. Depending on the
+/// stream either lane can be the cheaper one to seek with. So each
 /// lane's decode cost per frame is measured, and a seek goes to the cheaper lane. When the
 /// software lane is playing forward, the hardware lane is repositioned in the background just
 /// ahead of the playhead and takes over there.
@@ -217,6 +220,8 @@ final class VideoDecodeCore {
     private let format: FormatContext
     private var codec: UnsafeMutablePointer<AVCodecContext>
     private(set) var usingHardware: Bool
+    /// Asynchronous VideoToolbox decoder (several frames in flight); nil = libav decodes.
+    private var vt: VTPictureDecoder?
     private let packet: UnsafeMutablePointer<AVPacket>
     private let converter: FrameConverter
     /// Keyframe timestamps (stream ticks, ascending) from the container index. May be empty.
@@ -259,9 +264,18 @@ final class VideoDecodeCore {
         self.keyframes = kf
         self.converter = FrameConverter(codec: par.pointee.codec_id)
 
-        let (ctx, hw) = try Self.openCodec(par: par, timeBase: st.pointee.time_base, allowHardware: allowHardware)
-        self.codec = ctx
-        self.usingHardware = hw
+        if allowHardware, Self.asyncVideoToolboxEnabled,
+           let vt = VTPictureDecoder(par: par, depth: Self.asyncDepth) {
+            // libav keeps demuxing; its codec context is only a light single-threaded stand-in.
+            let (ctx, _) = try Self.openCodec(par: par, timeBase: st.pointee.time_base, allowHardware: false, threads: 1)
+            self.codec = ctx
+            self.vt = vt
+            self.usingHardware = true
+        } else {
+            let (ctx, hw) = try Self.openCodec(par: par, timeBase: st.pointee.time_base, allowHardware: allowHardware)
+            self.codec = ctx
+            self.usingHardware = hw
+        }
         guard let pkt = av_packet_alloc() else { throw MediaError.decodeFailed("av_packet_alloc") }
         self.packet = pkt
     }
@@ -278,8 +292,22 @@ final class VideoDecodeCore {
         }
     }
 
+    /// `WIZREC_VT_ASYNC=0` turns the asynchronous VideoToolbox path off (libav's hwaccel instead).
+    static var asyncVideoToolboxEnabled: Bool {
+        ProcessInfo.processInfo.environment["WIZREC_VT_ASYNC"] != "0"
+            && ProcessInfo.processInfo.environment["WIZREC_NO_HWDEC"] == nil
+    }
+
+    /// Packets in flight on the asynchronous VideoToolbox path (`WIZREC_VT_DEPTH`, default 8).
+    static var asyncDepth: Int {
+        ProcessInfo.processInfo.environment["WIZREC_VT_DEPTH"].flatMap(Int.init).map { min(max($0, 1), 32) } ?? 8
+    }
+
+    /// True when frames come from the asynchronous VideoToolbox path.
+    var usingAsyncVideoToolbox: Bool { vt != nil }
+
     private static func openCodec(par: UnsafeMutablePointer<AVCodecParameters>, timeBase: AVRational,
-                                  allowHardware: Bool) throws -> (UnsafeMutablePointer<AVCodecContext>, Bool) {
+                                  allowHardware: Bool, threads: Int32 = 0) throws -> (UnsafeMutablePointer<AVCodecContext>, Bool) {
         let id = par.pointee.codec_id
         guard let dec = avcodec_find_decoder(id) else {
             throw MediaError.unsupported("no decoder for \(codecName(id))")
@@ -312,8 +340,8 @@ final class VideoDecodeCore {
             }
         }
         if !hw {
-            ctx.pointee.thread_count = 0 // auto
-            ctx.pointee.thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE
+            ctx.pointee.thread_count = threads // 0 = auto
+            ctx.pointee.thread_type = threads == 1 ? 0 : FF_THREAD_FRAME | FF_THREAD_SLICE
         }
         let rc = avcodec_open2(ctx, dec, nil)
         guard rc >= 0 else { throw MediaError.decodeFailed("avcodec_open2 \(codecName(id)): \(avErrorString(rc))") }
@@ -345,8 +373,9 @@ final class VideoDecodeCore {
         var old: UnsafeMutablePointer<AVCodecContext>? = codec
         avcodec_free_context(&old)
         codec = ctx
-        usingHardware = false
         resetState()
+        vt = nil
+        usingHardware = false
         current = nil
     }
 
@@ -452,6 +481,7 @@ final class VideoDecodeCore {
         }
         current = nil; pending = nil; currentOutput = nil
         sentPTS.removeAll()
+        vt?.flush()
         drained = false; sentFlushPacket = false; atStart = true
     }
 
@@ -582,6 +612,7 @@ final class VideoDecodeCore {
 
     /// Next frame in presentation order, or nil at end of stream.
     private func decodeNext() throws -> DecodedFrame? {
+        if let vt { return try decodeNextAsync(vt) }
         guard let f = av_frame_alloc() else { throw MediaError.decodeFailed("av_frame_alloc") }
         var keep = false
         defer { if !keep { var fp: UnsafeMutablePointer<AVFrame>? = f; av_frame_free(&fp) } }
@@ -626,6 +657,42 @@ final class VideoDecodeCore {
                 if usingHardware && current == nil && pending == nil {
                     throw MediaError.decodeFailed("send_packet: \(avErrorString(s))")
                 }
+            }
+        }
+    }
+
+    /// `decodeNext` on the asynchronous VideoToolbox path: keeps up to `vt.depth` packets in
+    /// the decoder and returns pictures in presentation order.
+    private func decodeNextAsync(_ vt: VTPictureDecoder) throws -> DecodedFrame? {
+        var silentWaits = 0
+        while true {
+            vt.collect(wait: false)
+            if let r = vt.popReleasable() {
+                if let c = current, r.pts <= c.pts { continue } // leading pictures after a seek
+                decodedFrames += 1
+                return DecodedFrame(frame: try makeVideoToolboxFrame(r.buffer, pts: r.pts), pts: r.pts)
+            }
+            if !vt.eof, vt.inFlightCount < vt.depth {
+                if readPacket() < 0 { vt.markEOF(); continue }
+                defer { av_packet_unref(packet) }
+                guard Int(packet.pointee.stream_index) == streamIndex else { continue }
+                atStart = false
+                if packet.pointee.pts != avNoPTS, (packet.pointee.flags & AV_PKT_FLAG_DISCARD) == 0 {
+                    sentPTS.append(packet.pointee.pts)
+                }
+                try vt.submit(packet, timeBase: clock.avTimeBase)
+                continue
+            }
+            if vt.inFlightCount == 0 {
+                if vt.eof && !vt.hasReady { return nil }
+                if !vt.eof { continue } // reorder buffer waits for more packets
+            }
+            if vt.collect(wait: true) == 0 {
+                // VideoToolbox stopped answering (2 s per wait): give up; frame(at:) retries in software.
+                silentWaits += 1
+                if silentWaits >= 2 { throw MediaError.decodeFailed("VideoToolbox stalled in stream \(streamIndex)") }
+            } else {
+                silentWaits = 0
             }
         }
     }
