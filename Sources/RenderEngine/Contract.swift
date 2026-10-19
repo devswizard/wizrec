@@ -410,13 +410,16 @@ public actor OfflineRenderer {
     /// until the call returns (CVPixelBuffer is not `Sendable`: hand it over from a
     /// `nonisolated(unsafe) let` or an owning wrapper).
     public func render(at ticks: Int64, into pixelBuffer: CVPixelBuffer) async throws {
+        try await draw(try await prepare(at: ticks), into: pixelBuffer)
+    }
+
+    /// Composites a prepared frame into `pixelBuffer`; suspends until the GPU finishes.
+    func draw(_ prepared: PreparedFrame, into pixelBuffer: CVPixelBuffer) async throws {
         if gpu == nil { gpu = try OfflineGPU() }
         guard let gpu else { throw RenderError.noMetalDevice }
-        let plan = scene.evaluate(at: ticks)
-        let fetched = try await OfflineGPU.fetch(plan.frameRequests, using: frames)
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
             do {
-                try gpu.submit(plan, frames: fetched, into: pixelBuffer) { error in
+                try gpu.submit(prepared.plan, frames: prepared.frames, into: pixelBuffer) { error in
                     if let error { c.resume(throwing: error) } else { c.resume() }
                 }
             } catch {
