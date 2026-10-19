@@ -51,6 +51,9 @@ struct DemoEffectsTests {
             }
         }
         let rms = (sum / n).squareRoot()
+        if let dir = ProcessInfo.processInfo.environment["WIZREC_RENDER_OUT"] {
+            try writePNG(img, to: URL(fileURLWithPath: dir).appendingPathComponent("demo-thumb-ours.png"))
+        }
         print("demo background vs ProjectThumbnail: RMS \(rms), max \(worst) (0–255)")
         #expect(rms < 2.0)
         #expect(worst <= 8)
