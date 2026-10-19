@@ -18,7 +18,7 @@ import TSCProjKit
 /// Pass = whole-frame and every cell's colour SSIM (`Metrics.colorSSIM`: min of luma, R, G, B SSIM)
 /// ≥ `ssimMin` (0.95, CLAUDE.md M4).
 enum SheetGolden {
-    static let groups = ["effects", "callouts"]
+    static let groups = ["effects", "callouts", "research/cursor"]
 
     static func discover() -> [GoldenSheet] {
         guard let root = Golden.refsDir else { return [] }

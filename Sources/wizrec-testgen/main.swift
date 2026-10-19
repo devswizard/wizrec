@@ -3,7 +3,10 @@
 // reference renders. See docs/testing/reference-exports.md.
 
 import Foundation
+import MediaEngine
+import PlayerKit
 import TestGenKit
+import TimelineEngine
 import TSCProjKit
 
 let usage = """
@@ -17,6 +20,10 @@ let usage = """
           Write the effect and callout sheets (EF1–EF9, CO1–CO2) to DIR/<group>/<case>/
           with sheet.json, the playhead parked in docPrefs. A bundle Camtasia has saved
           (it has a ProjectThumbnail) is kept unless --force; reference.* is never touched.
+      wizrec-testgen ce3 RECORDING [--out DIR]
+          Build the CE3 cursor sheet from your own Camtasia recording (.trec) into
+          DIR/research/cursor/ce3-cursor/ (default DIR as above). The recording is
+          copied into the new project; nothing about it is printed.
       wizrec-testgen thumbnail PROJECT [-o OUT.png]
           Extract metadata.ProjectThumbnail (Camtasia's render at the playhead) from a
           .cmproj/.tscproj and print its size and the docPrefs playhead.
@@ -89,6 +96,30 @@ if args.first == "thumbnail" {
             try png.write(to: out, options: .atomic)
             print("wrote  \(out.path)")
         }
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
+
+if args.first == "ce3" {
+    args.removeFirst()
+    guard let path = args.first, !path.hasPrefix("--") else { fail("ce3 needs a recording path\n\(usage)") }
+    var out = TestGen.defaultOutputDirectory
+    if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
+        out = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath, isDirectory: true)
+    }
+    let recording = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    guard FileManager.default.fileExists(atPath: recording.path) else { fail("no such file: \(path)") }
+    let caseDir = out.appendingPathComponent("research/cursor/\(CursorSheet.name)", isDirectory: true)
+    do {
+        let pool = MediaPool()
+        let bundle = try await CursorSheet.write(recording: recording, to: caseDir) { file, src in
+            let info = try await pool.probe(file)
+            let mod = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date) ?? Date()
+            return SourceDescriptor(info: info, src: src, lastModified: mod)
+        }
+        print("wrote  \(bundle.path)")
     } catch {
         fail("\(error)")
     }
