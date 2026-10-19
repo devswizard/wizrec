@@ -53,7 +53,8 @@ TSCProjKit ◄── MediaEngine ◄── RenderEngine ◄── WizRecApp
 | `MediaPool.prefetch` | Non-blocking pre-roll; later `frame(_:)` calls hit the cache. |
 | Images | `frame(stream: 0, at: any)` returns the image as a single frame. |
 | Decoders | AVFoundation (`AVAssetReader`) for h264/hevc/prores/aac; libavcodec via `CFFmpeg` for `tscc2` and anything AVFoundation rejects. |
-| Performance | 1080p h264 sequential decode ≥ 120 fps; random seek ≤ 50 ms on Apple silicon. |
+| Performance | 1080p h264 sequential decode ≥ 120 fps; random seek ≤ 50 ms mean for ≤ 1080p h264; ≤ 150 ms mean for long-GOP all-reference HEVC ≥ 1.5K (revised 2026-10-19, measured: DJI 2.7K 10-bit 115 ms). |
+| Prefetch | One ordered lane per stream; a new `prefetch` call replaces that stream's unstarted requests. |
 
 ## RenderEngine (`Sources/RenderEngine/Contract.swift`)
 

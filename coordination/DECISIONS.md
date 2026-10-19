@@ -44,3 +44,8 @@ Dated log. Newest last.
   h264/hevc/prores), instead of AVAssetReader for movies. One path gives exact
   container stream order, exact PTS and one frame rule for all media.
   (`media`, approved by lead.)
+- **2026-10-19 · Seek target revised:** ≤ 50 ms mean holds for ≤ 1080p h264;
+  long-GOP all-reference HEVC ≥ 1.5K gets ≤ 150 ms mean (bounded by decoding
+  up to one GOP). Playback uses a VideoToolbox lane, scrubbing a software lane.
+- **2026-10-19 · `MediaPool.cacheStats` approved** (additive API_CHANGE, for the
+  player's performance overlay).
