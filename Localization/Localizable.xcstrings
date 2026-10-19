@@ -7,6 +7,15 @@
     "%arg" : {
 
     },
+    "%arg %%" : {
+
+    },
+    "%arg exports are still running. Close anyway?" : {
+
+    },
+    "%arg exports are still running. Quit anyway?" : {
+
+    },
     "1080p (1920)" : {
 
     },
@@ -49,6 +58,12 @@
     "Add to Timeline at Playhead" : {
 
     },
+    "An export is still running. Close anyway?" : {
+
+    },
+    "An export is still running. Quit anyway?" : {
+
+    },
     "Animated" : {
 
     },
@@ -67,9 +82,6 @@
     "Back" : {
 
     },
-    "Background" : {
-
-    },
     "Background behind the caption" : {
 
     },
@@ -86,6 +98,12 @@
 
     },
     "Cancel All" : {
+
+    },
+    "Cancel Export and Close" : {
+
+    },
+    "Cancel Export and Quit" : {
 
     },
     "Cancel Transcription" : {
@@ -163,16 +181,19 @@
     "Close" : {
 
     },
+    "Closing the project cancels the export and deletes its unfinished file." : {
+
+    },
     "Continue" : {
 
     },
     "Copy" : {
 
     },
-    "Current word" : {
+    "Cut" : {
 
     },
-    "Cut" : {
+    "Defaults" : {
 
     },
     "Delete" : {
@@ -329,6 +350,9 @@
     "Include audio" : {
 
     },
+    "Keep Exporting" : {
+
+    },
     "Kept in ~/Library/Logs/WizRec so you can attach one to a bug report. Never sent. Change it any time in Settings." : {
 
     },
@@ -363,9 +387,6 @@
 
     },
     "Open…" : {
-
-    },
-    "Other words" : {
 
     },
     "Outline color" : {
@@ -420,6 +441,9 @@
     "Quit WizRec" : {
 
     },
+    "Quitting cancels the export and deletes its unfinished file." : {
+
+    },
     "Range" : {
 
     },
@@ -435,10 +459,16 @@
     "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
 
     },
+    "Reset the draft to WizRec's default caption style" : {
+
+    },
     "Reset to Defaults" : {
 
     },
     "Resolution" : {
+
+    },
+    "Revert" : {
 
     },
     "Ripple Delete" : {

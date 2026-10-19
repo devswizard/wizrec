@@ -106,11 +106,19 @@ extension EditorWindowController {
     }
 
     /// The selected dynamic-caption callout (top level) and its style.
-    private var selectedDynamicCaption: (id: Int64, style: DynamicCaptionStyle)? {
+    var selectedDynamicCaption: (id: Int64, style: DynamicCaptionStyle)? {
         guard timelineModel.selection.count == 1, let id = timelineModel.selection.first,
               let clip = model.project.tracks.flatMap(\.clips).first(where: { $0.id == id }), clip.kind == .callout,
               let def = clip.object["def"]?.object, DynamicCaptionStyle.isDynamicCaption(def) else { return nil }
         return (id, DynamicCaptionStyle(def: def))
+    }
+
+    /// Inspector ▸ Dynamic Caption ▸ Apply: the selected caption's new style, one undo step.
+    func setSelectedCaptionStyle(_ new: DynamicCaptionStyle) {
+        guard let (id, old) = selectedDynamicCaption, new != old else { return }
+        run(String(localized: "Change Caption Style")) {
+            try model.perform(SetDynamicCaptionStyle(clipID: id, style: new))
+        }
     }
 
     /// Captions ▸ Dynamic Caption Style…: a sheet editing the selected dynamic caption.
