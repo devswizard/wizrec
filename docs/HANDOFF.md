@@ -54,7 +54,11 @@ This is for the **lead session** that continues the WizRec build. Read
   - audio mix prefetch in export (0.5–2 s per 25 s under load);
   - vImage for SW-lane staging copy (2.7K/4K 10-bit);
   - Sparkle, CI, signing — need user inputs;
-  - perf assertions (`WIZREC_PERF=1`) need machine load < ~30.
+  - perf assertions (`WIZREC_PERF=1`) need machine load < ~30;
+  - end-to-end check: two ProRes exports of the demo decode to identical
+    frames (render deterministic); two H.264 exports differ because the
+    VideoToolbox hardware encoder is not bit-reproducible — expected, not a
+    WizRec bug. Golden comparisons should use ProRes or SSIM tolerance.
 - **Next team:** researcher + render + qa when references land; ship when
   remote/Developer ID/Sparkle arrive; captions to live-test whisper.
 
