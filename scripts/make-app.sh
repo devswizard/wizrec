@@ -41,7 +41,9 @@ done
 VERSION=${VERSION:-0.1.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
-# Bundle id is a placeholder until Devs Wizard confirms its domain (see CLAUDE.md "Open decisions").
+# Bundle id is a placeholder until Devs Wizard confirms its domain (see CLAUDE.md "Open decisions");
+# override it with WIZREC_BUNDLE_ID.
+BUNDLE_ID=${WIZREC_BUNDLE_ID:-com.devswizard.WizRec}
 # Type identifiers are our own imported declarations; the role is Editor (M2) and the
 # rank Alternate, so WizRec never claims to be the default app for these files.
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -55,7 +57,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSMicrophoneUsageDescription</key><string>WizRec records your microphone when you include it in a recording.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>WizRec transcribes your clips' audio to create captions. Audio is processed on this Mac.</string>
     <key>CFBundleExecutable</key><string>WizRec</string>
-    <key>CFBundleIdentifier</key><string>com.devswizard.WizRec</string>
+    <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleName</key><string>WizRec</string>
     <key>CFBundleDisplayName</key><string>WizRec</string>
     <key>CFBundlePackageType</key><string>APPL</string>

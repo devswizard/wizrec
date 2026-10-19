@@ -8,6 +8,10 @@ let usage = """
       info        header, media list (flags missing files), track/clip tree
       roundtrip   parse → write → parse and verify nothing changed
                   -o <file>  also write the re-serialised project there
+      strip-thumbnail
+                  remove metadata.ProjectThumbnail (Camtasia's render of the
+                  canvas) from a .tscproj, in place or to -o <file>; every
+                  other key, its order and number text are kept
     """
 
 func fail(_ msg: String) -> Never {
@@ -25,6 +29,9 @@ do {
     case "roundtrip":
         let out = args.firstIndex(of: "-o").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
         try roundtrip(url, out: out.map { URL(fileURLWithPath: $0) })
+    case "strip-thumbnail":
+        let out = args.firstIndex(of: "-o").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+        try stripThumbnail(url, out: out.map { URL(fileURLWithPath: $0) })
     default: fail(usage)
     }
 } catch {
@@ -79,4 +86,23 @@ func roundtrip(_ url: URL, out: URL?) throws {
     guard original == reparsed else { fail("roundtrip MISMATCH: \(bundle.projectFile.path)") }
     if let out { try written.write(to: out, options: .atomic) }
     print("roundtrip OK: \(bundle.projectFile.lastPathComponent) (\(written.count) bytes)\(out.map { " → \($0.path)" } ?? "")")
+}
+
+func stripThumbnail(_ url: URL, out: URL?) throws {
+    let bundle = try ProjectBundle(url: url)
+    let project = bundle.project
+    let dest = out ?? bundle.projectFile
+    guard let metadata = project.root["metadata"]?.object, metadata["ProjectThumbnail"] != nil else {
+        print("no ProjectThumbnail: \(bundle.projectFile.lastPathComponent)")
+        if let out { try project.serialized().write(to: out, options: .atomic) }
+        return
+    }
+    metadata["ProjectThumbnail"] = nil
+    let written = project.serialized()
+    // Verify: the result differs from the original only by the removed key.
+    let original = try JSON.parse(Data(contentsOf: bundle.projectFile))
+    original.object?["metadata"]?.object?["ProjectThumbnail"] = nil
+    guard try JSON.parse(written) == original else { fail("strip-thumbnail MISMATCH: \(url.path)") }
+    try written.write(to: dest, options: .atomic)
+    print("stripped ProjectThumbnail: \(dest.path) (\(written.count) bytes)")
 }

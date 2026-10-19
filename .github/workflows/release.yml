@@ -32,8 +32,9 @@ jobs:
           sudo xcode-select -s "${xcode:-/Applications/Xcode.app}/Contents/Developer"
           swift --version
 
-      - name: Install FFmpeg and pkg-config
-        run: brew install ffmpeg pkg-config
+      - name: Install FFmpeg, pkg-config and librsvg
+        # librsvg provides rsvg-convert for Design/AppIcon/build-icon.sh (make-app.sh).
+        run: brew install ffmpeg pkg-config librsvg
 
       - name: Version
         id: version
@@ -84,6 +85,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           WIZREC_SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
           WIZREC_NOTARY_PROFILE: ${{ steps.notary.outputs.profile }}
+          WIZREC_BUNDLE_ID: ${{ vars.WIZREC_BUNDLE_ID }}
           NOTARIZE: ${{ steps.notary.outputs.profile != '' && '1' || '0' }}
         run: scripts/release.sh
 
