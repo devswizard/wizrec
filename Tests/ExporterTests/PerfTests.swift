@@ -15,6 +15,9 @@ let perfEnabled = ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"
 /// Runs only with `WIZREC_PERF=1`; target: 1080p30 H.264 ≥ 4× real time (S3-EXP-3). Needs a quiet
 /// machine: under heavy load (load average > 30) exports drop to 2.5–3×, so `LoadGate` reports
 /// the number as a known issue there instead of failing.
+/// Measure in release (`WIZREC_PERF=1 swift test -c release -Xswiftc -enable-testing --filter
+/// ExportPerfTests`): in debug the unspecialised DSP code (noise removal) makes the audio mix ~25×
+/// slower (demo: 4.1 s vs 0.16 s) and it, not video, sets the export time.
 @Suite(.enabled(if: perfEnabled && hasGPU), .serialized) struct ExportPerfTests {
     @MainActor private func demo(in dir: URL) throws -> (SceneModel, AudioScene) {
         let copy = dir.appendingPathComponent("demo.cmproj")
