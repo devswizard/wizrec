@@ -179,16 +179,19 @@ public enum RenderError: Error, Sendable, Equatable {
 /// Draws a `RenderPlan` with Metal. Not thread-safe: own it from one actor.
 public final class Compositor {
     public let device: any MTLDevice
+    private let core: CompositorCore
 
+    /// Compiles the shaders; throws `RenderError.shaderCompile` on failure.
     public init(device: any MTLDevice) throws {
         self.device = device
+        core = try CompositorCore(device: device)
     }
 
     /// Encodes `plan` into `target` (`.bgra8Unorm`, any size; the canvas is scaled to fit).
     /// Layers whose frame is missing from `frames` are skipped.
     public func encode(_ plan: RenderPlan, frames: [FrameRequest: VideoFrame],
                        into target: any MTLTexture, commandBuffer: any MTLCommandBuffer) throws {
-        throw RenderError.notImplemented
+        try core.encode(plan, frames: frames, into: target, commandBuffer: commandBuffer)
     }
 }
 

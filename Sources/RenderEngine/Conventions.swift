@@ -22,11 +22,29 @@ enum Conventions {
         Q.add(Rational(start), Q.mul(Q.sub(m, mediaStart), scalar))
     }
 
-    /// Time at which a clip's keyframes are evaluated: parent time minus the
-    /// clip's `start`, in parent ticks [inf: keyframes are relative to the clip start].
-    static func keyframeTime(parent t: Rational, start: Int64) -> Double {
-        Q.sub(t, Rational(start)).double
+    /// How a clip's keyframe times are measured.
+    enum KeyframeBase: Sendable, Equatable {
+        /// The clip's inner (media) time, `mediaStart + (t − start) / scalar`
+        /// [obs for scalar 1: trimmed callouts; inf for speed ≠ 1, experiment X4].
+        case media
+        /// Images have no media time: `t − start + trimStartSum` [inf].
+        case timelineOffset(trimStartSum: Double)
     }
+
+    /// Keyframe evaluation time for parent time `t` (time-mapping.md §6).
+    static func keyframeTime(parent t: Rational, start: Int64, mediaStart: Rational, scalar: Rational,
+                             base: KeyframeBase) -> Double {
+        switch base {
+        case .media:
+            mediaTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar).double
+        case .timelineOffset(let trim):
+            Q.sub(t, Rational(start)).double + trim
+        }
+    }
+
+    /// Keyframe interpolation when neither the keyframe nor the parameter names one [?]
+    /// (time-mapping.md §8). `bnce` and unknown codes are linear in M1.
+    static let defaultInterp = "eioe"
 
     /// Stream time for media ticks: stream time 0 = media tick 0 [inf].
     static func streamTime(ticks m: Rational, editRate: Int64) -> CMTime {
@@ -101,10 +119,27 @@ enum Conventions {
 
     static func clamp01(_ v: Double) -> Double { v.isFinite ? min(max(v, 0), 1) : 0 }
 
+    /// Crop edge order 0..3 = left, top, right, bottom. x-edges 0/2 are [obs]; 1 = top is [?]
+    /// (transform.md §6). |v| < 1e−9 is float noise → 0, then clamp to 0…1.
     private static func insets(_ p: SParams, prefix: String, at t: Double) -> Insets {
-        Insets(left: clamp01(p.value("\(prefix)0", at: t, default: 0)),
-               top: clamp01(p.value("\(prefix)1", at: t, default: 0)),
-               right: clamp01(p.value("\(prefix)2", at: t, default: 0)),
-               bottom: clamp01(p.value("\(prefix)3", at: t, default: 0)))
+        func v(_ i: Int) -> Double {
+            let x = p.value("\(prefix)\(i)", at: t, default: 0)
+            return abs(x) < 1e-9 ? 0 : clamp01(x)
+        }
+        return Insets(left: v(0), top: v(1), right: v(2), bottom: v(3))
+    }
+
+    /// The visible part of a layer in layer-local px (+y up) and the matching texture
+    /// coordinates (origin top-left, y down). Both crop families trim edges without moving
+    /// the remaining pixels [inf, transform.md §6]; they add per edge until the
+    /// difference between them is specified (experiment X1).
+    static func visibleRegion(size: CGSize, sourceCrop sc: Insets, geometryCrop gc: Insets)
+        -> (rect: CGRect, uv: (u0: Double, vBottom: Double, u1: Double, vTop: Double))? {
+        let l = min(sc.left + gc.left, 1), r = min(sc.right + gc.right, 1)
+        let t = min(sc.top + gc.top, 1), b = min(sc.bottom + gc.bottom, 1)
+        guard l + r < 1, t + b < 1, size.width > 0, size.height > 0 else { return nil }
+        let w = size.width, h = size.height
+        let rect = CGRect(x: -w / 2 + l * w, y: -h / 2 + b * h, width: (1 - l - r) * w, height: (1 - t - b) * h)
+        return (rect, (u0: l, vBottom: 1 - b, u1: 1 - r, vTop: t))
     }
 }

@@ -109,6 +109,54 @@ private func children(_ l: Layer?) -> [Layer] {
     #expect(approx(try #require(scene.evaluate(at: 11 * s + s / 2).layers.first).transform.tx, 15.625))
 }
 
+/// Regression (time-mapping.md §6): keyframes are on the clip's media axis. A clip trimmed by
+/// 22 frames (`mediaStart` 22 f) with keyframes 0→142 f shows media time 22…142 f.
+@Test func keyframesUseMediaTimeAfterLeftTrim() throws {
+    let f = s / 30
+    let p = try P.project(tracks: [P.track(0, [
+        P.clip("Callout", id: 10, start: 0, duration: 120 * f, mediaStart: 22 * f, parameters: [
+            "opacity": P.keyframed(0, [(time: 0, end: 142 * f, value: 1)]),
+        ], extra: ["def": ["kind": "remix", "shape": "text", "width": 10.0, "height": 10.0]]),
+    ])])
+    let scene = P.scene(p)
+    // t = 0 → media 22 f → 22/142 of the way.
+    #expect(approx(try #require(scene.evaluate(at: 0).layers.first).opacity, 22.0 / 142))
+    #expect(approx(try #require(scene.evaluate(at: 49 * f).layers.first).opacity, 0.5))
+}
+
+@Test func keyframesOnSpedUpClipUseInnerTime() throws {
+    // 2× speed (scalar 1/2): one timeline second = two media seconds on the keyframe axis [inf, X4].
+    let p = try P.project(tracks: [P.track(0, [
+        P.clip("VMFile", id: 10, src: 1, start: s, duration: 2 * s, scalar: "1/2", parameters: [
+            "translation0": P.keyframed(0, [(time: 0, end: 4 * s, value: 400)], interp: "linr"),
+        ]),
+    ])])
+    #expect(approx(try #require(P.scene(p).evaluate(at: 2 * s).layers.first).transform.tx, 200))
+}
+
+@Test func imageKeyframesUseTimelineOffset() throws {
+    // Images: mediaStart 0, mediaDuration 1 tick; keyframes measured from the clip start + trimStartSum.
+    let p = try P.project(tracks: [P.track(0, [
+        P.clip("IMFile", id: 10, src: 2, start: 5 * s, duration: 10 * s, parameters: [
+            "opacity": P.keyframed(0, [(time: 0, end: 4 * s, value: 1)], interp: "linr"),
+        ], extra: ["mediaDuration": 1, "trimStartSum": 0]),
+    ])])
+    #expect(approx(try #require(P.scene(p).evaluate(at: 6 * s).layers.first).opacity, 0.25))
+}
+
+@Test func keyframeInterpFallsBackToParameterThenEioe() throws {
+    let raw: [String: Any] = ["type": "double", "defaultValue": 0.0, "interp": "linr",
+                              "keyframes": [["time": 0, "endTime": 100, "value": 1.0]]]
+    let json = try JSON.parse(JSONSerialization.data(withJSONObject: raw))
+    #expect(try #require(SParam(json)).value(at: 25) == 0.25)
+    let bare: [String: Any] = ["type": "double", "defaultValue": 0.0,
+                               "keyframes": [["time": 0, "endTime": 100, "value": 1.0]]]
+    #expect(try #require(SParam(JSON.parse(JSONSerialization.data(withJSONObject: bare)))).value(at: 25) == 0.15625)
+    let bounce: [String: Any] = ["type": "double", "defaultValue": 0.0,
+                                 "keyframes": [["time": 0, "endTime": 100, "value": 1.0, "interp": "bnce"]]]
+    #expect(try #require(SParam(JSON.parse(JSONSerialization.data(withJSONObject: bounce)))).value(at: 25) == 0.25)
+}
+
 @Test func sParamMatchesTSCProjKitParameter() throws {
     let raw: [String: Any] = P.keyframed(2, [(time: 100, end: 300, value: 10), (time: 500, end: 500, value: -4),
                                             (time: 700, end: 900, value: 6)], interp: "eioe")
