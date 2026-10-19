@@ -80,7 +80,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M2-TL-2 | timeline | done | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
 | M3-TL-1 | timeline | done | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
 | M2-MED-1 | media | done | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
-| M2-MED-2 | media | claimed | — | high-speed playback throughput (async VT) + nearest-frame policy |
+| M2-MED-2 | media | done | — | high-speed playback throughput (async VT) + nearest-frame policy |
 | M2-TUI-1 | timelineui | done | — | ruler, tracks, headers, clips, playhead, zoom/scroll; view tests on hand-built projects |
 | M2-TUI-2 | timelineui | done | TL-2 | select/move/trim/split/delete/ripple, track flags, snapping, thumbnails + waveforms |
 | M2-APP-1 | app | done | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
