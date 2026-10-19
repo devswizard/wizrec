@@ -21,13 +21,12 @@ extension EffectInstance {
 
 // MARK: - RoundCorners
 
-/// Rounds the corners of the layer's visible rect (after geometry effects such as `Mask`).
+/// Rounds the corners of the layer's visible rect (`docs/specs/effects/RoundCorners.md`).
 struct RoundCornersEffect: EffectRenderer {
     enum Spec {
-        /// `radius` is in canvas px [inf: the demo camera (scale 0.2887, 1080-px mask) renders as a
-        /// full circle in the ProjectThumbnail with radius 233.8; in layer px it would be a rounded square].
-        static let radiusInCanvasPx = true
-        /// Corner flags `top-left`… default on [inf].
+        /// `radius` is in layer px [inf, strong: demo 233.81 × scale 0.2887 = 67.5 canvas px exactly].
+        static let radiusInCanvasPx = false
+        /// Corner flags `top-left`… multiply the radius [inf, weak]; default on.
         static let cornerDefault = 1.0
     }
 
@@ -52,7 +51,7 @@ struct RoundCornersEffect: EffectRenderer {
         float2 p = px - centre;   // y down
         float4 flags = fx.p[1];   // tl, tr, br, bl
         float on = p.x < 0.0 ? (p.y < 0.0 ? flags.x : flags.w) : (p.y < 0.0 ? flags.y : flags.z);
-        float r = min(fx.p[0].x, min(half_.x, half_.y)) * step(0.5, on);
+        float r = min(fx.p[0].x * clamp(on, 0.0, 1.0), min(half_.x, half_.y));
         float d = fx_sd_round_box(p, half_, r);
         return c * clamp(0.5 - d, 0.0, 1.0);
     }
@@ -61,19 +60,18 @@ struct RoundCornersEffect: EffectRenderer {
 
 // MARK: - Mask
 
-/// Keeps a rectangle or ellipse of the layer; the rest gets `mask-opacity`.
+/// Keeps an ellipse or rectangle of the layer; the rest gets `mask-opacity`
+/// (`docs/specs/effects/Mask.md`).
 struct MaskEffect: EffectRenderer {
     enum Spec {
-        /// `mask-width/height/positionX/Y` in layer source px, origin at the layer centre [obs, transform.md §10];
-        /// +y up like `translation1` [inf].
+        /// `mask-width/height/positionX/Y` in layer px, origin at the layer centre [obs, transform.md §10];
+        /// +y up like `translation1` [?, assumed].
         static let positionYUp = true
-        /// `mask-shape`: 0 = rectangle [inf: demo value 0 with a square], 1 = ellipse [?].
-        static let ellipseShape = 1.0
-        /// `mask-opacity` = alpha kept outside the mask [inf: demo 0 hides the outside].
-        /// `mask-blend` = feather [?]; ignored (1-px antialiasing).
+        /// `mask-shape`: 0 = ellipse [inf, strong: the demo circle]; other values = (rounded) rectangle [?].
+        static let ellipseShape = 0.0
+        /// `mask-opacity` = alpha kept outside the shape [inf]. `mask-blend` = feather, sign and units [?];
+        /// ignored (1-px antialiasing; the demo's −0.02 is a hard edge [obs]).
     }
-
-    var isGeometry: Bool { true }
 
     func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
         let w = e.value("mask-width", ctx.layerSize.width), h = e.value("mask-height", ctx.layerSize.height)
@@ -88,14 +86,8 @@ struct MaskEffect: EffectRenderer {
         fx.set(1, SIMD4(Float(e.value("mask-rotation", 0)), Float(max(e.value("mask-cornerRadius", 0), 0) * s),
                         Float(abs(e.value("mask-shape", 0) - Spec.ellipseShape) < 0.5 ? 1 : 0), Float(outside)))
         fx.set(2, SIMD4(invert ? 1 : 0, 0, 0, 0))
-        let out = try ctx.gpu.pass("mask_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
-        // Later effects (RoundCorners, DropShadow) see the mask's box as the visible rect.
-        if !invert, outside == 0, abs(e.value("mask-rotation", 0)) < 1e-9 {
-            let r = ctx.contentRect
-            ctx.contentRect = SIMD4(max(r.x, Float(cx - w * s / 2)), max(r.y, Float(cy - h * s / 2)),
-                                    min(r.z, Float(cx + w * s / 2)), min(r.w, Float(cy + h * s / 2)))
-        }
-        return out
+        // Whether later effects see the mask's box as the layer bounds is [?] (EF3 cell 6): they don't.
+        return try ctx.gpu.pass("mask_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
     }
 
     var source: String { """
@@ -122,13 +114,13 @@ struct MaskEffect: EffectRenderer {
 
 // MARK: - DropShadow
 
-/// A blurred, offset copy of the layer's alpha behind it.
+/// A blurred, offset copy of the layer's alpha behind it (`docs/specs/effects/DropShadow.md`).
 struct DropShadowEffect: EffectRenderer {
     enum Spec {
-        /// `offset` and `blur` are canvas px [inf]; `angle` radians, direction of the shadow from the
-        /// layer, counter-clockwise from +x in +y-up canvas space [inf: demo 3π/2 = straight down].
+        /// `offset` and `blur` are canvas px [obs, weak: E-thumb fit]; `angle` radians, counter-clockwise
+        /// from +x in +y-up canvas space, fixed on the canvas [obs: demo 3π/2 = down; rotation ?].
         static let canvasUnits = true
-        /// Gaussian sigma per unit of `blur` [?].
+        /// Gaussian σ = blur / 2 canvas px [inf, fit].
         static let sigmaPerBlur = 0.5
         static let defaultColor = RGBA(0, 0, 0, 1)
     }

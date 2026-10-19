@@ -41,9 +41,6 @@ struct EffectContext {
 protocol EffectRenderer: Sendable {
     /// MSL for this effect's fragment functions (compiled together with `Shaders.common`).
     var source: String { get }
-    /// Geometry effects (e.g. `Mask`) run before the others and may shrink `contentRect`
-    /// for the effects after them [inf: the demo's masked camera is rounded as a whole circle].
-    var isGeometry: Bool { get }
     /// Room the effect needs around the visible rect, layer px.
     func margin(_ e: EffectInstance, ctx: MarginContext) -> Margin
     /// Encodes the effect; returns the output texture (`input` itself for a no-op).
@@ -59,7 +56,6 @@ struct MarginContext {
 }
 
 extension EffectRenderer {
-    var isGeometry: Bool { false }
     func margin(_ e: EffectInstance, ctx: MarginContext) -> Margin { .zero }
 }
 
@@ -76,13 +72,12 @@ enum EffectRegistry {
 
     static func renderer(_ name: String) -> (any EffectRenderer)? { renderers[name] }
 
-    /// The effects to draw, in drawing order: renderable, not bypassed; geometry effects first.
+    /// The effects to draw: renderable and not bypassed, in array order [effects/README.md §1].
     static func active(_ effects: [EffectInstance]) -> [(EffectInstance, any EffectRenderer)] {
-        let r = effects.compactMap { e -> (EffectInstance, any EffectRenderer)? in
+        effects.compactMap { e -> (EffectInstance, any EffectRenderer)? in
             guard !e.bypassed, let r = renderers[e.name] else { return nil }
             return (e, r)
         }
-        return r.filter { $0.1.isGeometry } + r.filter { !$0.1.isGeometry }
     }
 
     /// Every effect and transition fragment function, compiled as one library on first use.

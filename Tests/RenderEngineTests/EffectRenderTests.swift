@@ -41,10 +41,10 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
         #expect(img.at(53, 31).near(.white, 3)) // inside the arc
     }
 
-    @Test func roundCornerFlagsAndCanvasUnits() throws {
+    @Test func roundCornerFlagsAndLayerUnits() throws {
         let (rq, fr) = solid("w", .white)
-        // Only top-left rounded; the layer is drawn at 2× so 20 canvas px = 10 layer px.
-        let e = fx("RoundCorners", ["radius": 20, "top-right": 0, "bottom-left": 0, "bottom-right": 0])
+        // Only top-left rounded; radius in layer px: 10 at 2× = 20 canvas px.
+        let e = fx("RoundCorners", ["radius": 10, "top-right": 0, "bottom-left": 0, "bottom-right": 0])
         let l = box(rq, effects: [e], transform: CGAffineTransform(scaleX: 2, y: 2), size: CGSize(width: 50, height: 30))
         let img = try GPUTest.render(plan([l]), frames: [rq: fr])
         #expect(img.at(47, 25) == .black)
@@ -62,7 +62,7 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
     @Test func maskKeepsTheBoxAndHidesTheRest() throws {
         let (rq, fr) = solid("w", .white)
         // 40×20 box at layer (+20, +10): target x 96…136, y 34…54 (y up → up on screen).
-        let m = fx("Mask", ["mask-shape": 0, "mask-opacity": 0, "mask-width": 40, "mask-height": 20,
+        let m = fx("Mask", ["mask-shape": 1, "mask-opacity": 0, "mask-width": 40, "mask-height": 20,
                             "mask-positionX": 20, "mask-positionY": 10])
         let img = try GPUTest.render(plan([box(rq, effects: [m])]), frames: [rq: fr])
         #expect(img.at(116, 44) == .white)
@@ -74,8 +74,8 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
         #expect(img2.at(60, 30).near(Px(r: 128, g: 128, b: 128, a: 255), 2))
     }
 
-    @Test func maskThenRoundCornersMakesACircle() throws {
-        // The demo camera: square mask + large radius → circle [inf from the ProjectThumbnail].
+    @Test func roundCornersThenEllipseMaskMakesACircle() throws {
+        // The demo camera: RoundCorners then a square ellipse mask (shape 0) → circle [Mask.md].
         let (rq, fr) = solid("w", .white)
         let l = box(rq, effects: [fx("RoundCorners", ["radius": 500]),
                                   fx("Mask", ["mask-width": 60, "mask-height": 60])])

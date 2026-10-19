@@ -21,7 +21,7 @@ struct DemoEffectsTests {
         let layers = all(plan.layers)
         let camera = try #require(layers.first { $0.clipID == 8 })
         #expect(camera.effects.map(\.name) == ["RoundCorners", "Mask"])
-        #expect(EffectRegistry.active(camera.effects).map(\.0.name) == ["Mask", "RoundCorners"])
+        #expect(EffectRegistry.active(camera.effects).map(\.0.name) == ["RoundCorners", "Mask"])
         let screen = try #require(layers.first { $0.clipID == 6 })
         #expect(screen.effects.first?.name == "DropShadow")
     }
@@ -57,6 +57,21 @@ struct DemoEffectsTests {
         print("demo background vs ProjectThumbnail: RMS \(rms), max \(worst) (0–255)")
         #expect(rms < 2.0)
         #expect(worst <= 8)
+
+        // DropShadow: the band just outside the screen recording (x 128.55…1791.45 canvas = 42.85…597.15
+        // thumbnail px) holds only background + shadow [DropShadow.md, E-thumb].
+        var ssum = 0.0, sn = 0.0, sworst = 0
+        for y in stride(from: 0, to: 360, by: 2) {
+            for x in Array(28..<42) + Array(599..<613) {
+                let p = a.at(x, y), q = b.at(x, y)
+                for (u, v) in [(p.r, q.r), (p.g, q.g), (p.b, q.b)] {
+                    ssum += Double((u - v) * (u - v)); sn += 1; sworst = max(sworst, abs(u - v))
+                }
+            }
+        }
+        let srms = (ssum / sn).squareRoot()
+        print("demo shadow band vs ProjectThumbnail: RMS \(srms), max \(sworst) (0–255)")
+        #expect(srms < 2.0)
     }
 }
 
