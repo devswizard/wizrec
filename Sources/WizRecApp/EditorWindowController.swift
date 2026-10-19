@@ -156,7 +156,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
             set: { [weak self] f, v in self?.setField(f, v) },
-            setSpeed: { [weak self] v in self?.setSpeed(v) })))
+            setSpeed: { [weak self] v in self?.setSpeed(v) },
+            setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) })))
         bin.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         props.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
@@ -282,6 +283,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let next = sel.count == 1 ? sel.first.flatMap(inspection(of:)) : nil
         inspector.speedEditable = next.map { n in model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } } } ?? false
         if next != inspector.inspection { inspector.inspection = next }
+        let caption = selectedDynamicCaption?.style
+        if caption != inspector.captionStyle { inspector.captionStyle = caption }
     }
 
     // MARK: Edits

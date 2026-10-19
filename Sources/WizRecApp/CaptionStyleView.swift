@@ -11,34 +11,7 @@ struct CaptionStyleView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Dynamic Caption Style").font(.title3.weight(.semibold))
-            Form {
-                Section("Current word") {
-                    Toggle("Highlight the word being spoken", isOn: $style.currentWordEnabled)
-                    ColorPicker("Text color", selection: color(\.currentWordColor))
-                    ColorPicker("Outline color", selection: color(\.currentWordStrokeColor))
-                    slider("Grow", value: $style.currentWordExtraScale, in: 0...1, percent: true)
-                    Toggle("Box behind the word", isOn: Binding(
-                        get: { style.wordRectangleColor.a > 0 },
-                        set: { style.wordRectangleColor.a = $0 ? 1 : 0 }))
-                    if style.wordRectangleColor.a > 0 {
-                        ColorPicker("Box color", selection: color(\.wordRectangleColor))
-                    }
-                }
-                Section("Other words") {
-                    slider("Spoken words opacity", value: $style.pastWordOpacity, in: 0...1, percent: true)
-                    slider("Upcoming words opacity", value: $style.futureWordOpacity, in: 0...1, percent: true)
-                    Toggle("Start a new block at each sentence", isOn: $style.newParagraphForEachSentence)
-                }
-                Section("Background") {
-                    Toggle("Background behind the caption", isOn: Binding(
-                        get: { style.backgroundFillColor.a > 0 },
-                        set: { style.backgroundFillColor.a = $0 ? 0.6 : 0 }))
-                    if style.backgroundFillColor.a > 0 {
-                        ColorPicker("Background color", selection: color(\.backgroundFillColor))
-                    }
-                }
-            }
-            .formStyle(.grouped)
+            ScrollView { CaptionStyleControls(style: $style).padding(.vertical, 4) }
             HStack {
                 Button("Reset to Defaults") { style = DynamicCaptionStyle() }
                 Spacer()
@@ -47,15 +20,91 @@ struct CaptionStyleView: View {
             }
         }
         .padding(20)
-        .frame(width: 440, height: 560)
+        .frame(width: 400, height: 520)
+    }
+}
+
+/// Inspector section for a selected dynamic caption: edits a draft of its style; Apply writes
+/// the draft as one undo step, Revert drops it. The draft follows the clip when the selection
+/// or the project (undo/redo) changes.
+struct CaptionStyleInspectorSection: View {
+    /// The selected caption's style as stored in the project.
+    let stored: DynamicCaptionStyle
+    /// Selected callout id; a new id resets the draft.
+    let clipID: Int64
+    let apply: (DynamicCaptionStyle) -> Void
+    @State private var draft = DynamicCaptionStyle()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CaptionStyleControls(style: $draft, compact: true)
+            HStack {
+                Button("Defaults") { draft = DynamicCaptionStyle() }
+                    .help("Reset the draft to WizRec's default caption style")
+                Spacer()
+                Button("Revert") { draft = stored }.disabled(draft == stored)
+                Button("Apply") { apply(draft) }.disabled(draft == stored)
+            }
+            .controlSize(.small)
+        }
+        .onAppear { draft = stored }
+        .onChange(of: clipID) { _, _ in draft = stored }
+        .onChange(of: stored) { _, new in draft = new }
+    }
+}
+
+/// The style's controls, grouped by what they affect. Used by the sheet and the inspector.
+struct CaptionStyleControls: View {
+    @Binding var style: DynamicCaptionStyle
+    /// Inspector layout: smaller controls, shorter labels.
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 16) {
+            group("Current word") {
+                Toggle("Highlight the word being spoken", isOn: $style.currentWordEnabled)
+                ColorPicker("Text color", selection: color(\.currentWordColor))
+                ColorPicker("Outline color", selection: color(\.currentWordStrokeColor))
+                slider("Grow", value: $style.currentWordExtraScale, in: 0...1)
+                Toggle("Box behind the word", isOn: Binding(
+                    get: { style.wordRectangleColor.a > 0 },
+                    set: { style.wordRectangleColor.a = $0 ? 1 : 0 }))
+                if style.wordRectangleColor.a > 0 {
+                    ColorPicker("Box color", selection: color(\.wordRectangleColor))
+                }
+            }
+            group("Other words") {
+                slider("Spoken words opacity", value: $style.pastWordOpacity, in: 0...1)
+                slider("Upcoming words opacity", value: $style.futureWordOpacity, in: 0...1)
+                Toggle("Start a new block at each sentence", isOn: $style.newParagraphForEachSentence)
+            }
+            group("Background") {
+                Toggle("Background behind the caption", isOn: Binding(
+                    get: { style.backgroundFillColor.a > 0 },
+                    set: { style.backgroundFillColor.a = $0 ? 0.6 : 0 }))
+                if style.backgroundFillColor.a > 0 {
+                    ColorPicker("Background color", selection: color(\.backgroundFillColor))
+                }
+            }
+        }
+        .controlSize(compact ? .small : .regular)
+        .font(compact ? .callout : .body)
     }
 
-    private func slider(_ title: LocalizedStringKey, value: Binding<Double>, in range: ClosedRange<Double>,
-                        percent: Bool) -> some View {
-        LabeledContent(title) {
+    private func group(_ title: LocalizedStringKey, @ViewBuilder _ content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(compact ? .caption.weight(.semibold) : .headline).foregroundStyle(.secondary)
+            content()
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func slider(_ title: LocalizedStringKey, value: Binding<Double>, in range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
             HStack {
-                Slider(value: value, in: range).accessibilityLabel(title)
-                Text(percent ? "\(Int((value.wrappedValue * 100).rounded())) %" : String(format: "%.2f", value.wrappedValue))
+                Slider(value: value, in: range).accessibilityLabel(Text(title))
+                Text("\(Int((value.wrappedValue * 100).rounded())) %")
                     .font(.caption.monospacedDigit()).frame(width: 44, alignment: .trailing)
             }
         }

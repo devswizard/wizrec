@@ -7,6 +7,9 @@
     "%arg" : {
 
     },
+    "%arg %%" : {
+
+    },
     "%arg exports are still running. Close anyway?" : {
 
     },
@@ -77,9 +80,6 @@
 
     },
     "Back" : {
-
-    },
-    "Background" : {
 
     },
     "Background behind the caption" : {
@@ -190,10 +190,10 @@
     "Copy" : {
 
     },
-    "Current word" : {
+    "Cut" : {
 
     },
-    "Cut" : {
+    "Defaults" : {
 
     },
     "Delete" : {
@@ -389,9 +389,6 @@
     "Open…" : {
 
     },
-    "Other words" : {
-
-    },
     "Outline color" : {
 
     },
@@ -462,10 +459,16 @@
     "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
 
     },
+    "Reset the draft to WizRec's default caption style" : {
+
+    },
     "Reset to Defaults" : {
 
     },
     "Resolution" : {
+
+    },
+    "Revert" : {
 
     },
     "Ripple Delete" : {

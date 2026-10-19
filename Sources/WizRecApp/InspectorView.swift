@@ -1,3 +1,4 @@
+import Captions
 import Observation
 import PlayerKit
 import RenderEngine
@@ -14,6 +15,8 @@ final class InspectorState {
     var error: String?
     /// The selected clip sits directly on a track (speed can be changed).
     var speedEditable = false
+    /// The selected clip is a dynamic caption: its stored style (nil otherwise).
+    var captionStyle: DynamicCaptionStyle?
 }
 
 /// Callbacks from the inspector into the window controller.
@@ -26,6 +29,8 @@ struct InspectorActions {
     var set: (InspectorField, Double) -> Void
     /// New clip speed (1 = normal), top-level clips only.
     var setSpeed: (Double) -> Void
+    /// New style for the selected dynamic caption: one undo step.
+    var setCaptionStyle: (DynamicCaptionStyle) -> Void
 }
 
 /// Properties of the selected clip: transform, crop, opacity, volume; speed read-only.
@@ -89,6 +94,11 @@ struct InspectorView: View {
                 }
                 section("Visual") {
                     row(i, .opacity, "Opacity", unit: "%", scale: 100, range: 0...100, step: 1)
+                }
+            }
+            if let style = state.captionStyle {
+                section("Dynamic Caption") {
+                    CaptionStyleInspectorSection(stored: style, clipID: i.clipID, apply: actions.setCaptionStyle)
                 }
             }
             if i.audioClipID != nil {
