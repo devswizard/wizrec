@@ -355,6 +355,49 @@ public struct TimelineEditor {
         snapshot.markers.filter { abs($0.time - t) <= tolerance }.min { abs($0.time - t) < abs($1.time - t) }
     }
 
+    /// Moves the marker at `from` to `to` (ticks; the command frame-snaps).
+    @discardableResult
+    public func moveMarker(from: Int64, to: Int64) -> Bool {
+        guard from != to, snapshot.markers.contains(where: { $0.time == from }) else { return false }
+        return perform(MoveMarker(from: from, to: max(0, to)))
+    }
+
+    /// Renames the marker at `time`.
+    @discardableResult
+    public func renameMarker(at time: Int64, to name: String) -> Bool {
+        guard let m = snapshot.markers.first(where: { $0.time == time }), m.name != name else { return false }
+        return perform(RenameMarker(at: time, to: name))
+    }
+
+    /// Selected clips whose speed can change (not images, callouts or shaders).
+    public var retimableSelection: [Int64] {
+        snapshot.tracks.filter { !$0.locked }.flatMap(\.clips)
+            .filter { model.selection.contains($0.id) && ![.image, .callout, .shader].contains($0.style) }
+            .map(\.id)
+    }
+
+    /// Sets the speed of the retimable selected clips (one undo step). `speed` > 0, e.g. 2 = 2×.
+    /// With `ripple`, later clips follow the length change; without it a clip that would grow
+    /// into its neighbour makes the command fail.
+    @discardableResult
+    public func setSpeed(_ speed: Double, ripple: Bool = false) -> Bool {
+        let ids = retimableSelection
+        guard speed > 0, speed.isFinite, !ids.isEmpty else { return false }
+        let r = Rational(Int64((speed * 1000).rounded()), 1000)
+        let cmds: [any EditCommand] = ids.map { SetClipSpeed(clipID: $0, speed: r, ripple: ripple) }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Clip Speed", cmds))
+    }
+
+    /// Holds the last frame of each retimable selected clip for `seconds` (frame-rounded).
+    @discardableResult
+    public func extendFrame(seconds: Double) -> Bool {
+        let ids = retimableSelection.filter { id in snapshot.clip(id).map { !$0.clip.videoSpans.isEmpty } ?? false }
+        let ticks = snapshot.quantize(Int64((seconds * Double(snapshot.editRate)).rounded()))
+        guard ticks > 0, !ids.isEmpty else { return false }
+        let cmds: [any EditCommand] = ids.map { ExtendFrame(clipID: $0, duration: ticks) }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Extend Frame", cmds))
+    }
+
     @discardableResult
     public func removeMarker(near t: Int64, tolerance: Int64) -> Bool {
         guard let m = marker(near: t, tolerance: tolerance) else { return false }

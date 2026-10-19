@@ -367,6 +367,8 @@ extension TimelineCanvas {
                 (plan.isValid ? Palette.marqueeStroke : Palette.invalid).setFill()
                 ctx.fill(CGRect(x: x - 1, y: rr.minY, width: 2, height: rr.height))
             }
+        case .marker(_, _, let g):
+            guide = g
         case .marquee(let oc, let pc, _):
             let o = viewPoint(oc), p = viewPoint(pc)
             let r = CGRect(x: min(o.x, p.x), y: min(o.y, p.y), width: abs(p.x - o.x), height: abs(p.y - o.y))
@@ -428,9 +430,15 @@ extension TimelineCanvas {
         ctx.restoreGState()
     }
 
+    /// Markers as drawn now (a dragged marker at its preview position).
+    var displayedMarkers: [Marker] {
+        guard case .marker(let from, let to, _) = drag else { return snapshot.markers }
+        return snapshot.markers.map { $0.time == from ? Marker(time: to, name: $0.name) : $0 }
+    }
+
     func drawMarkers(_ ctx: CGContext, _ L: TimelineLayout, ruler r: CGRect) {
         let font = NSFont.systemFont(ofSize: 9.5, weight: .semibold)
-        for m in snapshot.markers {
+        for m in displayedMarkers {
             let x = L.x(ofTicks: m.time).rounded()
             guard x > r.minX - 80, x < r.maxX + 8 else { continue }
             let pin = CGMutablePath()
@@ -451,12 +459,13 @@ extension TimelineCanvas {
     }
 
     func drawMarkerLines(_ ctx: CGContext, _ L: TimelineLayout) {
-        guard !snapshot.markers.isEmpty else { return }
+        let markers = displayedMarkers
+        guard !markers.isEmpty else { return }
         ctx.saveGState()
         ctx.setStrokeColor(Palette.marker.withAlphaComponent(0.45).cgColor)
         ctx.setLineWidth(1)
         ctx.setLineDash(phase: 0, lengths: [2, 3])
-        for m in snapshot.markers {
+        for m in markers {
             let x = L.x(ofTicks: m.time).rounded() + 0.5
             guard x >= L.clipArea.minX, x <= L.clipArea.maxX else { continue }
             ctx.move(to: CGPoint(x: x, y: L.clipArea.minY)); ctx.addLine(to: CGPoint(x: x, y: L.clipArea.maxY))
@@ -627,6 +636,9 @@ extension TimelineCanvas {
             let remove = NSMenuItem(title: "Remove Marker", action: #selector(menuRemoveMarker(_:)), keyEquivalent: "")
             remove.target = self; remove.isEnabled = near != nil; remove.representedObject = near.map { NSNumber(value: $0.time) }
             menu.addItem(remove)
+            let rename = NSMenuItem(title: "Rename Marker…", action: #selector(menuRenameMarker(_:)), keyEquivalent: "")
+            rename.target = self; rename.isEnabled = near != nil; rename.representedObject = near.map { NSNumber(value: $0.time) }
+            menu.addItem(rename)
             menu.addItem(.separator())
             item("Zoom to Fit", #selector(menuZoomToFit(_:)))
         case .track, .empty, .corner:
@@ -643,6 +655,10 @@ extension TimelineCanvas {
     @objc func menuRemoveTrack(_ sender: NSMenuItem) { if !editor.removeTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuZoomToFit(_ sender: Any?) { zoomToFit() }
     @objc func menuAddMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
+    @objc func menuRenameMarker(_ sender: NSMenuItem) {
+        guard let t = (sender.representedObject as? NSNumber)?.int64Value else { return }
+        beginRenameMarker(at: t)
+    }
     @objc func menuRemoveMarker(_ sender: NSMenuItem) {
         guard let t = (sender.representedObject as? NSNumber)?.int64Value else { return }
         if !editor.removeMarker(near: t, tolerance: 0) { NSSound.beep() }
