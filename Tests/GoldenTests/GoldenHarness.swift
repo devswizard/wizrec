@@ -20,6 +20,8 @@ import TSCProjKit
 /// - `REFS_DIR`: enables the golden tests (they skip without it).
 /// - `GOLDEN_OUT`: where failure artefacts go (default `$TMPDIR/WizRecGolden`).
 /// - `GOLDEN_DUMP=1`: write artefacts for every compared frame, not just failures.
+/// - `GOLDEN_CALIBRATE=1`: write `$GOLDEN_OUT/calibration/<case>.json` with the minimum
+///   SSIM/PSNR seen, the input for `TestGen.psnrMin(for:)` once real references exist.
 enum Golden {
     static var refsDir: URL? {
         guard let p = ProcessInfo.processInfo.environment["REFS_DIR"], !p.isEmpty else { return nil }
@@ -34,6 +36,39 @@ enum Golden {
     }
 
     static var dumpAll: Bool { ProcessInfo.processInfo.environment["GOLDEN_DUMP"] == "1" }
+
+    static var calibrate: Bool { ProcessInfo.processInfo.environment["GOLDEN_CALIBRATE"] == "1" }
+
+    /// Per-case calibration record (`GOLDEN_CALIBRATE=1`). `suggestedPsnrMin` is the lowest
+    /// PSNR over the compared frames minus a 1 dB margin, floored to 0.5 dB; dB.
+    struct Calibration: Codable, Equatable {
+        var caseName: String
+        var frames: Int
+        var minSSIM: Double
+        var minPSNR: Double
+        var suggestedPsnrMin: Double?
+    }
+
+    /// Builds the calibration record from scores; `nil` when no frame was compared.
+    static func calibration(case name: String, scores: [FrameScore]) -> Calibration? {
+        guard let minSSIM = scores.map(\.ssim).min(), let minPSNR = scores.map(\.psnr).min() else { return nil }
+        let suggested = minPSNR.isFinite ? ((minPSNR - 1) * 2).rounded(.down) / 2 : nil
+        return Calibration(caseName: name, frames: scores.count, minSSIM: minSSIM, minPSNR: minPSNR,
+                           suggestedPsnrMin: suggested)
+    }
+
+    /// Writes `<dir>/calibration/<case>.json`; returns the file.
+    @discardableResult
+    static func writeCalibration(_ c: Calibration, to dir: URL = outputDir) throws -> URL {
+        let out = dir.appendingPathComponent("calibration", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let file = out.appendingPathComponent("\(c.caseName).json")
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        enc.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
+        try enc.encode(c).write(to: file, options: .atomic)
+        return file
+    }
 
     /// Allowed marker-centroid distance, px: 2 px at 1920 wide, scaled with the frame.
     static func markerTolerance(width: Int) -> Double { max(1, 2 * Double(width) / 1920) }
@@ -178,6 +213,10 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
                 Issue.record("\(m.caseName) frame \(n): SSIM \(String(format: "%.4f", ssim.mean)) < \(m.ssimMin) or PSNR \(String(format: "%.2f", psnr)) < \(m.psnrMin ?? 0)\(expect); artefacts in \(dir.path)")
             }
         }
+    }
+    if Golden.calibrate, let cal = Golden.calibration(case: m.caseName, scores: scores) {
+        let file = try Golden.writeCalibration(cal)
+        print("golden \(m.caseName): calibration → \(file.path)")
     }
     return scores
 }
