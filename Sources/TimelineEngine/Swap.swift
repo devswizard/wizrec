@@ -90,8 +90,12 @@ struct TrackEdits {
         }
         let rest = JSONPath(steps: Array(path.steps.dropFirst(Self.prefix + 1)))
         guard let o = rest.resolve(in: root)?.object else { throw EditError.invalid("track not found") }
+        if !rest.steps.isEmpty, !nested.contains(where: { $0.track === o }) { nested.append((path, o)) }
         return o
     }
+
+    /// Nested (group) tracks handed out so far, with the path they had in the unedited tree.
+    private(set) var nested: [(path: JSONPath, track: JSONObject)] = []
 
     /// The editable copy of top-level track `index`.
     mutating func topTrack(_ index: Int) throws -> JSONObject {
@@ -116,7 +120,24 @@ extension ClipLocation {
     var depth: Int { trackPath.steps.count }
 }
 
+extension Locator {
+    /// Path of track `index` in the container that holds `loc`: the scene's
+    /// tracks for a top-level clip, the group's inner `tracks` otherwise.
+    static func siblingTrack(of loc: ClipLocation, _ index: Int, in project: Project) throws -> JSONPath {
+        let container = JSONPath(steps: Array(loc.trackPath.steps.dropLast()))
+        guard let tracks = container.resolve(in: project.root)?.array, tracks.items.indices.contains(index),
+              tracks.items[index].object != nil
+        else { throw EditError.trackNotFound(index) }
+        return container.appending(.index(index))
+    }
+}
+
 extension JSONPath {
+    /// True for an element of the scene's top-level `tracks`.
+    var isTopLevelTrack: Bool {
+        steps.count == JSONPath.sceneTracks.steps.count + 1 && hasPrefix(JSONPath.sceneTracks)
+    }
+
     func hasPrefix(_ p: JSONPath) -> Bool {
         steps.count >= p.steps.count && Array(steps.prefix(p.steps.count)) == p.steps
     }

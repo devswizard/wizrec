@@ -68,7 +68,7 @@ public final class TrimClip: EditCommand {
     static func trim(_ clipID: Int64, _ edge: TrimEdge, _ target: Int64, ripple wantRipple: Bool,
                      project: Project, swap: inout TrackSwap) throws -> Int64 {
         let loc = try Locator.locate(clipID, in: project)
-        let magnetic = loc.topLevelTrack.map { Magnetic.isMagnetic(project, track: $0) } ?? false
+        let magnetic = Magnetic.isMagnetic(project, path: loc.trackPath)
         let ripple = wantRipple || magnetic
         let t = try Timing(loc.clip)
         let grid = FrameGrid(project)

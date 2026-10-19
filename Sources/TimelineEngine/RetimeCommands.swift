@@ -56,16 +56,12 @@ public final class RippleMove: EditCommand {
 
     public func apply(to project: Project) throws {
         let loc = try Locator.locate(clipID, in: project)
-        guard let fromTrack = loc.topLevelTrack else {
-            throw EditError.invalid("clip \(clipID) is inside a group; only top-level clips can move")
-        }
-        let tracks = Locator.sceneTracks(project)
-        guard tracks.indices.contains(toTrack) else { throw EditError.trackNotFound(toTrack) }
+        let destPath = try Locator.siblingTrack(of: loc, toTrack, in: project)
         let at = FrameGrid(project).nearest(start)
         guard at >= 0 else { throw EditError.invalid("start must be ≥ 0") }
 
         var edits = TrackEdits(project)
-        let source = try edits.topTrack(fromTrack)
+        let source = try edits.track(at: loc.trackPath)
         guard let medias = source["medias"]?.array, let clip = medias[loc.index].object else {
             throw EditError.clipNotFound(clipID)
         }
@@ -85,9 +81,9 @@ public final class RippleMove: EditCommand {
             }
         }
 
-        let dest = try edits.topTrack(toTrack)
+        let dest = try edits.track(at: destPath)
         Magnetic.shift(clip, by: at - (clip["start"]?.int ?? 0))
-        if Magnetic.isMagnetic(project, track: toTrack) {
+        if Magnetic.isMagnetic(project, path: destPath) {
             Magnetic.insert(clip, into: dest, start: at)
         } else {
             for o in trackClips(dest) {
@@ -98,6 +94,9 @@ public final class RippleMove: EditCommand {
             try M2.insertSorted(clip, into: dest)
         }
         if !travelling.isEmpty { TransitionEdit.transitions(dest).items.append(contentsOf: travelling) }
+        if destPath != loc.trackPath, !loc.trackPath.isTopLevelTrack, Magnetic.isMagnetic(project, path: loc.trackPath) {
+            Magnetic.pack(source)
+        }
         try edits.packMagnetic()
         try edits.commit(&swap)
     }
@@ -146,7 +145,7 @@ public final class SetClipSpeed: EditCommand {
         let mediaDuration = try Exact.div(Rational(newDuration), scalar)
         let delta = newDuration - t.duration
 
-        let magnetic = loc.topLevelTrack.map { Magnetic.isMagnetic(project, track: $0) } ?? false
+        let magnetic = Magnetic.isMagnetic(project, path: loc.trackPath)
         var edits = TrackEdits(project)
         let track = try edits.track(at: loc.trackPath)
         guard let clip = track["medias"]?.array?[loc.index].object else { throw EditError.clipNotFound(clipID) }

@@ -1,10 +1,14 @@
 import Foundation
 import TSCProjKit
 
-/// Moves a top-level clip to a position on a top-level track (the same one
-/// or another).
+/// Moves a clip to a position on a track of the same container (the same
+/// track or another).
 ///
-/// - `toTrack` is the index in the scene's `tracks` array (0 = bottom).
+/// - `toTrack` is the index in the scene's `tracks` array (0 = bottom) for a
+///   top-level clip, or in its group's inner `tracks` for a clip inside a
+///   group; `start` is then on the group's inner timeline. Moving between
+///   containers is not supported (throws). The group's own timing is not
+///   changed [inf]; inner clips outside its window are simply not shown.
 /// - The clip must not overlap any other clip on the destination track; if it
 ///   would, `apply` throws `.invalid` and nothing changes. (Ripple and
 ///   magnetic tracks come in M3.) On a magnetic destination track the clip
@@ -24,7 +28,8 @@ import TSCProjKit
 @MainActor
 public final class MoveClip: EditCommand {
     public let clipID: Int64
-    /// Destination index in the scene's top-level `tracks`.
+    /// Destination index in the clip's container: the scene's top-level
+    /// `tracks`, or the group's inner `tracks` for a nested clip.
     public let toTrack: Int
     /// Requested `start` on the destination track, in project ticks. Snapped
     /// to the nearest output frame unless sub-frame editing is on.
@@ -41,26 +46,23 @@ public final class MoveClip: EditCommand {
 
     public func apply(to project: Project) throws {
         let loc = try Locator.locate(clipID, in: project)
-        guard let fromTrack = loc.topLevelTrack else {
-            throw EditError.invalid("clip \(clipID) is inside a group; only top-level clips can move")
-        }
-        let tracks = Locator.sceneTracks(project)
-        guard tracks.indices.contains(toTrack) else { throw EditError.trackNotFound(toTrack) }
+        let destPath = try Locator.siblingTrack(of: loc, toTrack, in: project)
         let start = FrameGrid(project).nearest(self.start)
         guard start >= 0 else { throw EditError.invalid("start must be ≥ 0") }
 
         let duration = loc.clip["duration"]?.int ?? 0
         let end = start + duration
-        let sameTrack = fromTrack == toTrack
+        let sameTrack = destPath == loc.trackPath
 
-        let source = loc.track.copy()
-        let dest = sameTrack ? source : tracks[toTrack].track.copy()
+        var trackEdits = TrackEdits(project)
+        let source = try trackEdits.track(at: loc.trackPath)
+        let dest = sameTrack ? source : try trackEdits.track(at: destPath)
         guard let srcMedias = source["medias"]?.array, let clip = srcMedias[loc.index].object else {
             throw EditError.clipNotFound(clipID)
         }
         srcMedias.items.remove(at: loc.index)
 
-        let destMagnetic = Magnetic.isMagnetic(project, track: toTrack)
+        let destMagnetic = Magnetic.isMagnetic(project, path: destPath)
         let destClips = trackClips(dest)
         for o in destClips where !destMagnetic {
             let s = o["start"]?.int ?? 0, e = s + (o["duration"]?.int ?? 0)
@@ -81,7 +83,7 @@ public final class MoveClip: EditCommand {
             let at = destMedias.items.firstIndex { ($0.object?["start"]?.int ?? 0) > start } ?? destMedias.count
             destMedias.items.insert(.object(clip), at: at)
         }
-        if !sameTrack && Magnetic.isMagnetic(project, track: fromTrack) { Magnetic.pack(source) }
+        if !sameTrack && Magnetic.isMagnetic(project, path: loc.trackPath) { Magnetic.pack(source) }
 
         if let transitions = source["transitions"]?.array {
             var travelling: [JSON] = []
@@ -106,9 +108,7 @@ public final class MoveClip: EditCommand {
             }
         }
 
-        var edits = [(tracks[fromTrack].path, source)]
-        if !sameTrack { edits.append((tracks[toTrack].path, dest)) }
-        try swap.commit(edits, in: project)
+        try trackEdits.commit(&swap)
     }
 
     public func revert(on project: Project) throws {
