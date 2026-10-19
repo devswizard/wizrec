@@ -67,3 +67,8 @@ Dated log. Newest last.
   assets: WizRec renders one only from the user's copy when a project
   references it, and never ships or copies them. WizRec's own catalog is
   written from scratch.
+- **2026-10-19 · MP3 export via libmp3lame (approved):** Exporter links
+  `CFFmpeg` and uses avcodec `libmp3lame` + avformat `mp3` muxer. LAME is
+  LGPL-2.0+, GPL-3.0 compatible; Homebrew FFmpeg already links it, so no new
+  install. M11 bundling ships `libmp3lame.dylib` and its notice. (export,
+  approved by lead.)
