@@ -94,8 +94,8 @@ private let tb = Timebase.camtasia
         #expect(o.paths == ["p.cmproj"])
         #expect(o.importCaptions == "in.srt" && o.exportCaptions == "out.vtt")
         #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
-        let e = LaunchOptions(arguments: ["--export", "A", "--export", "B", "--export-dir", "/tmp/x"])
-        #expect(e.exportPresets == ["A", "B"] && e.exportDir == "/tmp/x")
+        let e = LaunchOptions(arguments: ["--export", "/tmp/x.mp4", "--export-preset", "A", "--export-preset", "B"])
+        #expect(e.exportPresets == ["A", "B"] && e.exportPath == "/tmp/x.mp4")
     }
 
     @Test func parsesPathsAndFlags() {

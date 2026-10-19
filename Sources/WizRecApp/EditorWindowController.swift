@@ -201,7 +201,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
               + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
         fflush(stdout)
         if options.snapshotDir != nil || !options.importPaths.isEmpty || options.importCaptions != nil
-            || options.exportCaptions != nil || !options.exportPresets.isEmpty {
+            || options.exportCaptions != nil || options.exportPath != nil {
             Task { await runScript() }
         } else {
             if options.autoplay { engine.play() }
@@ -568,16 +568,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 print("script: export captions failed: \(Self.describe(error))")
             }
         }
-        if !options.exportPresets.isEmpty {
-            let presets = ExportSession.presets.filter { options.exportPresets.contains($0.name) }
-            let dir = URL(fileURLWithPath: ((options.exportDir ?? NSTemporaryDirectory()) as NSString).expandingTildeInPath)
-            queueExports(ExportRequest(presets: presets, scope: .timeline, includeAudio: true, folder: dir,
-                                       baseName: (model.bundle.directory.lastPathComponent as NSString).deletingPathExtension))
+        if let path = options.exportPath {
+            let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            let all = ExportSession.presets
+            let presets = options.exportPresets.isEmpty
+                ? Array(all.first { $0.settings.format.fileExtension == file.pathExtension.lowercased() }.map { [$0] } ?? [])
+                : options.exportPresets.compactMap { n in all.first { $0.name == n } }
+            if presets.count != max(1, options.exportPresets.count) {
+                print("script: unknown export preset; available: \(all.map(\.name).joined(separator: " | "))")
+            }
             let started = Date()
+            queueScriptedExports(presets, to: file)
             await exportQueue.waitUntilIdle()
             for j in exportQueue.jobs { print("script: export \(j.name) → \(j.output.path): \(j.state)") }
-            print(String(format: "script: exports took %.1f s (%d of %d presets found)", Date().timeIntervalSince(started),
-                         presets.count, options.exportPresets.count))
+            print(String(format: "script: exports took %.1f s", Date().timeIntervalSince(started)))
         }
         if options.select, timelineModel.selection.isEmpty, let first = model.project.tracks.flatMap(\.clips).last {
             select([first.id])

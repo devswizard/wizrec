@@ -7,7 +7,31 @@
     "%arg" : {
 
     },
+    "1080p (1920)" : {
+
+    },
+    "24 fps" : {
+
+    },
+    "25 fps" : {
+
+    },
+    "30 fps" : {
+
+    },
     "3D" : {
+
+    },
+    "480p (854)" : {
+
+    },
+    "4K (3840)" : {
+
+    },
+    "60 fps" : {
+
+    },
+    "720p (1280)" : {
 
     },
     "About WizRec" : {
@@ -35,6 +59,9 @@
 
     },
     "Apply" : {
+
+    },
+    "As preset" : {
 
     },
     "Back" : {
@@ -232,7 +259,16 @@
     "Frame number" : {
 
     },
+    "Frame rate" : {
+
+    },
     "Free, open-source screen recorder & editor by Devs Wizard." : {
+
+    },
+    "GIF: dither colours" : {
+
+    },
+    "GIF: loop forever" : {
 
     },
     "General" : {
@@ -400,6 +436,9 @@
 
     },
     "Reset to Defaults" : {
+
+    },
+    "Resolution" : {
 
     },
     "Ripple Delete" : {

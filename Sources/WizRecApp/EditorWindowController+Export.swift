@@ -5,6 +5,7 @@ import MediaEngine
 import PlayerKit
 import RenderEngine
 import SwiftUI
+import TSCProjKit
 
 /// One queued export: the settings and the project snapshot it renders.
 struct ExportJobSpec {
@@ -14,16 +15,6 @@ struct ExportJobSpec {
 }
 
 extension EditorWindowController {
-    /// File extension of an export format's output.
-    static func fileExtension(_ f: ExportFormat) -> String {
-        switch f {
-        case .mp4: "mp4"
-        case .mov: "mov"
-        case .gif: "gif"
-        case .audio(let c): c.lowercased() == "aac" ? "m4a" : c.lowercased()
-        }
-    }
-
     /// File ▸ Export… (⌘E).
     @objc func showExport(_ sender: Any?) {
         guard let window else { return }
@@ -61,13 +52,46 @@ extension EditorWindowController {
         let base = r.baseName.isEmpty ? (model.bundle.directory.lastPathComponent as NSString).deletingPathExtension : r.baseName
         var reserved = exportQueue.pendingOutputs
         for p in r.presets {
-            var s = p.settings
-            s.range = range
-            if !r.includeAudio { s.includeAudio = false }
-            let out = ExportNaming.uniqueURL(directory: r.folder, base: base, ext: Self.fileExtension(s.format), reserved: reserved)
+            let s = Self.apply(r, to: p.settings, range: range, canvas: model.scene.canvasSize)
+            let out = ExportNaming.uniqueURL(directory: r.folder, base: base, ext: s.format.fileExtension, reserved: reserved)
             reserved.insert(out.standardizedFileURL)
             let id = exportQueue.add(name: p.name, output: out)
             exportSpecs[id] = ExportJobSpec(settings: s, scene: model.scene, audio: model.audioScene)
+        }
+    }
+
+    /// A preset's settings with the sheet's overrides: range, audio, resolution (longest side,
+    /// canvas aspect), frame rate and GIF options. Audio-only formats ignore picture overrides.
+    static func apply(_ r: ExportRequest, to preset: ExportSettings, range: Range<Int64>?, canvas: CGSize) -> ExportSettings {
+        var s = preset
+        s.range = range
+        if !r.includeAudio { s.includeAudio = false }
+        if case .audio = s.format { return s }
+        if r.maxSide > 0, canvas.width > 0, canvas.height > 0 {
+            let k = Double(r.maxSide) / Double(max(canvas.width, canvas.height))
+            s.size = CGSize(width: (canvas.width * k).rounded(), height: (canvas.height * k).rounded())
+        }
+        if r.fps > 0 {
+            if case .gif = s.format { s.format = .gif(fps: min(r.fps, 50)) } else { s.frameRate = Rational(Int64(r.fps)) }
+        }
+        s.gif.dither = r.gifDither
+        s.gif.loopCount = r.gifLoop ? 0 : 1
+        return s
+    }
+
+    /// `--export`: one preset writes exactly `file`; several write `file`'s folder and name with
+    /// each preset's extension (made unique).
+    func queueScriptedExports(_ presets: [ExportPreset], to file: URL) {
+        let dir = file.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let base = file.deletingPathExtension().lastPathComponent
+        var reserved = exportQueue.pendingOutputs
+        for p in presets {
+            let out = presets.count == 1 ? file
+                : ExportNaming.uniqueURL(directory: dir, base: base, ext: p.settings.format.fileExtension, reserved: reserved)
+            reserved.insert(out.standardizedFileURL)
+            let id = exportQueue.add(name: p.name, output: out)
+            exportSpecs[id] = ExportJobSpec(settings: p.settings, scene: model.scene, audio: model.audioScene)
         }
     }
 
@@ -78,13 +102,8 @@ extension EditorWindowController {
             guard let spec = specs(id) else { throw ExportError.failed("job \(id) has no settings") }
             let session = ExportSession(scene: spec.scene, audio: spec.audio, pool: pool(), settings: spec.settings,
                                         output: output)
-            let poll = Task {
-                while !Task.isCancelled {
-                    progress(await session.progress)
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                }
-            }
-            defer { poll.cancel() }
+            // Push-based progress: polling the session actor from here starved the export.
+            await session.setProgressHandler(progress)
             do {
                 try await withTaskCancellationHandler {
                     try await session.run()

@@ -14,6 +14,12 @@ struct ExportRequest {
     var includeAudio: Bool
     var folder: URL
     var baseName: String
+    /// Longest output side override, px (0 = the preset's size).
+    var maxSide: Int = 0
+    /// Frame rate override (0 = the preset's / project rate).
+    var fps: Int = 0
+    var gifDither = true
+    var gifLoop = true
 }
 
 /// UI state of the sheet (kept by the editor so choices survive reopening).
@@ -23,6 +29,10 @@ final class ExportSheetState {
     var scope: ExportRequest.Scope = .timeline
     var includeAudio = true
     var baseName = ""
+    var maxSide = 0
+    var fps = 0
+    var gifDither = true
+    var gifLoop = true
     var folder: URL = {
         if let p = UserDefaults.standard.string(forKey: "WizRec.ExportFolder") { return URL(fileURLWithPath: p) }
         return FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
@@ -60,7 +70,8 @@ struct ExportSheet: View {
                     export(ExportRequest(presets: presets.filter { state.selected.contains($0.name) },
                                          scope: hasSelection ? state.scope : .timeline,
                                          includeAudio: state.includeAudio, folder: state.folder,
-                                         baseName: state.baseName))
+                                         baseName: state.baseName, maxSide: state.maxSide, fps: state.fps,
+                                         gifDither: state.gifDither, gifLoop: state.gifLoop))
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(state.selected.isEmpty || presets.isEmpty)
@@ -94,7 +105,29 @@ struct ExportSheet: View {
             }
             .pickerStyle(.segmented)
             .disabled(!hasSelection)
+            HStack {
+                Picker("Resolution", selection: $s.maxSide) {
+                    Text("As preset").tag(0)
+                    Text("4K (3840)").tag(3840)
+                    Text("1080p (1920)").tag(1920)
+                    Text("720p (1280)").tag(1280)
+                    Text("480p (854)").tag(854)
+                }
+                Picker("Frame rate", selection: $s.fps) {
+                    Text("As preset").tag(0)
+                    Text("24 fps").tag(24)
+                    Text("25 fps").tag(25)
+                    Text("30 fps").tag(30)
+                    Text("60 fps").tag(60)
+                }
+            }
             Toggle("Include audio", isOn: $s.includeAudio)
+            if presets.contains(where: { state.selected.contains($0.name) && { if case .gif = $0.settings.format { true } else { false } }($0) }) {
+                HStack {
+                    Toggle("GIF: dither colours", isOn: $s.gifDither)
+                    Toggle("GIF: loop forever", isOn: $s.gifLoop)
+                }
+            }
             LabeledContent("File name") {
                 TextField("File name", text: $s.baseName).labelsHidden()
             }
