@@ -238,6 +238,11 @@ Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.s
   frame. Progress + cancel (partial file removed).
   - Session 3: audio is mixed and written at `AudioScene.sampleRate ?? 48_000`
     Hz (presets carry no sample rate).
+  - Session 3 (additive): `ExportSession` and `ExportBatch` expose
+    `cancellationLosesWork: Bool` (running and not yet cancelled) and
+    `cancelAndWait() async` (returns once `run()` stopped and removed its
+    partial output; immediate when idle; a finished file is kept). The app
+    confirms before closing when it is true.
 - **Captions**: `SpeechRecognizer` backends: Apple Speech on-device first (no
   new dependency; needs Speech Recognition permission), whisper.cpp second
   (MIT; ask the lead before installing anything or downloading models).

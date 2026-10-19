@@ -191,6 +191,39 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         #expect(left == ["c.mp4"], "\(left)")
     }
 
+    /// S3-EXP-2: the app asks `cancellationLosesWork` before closing, then `cancelAndWait()`.
+    @Test func confirmBeforeCancelHook() async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await movingProject(frames: 290)
+        let out = dir.appendingPathComponent("w.mp4")
+        var s = ExportSettings(format: .mp4(codec: "h264", bitrate: nil))
+        s.includeAudio = false
+        let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(), settings: s, output: out)
+        #expect(await session.cancellationLosesWork == false)
+        let run = Task { try await session.run() }
+        while await session.progress < 0.05 { try await Task.sleep(nanoseconds: 2_000_000) }
+        #expect(await session.cancellationLosesWork)
+        await session.cancelAndWait()
+        // Returned only after run() stopped and cleaned up: nothing left in the directory.
+        #expect(await session.cancellationLosesWork == false)
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(left.isEmpty, "\(left)")
+        await #expect(throws: ExportError.cancelled) { try await run.value }
+    }
+
+    @Test func cancelAndWaitAfterCompletionKeepsFile() async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await movingProject(frames: 6)
+        let out = dir.appendingPathComponent("k.mp4")
+        var s = ExportSettings(format: .mp4(codec: "h264", bitrate: nil))
+        s.includeAudio = false
+        let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(), settings: s, output: out)
+        try await session.run()
+        #expect(await session.cancellationLosesWork == false)
+        await session.cancelAndWait()
+        #expect(FileManager.default.fileExists(atPath: out.path))
+    }
+
     @Test func taskCancellationStopsExport() async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await movingProject(frames: 290)

@@ -67,6 +67,8 @@ public actor ExportBatch {
     private let pool: MediaPool
     private var current: ExportSession?
     private var cancelled = false
+    private var running = false
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Fraction of the whole batch done, 0–1.
     public private(set) var progress: Double = 0
@@ -77,6 +79,13 @@ public actor ExportBatch {
 
     /// Runs every job in order; a failed job does not stop the others. Returns one outcome per job.
     public func run() async -> [Outcome] {
+        running = true
+        defer {
+            running = false
+            let waiters = stopWaiters
+            stopWaiters = []
+            for w in waiters { w.resume() }
+        }
         var out: [Outcome] = []
         for (i, job) in jobs.enumerated() {
             if cancelled || Task.isCancelled { out.append(.skipped(job.output)); continue }
@@ -104,6 +113,19 @@ public actor ExportBatch {
     public func cancel() async {
         cancelled = true
         await current?.cancel()
+    }
+
+    /// True while `run()` works and has not been cancelled: cancelling now loses the running
+    /// job's encoded work and skips the waiting ones. Ask before closing; confirm when true.
+    public var cancellationLosesWork: Bool { running && !cancelled }
+
+    /// Cancels and returns once `run()` has returned (partial file of the running job removed).
+    public func cancelAndWait() async {
+        cancelled = true
+        guard running else { return }
+        await current?.cancel()
+        guard running else { return }  // run() may have returned while we were suspended
+        await withCheckedContinuation { stopWaiters.append($0) }
     }
 
     private func setProgress(_ p: Double) { progress = max(progress, min(p, 1)) }

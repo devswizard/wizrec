@@ -80,6 +80,8 @@ public actor ExportSession {
     var cancelRequested = false
     private var progressHandler: (@Sendable (Double) -> Void)?
     private var running = false
+    /// Callers of `cancelAndWait()` waiting for `run()` to return.
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(scene: SceneModel, audio: AudioScene, pool: MediaPool, settings: ExportSettings, output: URL) {
         self.settings = settings; self.output = output
@@ -96,13 +98,31 @@ public actor ExportSession {
     public func run() async throws {
         guard !running else { throw ExportError.failed("export already running") }
         running = true
-        defer { running = false }
+        defer {
+            running = false
+            let waiters = stopWaiters
+            stopWaiters = []
+            for w in waiters { w.resume() }
+        }
         report(0)
         try await perform()
         report(1, force: true)
     }
 
     public func cancel() { cancelRequested = true }
+
+    /// True while `run()` is working and the output is not in place yet, i.e. cancelling now
+    /// throws away encoded work. False before `run()`, after it returned, and once cancelled.
+    /// The app asks this before closing a window and shows a confirmation when true.
+    public var cancellationLosesWork: Bool { running && !cancelRequested }
+
+    /// Cancels and returns once `run()` has stopped and removed its partial output (immediately
+    /// when nothing runs). An export that already moved its file into place keeps it.
+    public func cancelAndWait() async {
+        cancelRequested = true
+        guard running else { return }
+        await withCheckedContinuation { stopWaiters.append($0) }
+    }
 
     /// Built-in presets (1080p/720p/4K MP4, ProRes, GIF, audio).
     public static var presets: [ExportPreset] { ExportPresets.all }
