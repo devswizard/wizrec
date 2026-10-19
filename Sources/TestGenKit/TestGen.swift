@@ -67,6 +67,18 @@ public struct GoldenManifest: Codable, Sendable, Equatable {
 public enum TestGen {
     public static let version = "0.1.0"
 
+    /// Per-case PSNR floor (dB) written into `golden.json`, or `nil` for SSIM-only gating.
+    ///
+    /// TODO(S3-QA-1): fill from real data only. When the user's Camtasia references land,
+    /// run `scripts/golden.sh --calibrate`, review `$GOLDEN_OUT/calibration/*.json`
+    /// (`suggestedPsnrMin` = lowest PSNR − 1 dB), copy the values here, then rewrite the
+    /// manifests with `swift run wizrec-testgen --force` (keeps `reference.mp4`).
+    /// Never set these from WizRec-rendered stand-ins. See docs/testing/golden-rerun.md.
+    public static let psnrMinByCase: [String: Double] = [:]
+
+    /// `psnrMinByCase[name]`; `nil` until calibrated.
+    public static func psnrMin(for name: String) -> Double? { psnrMinByCase[name] }
+
     /// Default output: next to the repo, never inside it.
     public static var defaultOutputDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -139,7 +151,7 @@ public enum TestGen {
         let manifest = GoldenManifest(
             caseName: testCase.name, summary: testCase.summary, project: "\(testCase.name).cmproj",
             reference: "reference.mp4", fps: 30, width: 1920, height: 1080,
-            durationFrames: testCase.durationFrames, frames: testCase.frames, ssimMin: 0.97, psnrMin: nil,
+            durationFrames: testCase.durationFrames, frames: testCase.frames, ssimMin: 0.97, psnrMin: TestGen.psnrMin(for: testCase.name),
             expectations: Dictionary(uniqueKeysWithValues: testCase.expectations.map { ("\($0.key)", $0.value) }),
             sourceFrames: testCase.sourceFrames.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: testCase.sourceFrames.map { ("\($0.key)", $0.value) }),

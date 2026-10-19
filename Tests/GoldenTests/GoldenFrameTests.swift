@@ -24,6 +24,42 @@ import Testing
         #expect(files == ["frame-00012-diff4x.png", "frame-00012-reference.png", "frame-00012-rendered.png",
                           "frame-00012-ssim.png"])
     }
+
+    /// `GOLDEN_CALIBRATE` record: minimum SSIM/PSNR and a PSNR floor 1 dB under the worst frame.
+    @Test func calibrationRecordAndFile() throws {
+        let scores = [FrameScore(frame: 0, ssim: 0.99, psnr: 41.3, foregroundSSIM: nil, passed: true),
+                      FrameScore(frame: 9, ssim: 0.98, psnr: 38.74, foregroundSSIM: 0.97, passed: true)]
+        let cal = try #require(Golden.calibration(case: "qa-cal", scores: scores))
+        #expect(cal.frames == 2 && cal.minSSIM == 0.98 && cal.minPSNR == 38.74)
+        #expect(cal.suggestedPsnrMin == 37.5)
+        #expect(Golden.calibration(case: "none", scores: []) == nil)
+        // Identical frames (PSNR ∞) give no floor rather than an infinite one.
+        let same = [FrameScore(frame: 0, ssim: 1, psnr: .infinity, foregroundSSIM: nil, passed: true)]
+        #expect(Golden.calibration(case: "same", scores: same)?.suggestedPsnrMin == nil)
+
+        let dir = try scratchDir("golden-cal")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = try Golden.writeCalibration(cal, to: dir)
+        #expect(file.lastPathComponent == "qa-cal.json")
+        #expect(try JSONDecoder().decode(Golden.Calibration.self, from: Data(contentsOf: file)) == cal)
+    }
+
+    /// No psnrMin is set until real Camtasia references calibrate it (S3-QA-1 TODO hook).
+    @Test func psnrMinStaysUnsetWithoutReferences() {
+        #expect(TestGen.psnrMinByCase.isEmpty, "set psnrMin only from real reference data (scripts/golden.sh --calibrate)")
+        #expect(TestGen.cases.allSatisfy { TestGen.psnrMin(for: $0.name) == nil })
+    }
+
+    /// A generated case without `reference.mp4` is skipped (nil), not failed: what every case
+    /// does until the user's exports land.
+    @Test @MainActor func caseWithoutReferenceIsSkipped() async throws {
+        let dir = try scratchDir("golden-noref")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let media = try TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
+        let testCase = try #require(TestGen.cases.first { $0.name == "baseline" })
+        let caseDir = try TestGen.write(testCase, media: media, to: dir)
+        #expect(try await runGoldenCase(GoldenCase(name: testCase.name, directory: caseDir)) == nil)
+    }
 }
 
 /// End-to-end check of `runGoldenCase` without Camtasia: WizRec's own frames as
