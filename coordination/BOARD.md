@@ -98,3 +98,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M7-REC-2 | recorder | done | REC-1 | mic, system audio, camera |
 | M7-REC-3 | recorder | done | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
 | M7-REC-4 | recorder | done | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
+| QA-5 | qa | claimed | RES-1 | EF1–EF9 effect test projects (+ CO1/CO2) in camtasia_rea_refs/effects/ |
+| QA-6 | qa | claimed | — | `docs/testing/camtasia-session-2.md` |
+| QA-7 | qa | claimed | REN-2 | golden effects harness + ProjectThumbnail extractor |
+| QA-8 | qa | claimed | TL-2 | M2 editing integration tests (command sequences, save/reopen, byte-identical undo) |
