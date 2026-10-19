@@ -31,6 +31,7 @@ final class CompositorCore {
     private var failedImages: Set<URL> = []
     let fx: EffectGPU
     let shaders: ShaderBackgrounds
+    let callouts = CalloutRasterizer()
 
     init(device: any MTLDevice) throws {
         self.device = device
@@ -89,6 +90,8 @@ final class CompositorCore {
         case gradient([SIMD4<Float>])
         /// A translated shader background: its program and `GLUniforms` bytes.
         case shader(URL, ShaderBackgrounds.Program, [SIMD4<Float>])
+        /// A core fragment function with textures and parameters in `quad.c0`.
+        case pass(String, [any MTLTexture], SIMD4<Float>)
     }
 
     private struct Item {
@@ -109,6 +112,9 @@ final class CompositorCore {
         var toNDC: CGAffineTransform
         var pxPerUnit: Double
         var canvas: CGAffineTransform
+        /// The pass target's size, px, and its clear colour (backdrops start from it).
+        var size: (Int, Int)
+        var clear: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
     }
 
     func encode(_ plan: RenderPlan, frames: [FrameRequest: VideoFrame], into target: any MTLTexture,
@@ -118,24 +124,24 @@ final class CompositorCore {
         let cw = max(plan.canvasSize.width, 1), ch = max(plan.canvasSize.height, 1)
         let fit = min(W / cw, H / ch)
         // Canvas px (origin centre, +y up) → target NDC.
+        let bg = plan.background
+        // Letterbox and canvas share the background; premultiplied.
+        let clear = MTLClearColor(red: bg.r * bg.a, green: bg.g * bg.a, blue: bg.b * bg.a, alpha: bg.a)
         let space = Space(toNDC: CGAffineTransform(scaleX: fit / (W / 2), y: fit / (H / 2)), pxPerUnit: fit,
-                          canvas: .identity)
+                          canvas: .identity, size: (target.width, target.height), clear: clear)
         let items = try collect(plan.layers, parent: .identity, space: space, frames: frames, pass: pass)
 
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = target
         rp.colorAttachments[0].loadAction = .clear
         rp.colorAttachments[0].storeAction = .store
-        let bg = plan.background
-        // Letterbox and canvas share the background; premultiplied.
-        rp.colorAttachments[0].clearColor = MTLClearColor(red: bg.r * bg.a, green: bg.g * bg.a,
-                                                          blue: bg.b * bg.a, alpha: bg.a)
+        rp.colorAttachments[0].clearColor = clear
         guard let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) else { return }
         // Layers never draw outside the canvas.
         let sw = min(Int((cw * fit).rounded()), target.width), sh = min(Int((ch * fit).rounded()), target.height)
         enc.setScissorRect(MTLScissorRect(x: (target.width - sw) / 2, y: (target.height - sh) / 2,
                                           width: max(sw, 1), height: max(sh, 1)))
-        try draw(items, encoder: enc, format: target.pixelFormat)
+        try draw(items, encoder: enc, format: target.pixelFormat, size: (target.width, target.height))
         enc.endEncoding()
 
         if !pass.retained.isEmpty {
@@ -144,7 +150,8 @@ final class CompositorCore {
         }
     }
 
-    private func draw(_ items: [Item], encoder enc: any MTLRenderCommandEncoder, format: MTLPixelFormat) throws {
+    private func draw(_ items: [Item], encoder enc: any MTLRenderCommandEncoder, format: MTLPixelFormat,
+                      size: (Int, Int)) throws {
         enc.setFragmentSamplerState(sampler, index: 0)
         for var item in items {
             switch item.fill {
@@ -158,6 +165,11 @@ final class CompositorCore {
                 enc.setRenderPipelineState(try pipeline("shader:\(url.path)", function: program.function,
                                                         format: format))
                 enc.setFragmentBytes(&bytes, length: bytes.count * MemoryLayout<SIMD4<Float>>.stride, index: 1)
+            case .pass(let fragment, let textures, let params):
+                enc.setRenderPipelineState(try pipeline(fragment, format: format))
+                for (i, t) in textures.enumerated() { enc.setFragmentTexture(t, index: i) }
+                item.quad.c0 = params
+                item.quad.c1 = SIMD4(Float(size.0), Float(size.1), 0, 0)
             }
             let size = MemoryLayout<Shaders.Quad>.stride
             enc.setVertexBytes(&item.quad, length: size, index: 0)
@@ -172,9 +184,48 @@ final class CompositorCore {
     private func collect(_ layers: [Layer], parent: CGAffineTransform, space: Space,
                          frames: [FrameRequest: VideoFrame], pass: Pass) throws -> [Item] {
         var items: [Item] = []
+        /// Items of the previous layer (the track directly below), for mattes.
+        var below: Range<Int> = 0..<0
         for layer in layers {
+            let start = items.count
+            // Passes that rebuild the item list (backdrops) leave only their own last item as "the layer".
+            defer { below = start <= items.count ? start..<items.count : max(items.count - 1, 0)..<items.count }
             let m = layer.transform.concatenating(parent)
             let toNDC = m.concatenating(space.toNDC)
+
+            if let matte = layer.effects.first(where: { $0.name == MediaMatteSpec.name && !$0.bypassed }) {
+                // The matte masks the track below and is not drawn itself [MediaMatte.md].
+                guard !below.isEmpty else { continue }
+                let content = Array(items[below])
+                items.removeSubrange(below)
+                var matteLayer = layer
+                matteLayer.effects.removeAll { $0.name == MediaMatteSpec.name }
+                matteLayer.opacity = 1
+                let c = try backdropTexture(content, space: space, clear: false, pass: pass)
+                let mt = try backdropTexture(try collect([matteLayer], parent: parent, space: space, frames: frames,
+                                                         pass: pass), space: space, clear: false, pass: pass)
+                let mode = MediaMatteSpec.mode(matte)
+                items.append(Item(fill: .pass("matte_fs", [c, mt], SIMD4(mode.luminosity ? 1 : 0, mode.inverted ? 1 : 0,
+                                                                         Float(MediaMatteSpec.intensity(matte)), 0)),
+                                  quad: Self.fullPassQuad))
+                continue
+            }
+            if let blend = layer.effects.first(where: { $0.name == BlendModeSpec.name && !$0.bypassed }),
+               BlendModeSpec.mode(blend) != .normal, BlendModeSpec.intensity(blend) > 0, layer.opacity > 0 {
+                var plain = layer
+                plain.effects.removeAll { $0.name == BlendModeSpec.name }
+                if let r = try effectLayer(plain, EffectRegistry.active(plain.effects), m: m, space: space,
+                                           frames: frames, pass: pass) {
+                    let b = try backdropTexture(items, space: space, clear: true, pass: pass)
+                    items = [Item(fill: .texture(b), quad: Self.fullPassQuad)]
+                    items.append(Item(fill: .pass("blend_fs", [r.texture, b],
+                                                  SIMD4(Float(BlendModeSpec.mode(blend).rawValue),
+                                                        Float(BlendModeSpec.intensity(blend)), 0, 0)),
+                                      quad: Self.rectQuad(r.rect, m: toNDC, opacity: layer.opacity)))
+                }
+                continue
+            }
+
             let active = EffectRegistry.active(layer.effects)
             if !active.isEmpty {
                 if case .transition = layer.content {} else {
@@ -225,11 +276,71 @@ final class CompositorCore {
                 let rect = CGRect(x: -layer.size.width / 2, y: -layer.size.height / 2,
                                   width: layer.size.width, height: layer.size.height)
                 items.append(Item(fill: .texture(out), quad: Self.rectQuad(rect, m: toNDC, opacity: layer.opacity)))
+            case .callout(let c) where !Self.drawsItself(c):
+                guard layer.opacity > 0 else { continue }
+                items = try regionCallout(c, layer: layer, m: m, items: items, space: space, pass: pass)
+            case .callout(let c):
+                guard layer.opacity > 0,
+                      let r = callouts.texture(c, scale: space.pxPerUnit * Self.scale(of: m), device: device) else { continue }
+                items.append(Item(fill: .texture(r.texture), quad: Self.rectQuad(r.rect, m: toNDC, opacity: layer.opacity)))
             case .unsupported:
                 continue
             }
         }
         return items
+    }
+
+    /// Covers the whole pass target (NDC −1…1), texture right side up.
+    private static let fullPassQuad = Shaders.Quad(
+        m: matrix(.identity), rect: SIMD4(-1, -1, 1, 1), uv: SIMD4(0, 1, 1, 0), full: SIMD4(-1, -1, 1, 1), opacity: 1)
+
+    /// Renders `items` into a pass-sized pooled texture: what the pass target holds so far. `clear`: start
+    /// from the pass's clear colour (the background) instead of transparent.
+    private func backdropTexture(_ items: [Item], space: Space, clear: Bool, pass: Pass) throws -> any MTLTexture {
+        let t = try fx.pool.take(width: space.size.0, height: space.size.1, format: EffectGPU.format,
+                                 commandBuffer: pass.commandBuffer)
+        try render(items, into: t, clear: clear ? space.clear : MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0),
+                   pass: pass)
+        return t
+    }
+
+    /// Blur, pixelate or spotlight the pixels below a region callout's box. Returns the pass's new items.
+    private func regionCallout(_ c: CalloutContent, layer: Layer, m: CGAffineTransform, items: [Item], space: Space,
+                               pass: Pass) throws -> [Item] {
+        let toNDC = m.concatenating(space.toNDC)
+        let k = space.pxPerUnit * Self.scale(of: m)   // target px per callout px
+        let b = try backdropTexture(items, space: space, clear: true, pass: pass)
+        let box = Self.rectQuad(CalloutGeometry.box(c), m: toNDC, opacity: layer.opacity)
+        var out = [Item(fill: .texture(b), quad: Self.fullPassQuad)]
+        let intensity = Float(Conventions.clamp01(c.intensity))
+        switch c.kind {
+        case "TypeWinBlur":
+            let ctx = EffectContext(gpu: fx, commandBuffer: pass.commandBuffer,
+                                    contentRect: SIMD4(0, 0, Float(b.width), Float(b.height)), scale: 1, layerScale: 1,
+                                    rotation: 0, layerSize: .zero, layerOrigin: .zero)
+            let blurred = try GaussianBlur.run(b, sigma: Double(intensity) * RegionCalloutSpec.blurSigmaAtFull * k,
+                                               alphaOnly: false, ctx: ctx)
+            if c.invert {
+                // Blur everything except the box [inf from `blur-invert`].
+                out = [Item(fill: .texture(blurred), quad: Self.fullPassQuad),
+                       Item(fill: .pass("screen_fs", [b], .zero), quad: box)]
+            } else {
+                out.append(Item(fill: .pass("screen_fs", [blurred], .zero), quad: box))
+            }
+        case "TypeWinPixelate":
+            let block = max(Float(Double(intensity) * RegionCalloutSpec.pixelBlockAtFull * k), 1)
+            out.append(Item(fill: .pass("pixelate_fs", [b], SIMD4(block, 0, 0, 0)), quad: box))
+        case "TypeWinSpotlight":
+            var mask = box
+            mask.opacity = 1
+            let white = [SIMD4<Float>](repeating: SIMD4(1, 1, 1, 1), count: 4)
+            let mt = try backdropTexture([Item(fill: .gradient(white), quad: mask)], space: space, clear: false, pass: pass)
+            out = [Item(fill: .pass("spotlight_fs", [b, mt], SIMD4(intensity * Float(layer.opacity), 0, 0, 0)),
+                        quad: Self.fullPassQuad)]
+        default:
+            break
+        }
+        return out
     }
 
     /// Renders `children` (in a `size` space, origin at its centre) into a pooled transparent
@@ -241,20 +352,21 @@ final class CompositorCore {
         let (pw, ph) = Self.textureSize(gw, gh, scale: scale)
         let tex = try fx.pool.take(width: pw, height: ph, format: EffectGPU.format, commandBuffer: pass.commandBuffer)
         let space = Space(toNDC: CGAffineTransform(scaleX: 2 / gw, y: 2 / gh), pxPerUnit: Double(pw) / gw,
-                          canvas: layerToCanvas)
+                          canvas: layerToCanvas, size: (pw, ph))
         let items = try collect(children, parent: .identity, space: space, frames: frames, pass: pass)
         try render(items, into: tex, pass: pass)
         return tex
     }
 
-    private func render(_ items: [Item], into tex: any MTLTexture, pass: Pass) throws {
+    private func render(_ items: [Item], into tex: any MTLTexture,
+                        clear: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0), pass: Pass) throws {
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = tex
         rp.colorAttachments[0].loadAction = .clear
         rp.colorAttachments[0].storeAction = .store
-        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        rp.colorAttachments[0].clearColor = clear
         guard let enc = pass.commandBuffer.makeRenderCommandEncoder(descriptor: rp) else { return }
-        try draw(items, encoder: enc, format: tex.pixelFormat)
+        try draw(items, encoder: enc, format: tex.pixelFormat, size: (tex.width, tex.height))
         enc.endEncoding()
     }
 
@@ -276,7 +388,8 @@ final class CompositorCore {
         let toCanvas = m.concatenating(space.canvas)
         let layerScale = Self.scale(of: toCanvas)
         let rotation = atan2(toCanvas.b, toCanvas.a)
-        let content = region.rect
+        var content = region.rect
+        if case .callout(let c) = layer.content { content = CalloutGeometry.bounds(c) }
         let mctx = MarginContext(layerScale: layerScale, rotation: rotation, contentSize: content.size)
         let margin = effects.reduce(Margin.zero) { $0 + $1.1.margin($1.0, ctx: mctx) }
         let r = CGRect(x: content.minX - margin.left, y: content.minY - margin.bottom,
@@ -288,7 +401,8 @@ final class CompositorCore {
         var inner = layer
         inner.transform = .identity; inner.opacity = 1; inner.effects = []
         let localSpace = Space(toNDC: CGAffineTransform(scaleX: 2 / r.width, y: 2 / r.height), pxPerUnit: sx,
-                               canvas: CGAffineTransform(translationX: r.midX, y: r.midY).concatenating(toCanvas))
+                               canvas: CGAffineTransform(translationX: r.midX, y: r.midY).concatenating(toCanvas),
+                               size: (pw, ph))
         let items = try collect([inner], parent: CGAffineTransform(translationX: -r.midX, y: -r.midY),
                                 space: localSpace, frames: frames, pass: pass)
         try render(items, into: base, pass: pass)
@@ -302,6 +416,12 @@ final class CompositorCore {
         var tex: any MTLTexture = base
         for (e, renderer) in effects { tex = try renderer.encode(e, input: tex, ctx: &ctx) }
         return (tex, r)
+    }
+
+    /// Region callouts (blur, pixelate, spotlight) work on the pixels below and are drawn by the
+    /// backdrop pass; the rest rasterise themselves. Crops do not apply to callouts [?].
+    static func drawsItself(_ c: CalloutContent) -> Bool {
+        !["TypeWinBlur", "TypeWinPixelate", "TypeWinSpotlight"].contains(c.kind)
     }
 
     // MARK: Geometry
