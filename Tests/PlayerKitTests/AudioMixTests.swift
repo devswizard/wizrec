@@ -89,4 +89,27 @@ private func seg(_ lo: Int64, _ hi: Int64, media: CMTime = .zero, rate: Double =
         #expect(out[0][5] == 0)
         #expect(abs(out[0][7] - 0.25) < 1e-6)
     }
+
+    @Test func alignsTicksToTheSampleGrid() {
+        #expect(AudioMix.alignedTicks(5 * k, sampleRate: R, editRate: E) == 5 * k)
+        #expect(AudioMix.alignedTicks(5 * k + k / 2 - 1, sampleRate: R, editRate: E) == 5 * k)
+        #expect(AudioMix.alignedTicks(5 * k + k / 2 + 1, sampleRate: R, editRate: E) == 6 * k)
+        // 30 fps frame boundaries are already on the 48 kHz and 44.1 kHz grids.
+        let frame = E / 30
+        #expect(AudioMix.alignedTicks(7 * frame, sampleRate: 48_000, editRate: E) == 7 * frame)
+        #expect(AudioMix.alignedTicks(7 * frame, sampleRate: R, editRate: E) == 7 * frame)
+    }
+
+    @Test func fitsMixerOutputToTheChunk() {
+        let mono = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 1), startTime: .zero, frameCount: 3,
+                             channels: [[0.5, -2, 0.25]])
+        let out = AudioMix.fit(mono, frameCount: 5, channels: 2)
+        #expect(out == [[0.5, -1, 0.25, 0, 0], [0.5, -1, 0.25, 0, 0]])
+        let wide = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 3), startTime: .zero, frameCount: 4,
+                             channels: [[1, 1, 1, 1], [0.1, 0.2, 0.3, 0.4], [9, 9, 9, 9]])
+        #expect(AudioMix.fit(wide, frameCount: 2, channels: 2) == [[1, 1], [0.1, 0.2]])
+        let empty = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 0), startTime: .zero, frameCount: 0, channels: [])
+        #expect(AudioMix.fit(empty, frameCount: 2, channels: 2) == [[0, 0], [0, 0]])
+    }
 }
+

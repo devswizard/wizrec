@@ -114,4 +114,24 @@ private func snapshot(_ dir: URL) -> [String: String] {
         let peak = pcm[0].map(abs).max() ?? 0
         #expect(peak > 0.001)
     }
+
+    /// The player mixes through AudioEngine's `AudioMixer` (falling back to the basic mix
+    /// while the mixer is a stub); either way the demo's microphone is audible.
+    @Test(.enabled(if: hasDemo, "~/Documents/demo project.cmproj not present"))
+    func demoPlaysThroughTheMixer() async throws {
+        let doc = try EditorDocumentModel(url: demoBundle)
+        guard let audio = AudioPlayback(scene: doc.scene, audioScene: doc.audioScene, pool: doc.pool,
+                                        sampleRate: doc.audioSampleRate) else { return }
+        #expect(audio.mixer != nil)
+        let origin = AudioMix.alignedTicks(Timebase.camtasia.ticks(seconds: 2), sampleRate: audio.sampleRate,
+                                           editRate: doc.scene.timebase.editRate)
+        let chunk = AudioChunk(originTicks: origin, startSample: 0, frameCount: Int(audio.sampleRate))
+        let pcm = await audio.render(chunk)
+        #expect(pcm.count == 2)
+        #expect(pcm[0].count == chunk.frameCount)
+        #expect(audio.failedReads == 0)
+        #expect((pcm[0].map(abs).max() ?? 0) > 0.001)
+        audio.replaceScene(doc.scene)
+        #expect(audio.mixer == nil)
+    }
 }

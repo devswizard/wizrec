@@ -239,7 +239,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     private func projectDidChange() {
-        engine.replaceScene(model.scene)
+        engine.replaceScene(model.scene, audioScene: model.audioScene)
         updateMediaProvider()
         projectDocument?.refreshEditedState()
         let kept = timelineModel.selection.filter { ClipInspection.make(project: model.project, clipID: $0, playhead: 0) != nil }

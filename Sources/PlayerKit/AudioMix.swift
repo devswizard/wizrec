@@ -121,4 +121,23 @@ public enum AudioMix {
         }
         return out
     }
+
+    /// `ticks` moved to the nearest output-sample boundary (sample k at tick k · editRate / rate).
+    public static func alignedTicks(_ ticks: Int64, sampleRate: Double, editRate: Int64) -> Int64 {
+        let k = sample(atTicks: ticks, originTicks: 0, sampleRate: sampleRate, editRate: editRate)
+        return self.ticks(ofSample: k, originTicks: 0, sampleRate: sampleRate, editRate: editRate)
+    }
+
+    /// `pcm` as exactly `channels` × `frameCount` samples: zero-padded or truncated, mono
+    /// duplicated to every channel, extra channels dropped, clamped to ±1.
+    public static func fit(_ pcm: PCMBuffer, frameCount: Int, channels: Int) -> [[Float]] {
+        var out = [[Float]](repeating: [Float](repeating: 0, count: frameCount), count: channels)
+        guard !pcm.channels.isEmpty else { return out }
+        for c in 0..<channels {
+            let src = pcm.channels[min(c, pcm.channels.count - 1)]
+            let n = min(frameCount, src.count, max(0, pcm.frameCount))
+            for i in 0..<n { out[c][i] = min(1, max(-1, src[i])) }
+        }
+        return out
+    }
 }

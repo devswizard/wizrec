@@ -1,3 +1,4 @@
+import AudioEngine
 import CoreMedia
 import Foundation
 import MediaEngine
@@ -149,14 +150,15 @@ public final class PlaybackEngine {
 
     /// Swaps in a scene rebuilt after an edit. Keeps the playhead (clamped to the new
     /// length) and the frames already on screen; playback continues from the same time.
-    public func replaceScene(_ newScene: SceneModel) {
+    /// `audioScene` feeds the audio mixer (nil = basic mix).
+    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene? = nil) {
         let wasPlaying = isPlaying
         if wasPlaying { pause() }
         let ticks = currentTicks
         scene = newScene
         grid = FrameGrid(timebase: newScene.timebase, fps: newScene.frameRate, duration: newScene.duration)
         clock = PlaybackClock(editRate: newScene.timebase.editRate)
-        audio?.replaceScene(newScene)
+        audio?.replaceScene(newScene, audioScene: audioScene)
         failedURLs.removeAll()
         dropQueuedFetches()
         prefetchedThrough = -1

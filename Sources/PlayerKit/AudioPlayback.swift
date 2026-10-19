@@ -1,3 +1,4 @@
+import AudioEngine
 import AVFoundation
 import Foundation
 import MediaEngine
@@ -6,14 +7,19 @@ import RenderEngine
 /// Plays the project's audio through `AVAudioEngine` and serves as the master
 /// clock while it runs.
 ///
-/// The timeline is mixed in fixed chunks (`chunkSeconds`) from
-/// `SceneModel.audioSegments(in:)` and `MediaSource.audio`, honouring each
-/// segment's `rate` and `gain`, and fed to one `AVAudioPlayerNode` about
-/// `lookaheadSeconds` ahead of what is audible.
+/// The timeline is mixed in fixed chunks (`chunkSeconds`) by AudioEngine's `AudioMixer`
+/// (gain, volume keyframes, fades, effects, loudness) and fed to one `AVAudioPlayerNode`
+/// about `lookaheadSeconds` ahead of what is audible. Without an `AudioScene`, or while
+/// the mixer is not implemented, chunks come from the basic `AudioMix` path
+/// (`SceneModel.audioSegments(in:)`, segment `rate` and `gain` only).
 @MainActor
 public final class AudioPlayback {
     /// Scene being mixed; swap with `replaceScene(_:)` after an edit.
     public private(set) var scene: SceneModel
+    /// Mixer for the current `AudioScene`; nil uses the basic `AudioMix` path.
+    public private(set) var mixer: AudioMixer?
+    /// Set once the mixer reported `AudioError.notImplemented`; later chunks skip it.
+    public private(set) var mixerUnavailable = false
     public let pool: MediaPool
     /// Output sample rate, Hz (the project's `audioFormatSampleRate`).
     public let sampleRate: Double
@@ -36,11 +42,13 @@ public final class AudioPlayback {
     private var dry = false
 
     /// Nil when no audio output is available.
-    public init?(scene: SceneModel, pool: MediaPool, sampleRate: Double,
+    /// `audioScene`: the project's audio for `AudioMixer`; nil plays the basic mix.
+    public init?(scene: SceneModel, audioScene: AudioScene? = nil, pool: MediaPool, sampleRate: Double,
                  chunkSeconds: Double = 0.25, lookaheadSeconds: Double = 1.0) {
         let rate = sampleRate > 0 ? sampleRate : 44100
         guard let f = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else { return nil }
         self.scene = scene; self.pool = pool; self.sampleRate = rate; self.format = f
+        self.mixer = audioScene.map { AudioMixer(scene: $0, pool: pool, format: MixFormat(sampleRate: rate, channels: 2)) }
         self.chunkFrames = max(256, Int(rate * chunkSeconds))
         self.lookaheadSeconds = lookaheadSeconds
         engine.attach(player)
@@ -53,7 +61,8 @@ public final class AudioPlayback {
     public func start(at ticks: Int64) async -> Bool {
         stop()
         let gen = generation
-        originTicks = ticks
+        // On the mixer's sample grid (sample k at tick k · editRate / rate), so chunks abut exactly.
+        originTicks = AudioMix.alignedTicks(ticks, sampleRate: sampleRate, editRate: scene.timebase.editRate)
         scheduledFrames = 0
         do {
             if !engine.isRunning { try engine.start() }
@@ -68,9 +77,13 @@ public final class AudioPlayback {
         return true
     }
 
-    /// Uses `newScene` for chunks mixed from now on. Callers restart playback
-    /// (`stop` + `start`) so already scheduled audio does not play the old mix.
-    public func replaceScene(_ newScene: SceneModel) { scene = newScene }
+    /// Uses `newScene` (and `audioScene` for the mixer; nil = basic mix) for chunks mixed
+    /// from now on. Callers restart playback (`stop` + `start`) so already scheduled audio
+    /// does not play the old mix.
+    public func replaceScene(_ newScene: SceneModel, audioScene: AudioScene? = nil) {
+        scene = newScene
+        mixer = audioScene.map { AudioMixer(scene: $0, pool: pool, format: MixFormat(sampleRate: sampleRate, channels: channels)) }
+    }
 
     /// Stops playback and drops scheduled audio.
     public func stop() {
@@ -143,6 +156,23 @@ public final class AudioPlayback {
     func render(_ chunk: AudioChunk) async -> [[Float]] {
         let editRate = scene.timebase.editRate
         let span = AudioMix.tickRange(of: chunk, sampleRate: sampleRate, editRate: editRate)
+        if let mixer, !mixerUnavailable {
+            do {
+                let pcm = try await mixer.render(span)
+                return AudioMix.fit(pcm, frameCount: chunk.frameCount, channels: channels)
+            } catch AudioError.notImplemented {
+                mixerUnavailable = true
+            } catch {
+                failedReads += 1
+                return [[Float]](repeating: [Float](repeating: 0, count: chunk.frameCount), count: channels)
+            }
+        }
+        return await renderBasic(chunk, span: span)
+    }
+
+    /// The pre-M8 mix: segment rate and gain only.
+    func renderBasic(_ chunk: AudioChunk, span: Range<Int64>) async -> [[Float]] {
+        let editRate = scene.timebase.editRate
         let parts = AudioMix.parts(for: chunk, segments: scene.audioSegments(in: span),
                                    sampleRate: sampleRate, editRate: editRate)
         var inputs: [(AudioMixPart, PCMBuffer)] = []
