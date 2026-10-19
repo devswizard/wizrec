@@ -44,8 +44,9 @@ TSCProjKit ◄── MediaEngine ◄── RenderEngine ◄── WizRecApp
 | `MediaPool.probe(url)` | Stream metadata, no frame decode. `.trec` → `.recording`, `.tscshadervid` → `.shader` (no streams needed). |
 | `MediaPool.source(for:)` | One open `MediaSource` per URL, reused. |
 | `MediaSource.frame(stream:at:)` | Frame on screen at stream time *t* = last frame with PTS ≤ *t*. VFR streams (tscc2 is VFR, ~5 fps avg) hold the previous frame. Clamp *t* to the stream. Frame-accurate: a seek to any *t* returns the same frame as sequential decoding would. |
-| Stream time origin | 0 = first sample of that stream (container PTS offsets / edit lists removed) [inf — `format` verifies]. |
-| Stream index | Container order; equals a clip's `trackNumber` and the order of the source's `sourceTracks` [inf]. For the demo `.trec`: 0 = tscc2 screen, 1 = h264 camera, 2 = aac. |
+| Stream time origin | Movie presentation timeline: edit lists applied, AAC priming (2112 samples when no edit list says otherwise) removed — AVFoundation semantics [obs, `docs/specs/media-streams.md`]. Don't subtract ffprobe `start_time`. |
+| Stream index | Position among the file's **audio/video streams only** (data/tmcd tracks and attached cover pictures skipped), in container order; equals a clip's `trackNumber` and the index into `sourceTracks` [obs]. Demo `.trec`: 0 = tscc2 screen, 1 = h264 camera, 2 = aac. |
+| Colour | tscc2 is untagged: decode as **BT.601 limited range** [obs, vs Camtasia thumbnail]. Tagged streams follow their tags. Output sRGB. |
 | `VideoFrame.pixelBuffer` | `32BGRA`, IOSurface-backed, `kCVPixelBufferMetalCompatibilityKey`. Never mutated after publish. |
 | `MediaSource.audio` | Float32 non-interleaved, resampled to the requested `PCMFormat`, silence-padded outside the stream. |
 | `MediaPool.frame(_:)` | LRU cache keyed by `FrameRequest` *after* snapping to the frame's PTS (two requests landing on the same frame share one entry). Budget `cacheLimitBytes`. |
