@@ -108,7 +108,9 @@ extension EditorWindowController {
                 try await withTaskCancellationHandler {
                     try await session.run()
                 } onCancel: {
-                    Task { await session.cancel() }
+                    // run() throws once the partial output is removed; ExportQueue.cancelAllAndWait
+                    // awaits that, so closing the window never leaves an unfinished file behind.
+                    Task { await session.cancelAndWait() }
                 }
                 progress(1)
             } catch ExportError.cancelled {
