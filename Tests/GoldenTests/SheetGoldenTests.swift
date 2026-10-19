@@ -57,6 +57,39 @@ enum SheetGolden {
         return out
     }
 
+    /// Bounding box, `margin` px wider, of the pixels that differ from `background` by more
+    /// than `tolerance` (any channel) in either image; nil when both are pure background.
+    ///
+    /// Movie cells are mostly background, so whole-cell SSIM barely notices a moving
+    /// object one frame (53 px) late (≈ 0.97 measured on EF6). Scoring the foreground
+    /// box as well makes timing errors fail.
+    static func foregroundBox(_ a: RGBAImage, _ b: RGBAImage, background: (UInt8, UInt8, UInt8),
+                              tolerance: Int = 24, margin: Int = 8) -> (x: Int, y: Int, w: Int, h: Int)? {
+        let w = min(a.width, b.width), h = min(a.height, b.height)
+        var x0 = Int.max, y0 = Int.max, x1 = -1, y1 = -1
+        let r0 = Int(background.0), g0 = Int(background.1), b0 = Int(background.2)
+        for img in [a, b] {
+            img.pixels.withUnsafeBufferPointer { p in
+                for y in 0..<h {
+                    var i = 4 * y * img.width
+                    for x in 0..<w {
+                        if abs(Int(p[i]) - r0) > tolerance || abs(Int(p[i + 1]) - g0) > tolerance
+                            || abs(Int(p[i + 2]) - b0) > tolerance {
+                            if x < x0 { x0 = x }
+                            if x > x1 { x1 = x }
+                            if y < y0 { y0 = y }
+                            if y > y1 { y1 = y }
+                        }
+                        i += 4
+                    }
+                }
+            }
+        }
+        guard x1 >= 0 else { return nil }
+        let lx = max(0, x0 - margin), ly = max(0, y0 - margin)
+        return (lx, ly, min(w, x1 + 1 + margin) - lx, min(h, y1 + 1 + margin) - ly)
+    }
+
     /// Cell rectangle scaled from canvas px to an image of `size`, as integer px.
     static func cellRect(_ cell: SheetCell, canvas: (Int, Int), image: (Int, Int)) -> (x: Int, y: Int, w: Int, h: Int) {
         let sx = Double(image.0) / Double(canvas.0), sy = Double(image.1) / Double(canvas.1)
@@ -139,7 +172,9 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
     let bg = scene.evaluate(at: 0).background
     let bg8 = (UInt8((bg.r * 255).rounded()), UInt8((bg.g * 255).rounded()), UInt8((bg.b * 255).rounded()))
 
-    func score(_ label: String, frame: Int, rendered: RGBAImage, reference ref: RGBAImage) throws -> SheetScore {
+    /// `motion`: movie frames also score each cell on its foreground box (see `SheetGolden.foregroundBox`).
+    func score(_ label: String, frame: Int, rendered: RGBAImage, reference ref: RGBAImage,
+               motion: Bool = false) throws -> SheetScore {
         let ref = ref.flattened(over: bg8)
         guard rendered.width == ref.width, rendered.height == ref.height else {
             Issue.record("\(s.name) \(label): rendered \(rendered.width)×\(rendered.height), reference \(ref.width)×\(ref.height)")
@@ -150,7 +185,12 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
             let r = SheetGolden.cellRect(cell, canvas: canvas, image: (ref.width, ref.height))
             let a = rendered.cropped(x: r.x, y: r.y, width: r.w, height: r.h)
             let b = ref.cropped(x: r.x, y: r.y, width: r.w, height: r.h)
-            return (cell.id, a.width > 11 && a.height > 11 ? Metrics.colorSSIM(a, b) : 1)
+            var ssim = a.width > 11 && a.height > 11 ? Metrics.colorSSIM(a, b) : 1
+            if motion, let f = SheetGolden.foregroundBox(a, b, background: bg8), f.w > 11, f.h > 11 {
+                ssim = min(ssim, Metrics.colorSSIM(a.cropped(x: f.x, y: f.y, width: f.w, height: f.h),
+                                                   b.cropped(x: f.x, y: f.y, width: f.w, height: f.h)))
+            }
+            return (cell.id, ssim)
         }
         let result = SheetScore(label: label, whole: Metrics.colorSSIM(rendered, ref), cells: cells, threshold: m.ssimMin)
         print("sheet \(s.name): \(result)")
@@ -188,7 +228,8 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
             guard let ref = frames[n] else { continue }
             let cg = try await renderer.image(at: Golden.ticks(frame: n, fps: fps, editRate: editRate),
                                               size: CGSize(width: ref.width, height: ref.height))
-            out.append(try score("frame \(n) (reference.mp4)", frame: n, rendered: RGBAImage(cg), reference: ref))
+            out.append(try score("frame \(n) (reference.mp4)", frame: n, rendered: RGBAImage(cg), reference: ref,
+                                 motion: true))
         }
         return out
     }
@@ -202,6 +243,17 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
         #expect(r.x == 160 && r.y == 120 && r.w == 160 && r.h == 120)
         let full = SheetGolden.cellRect(cell, canvas: (1920, 1080), image: (1920, 1080))
         #expect(full.x == 480 && full.w == 480)
+    }
+
+    @Test func foregroundBoxCoversBothImages() {
+        var a = RGBAImage(width: 40, height: 20, fill: (0, 0, 0)), b = a
+        a.pixels[4 * (5 * 40 + 10)] = 200   // (10, 5) in a
+        b.pixels[4 * (12 * 40 + 30) + 1] = 200  // (30, 12) in b
+        let r = SheetGolden.foregroundBox(a, b, background: (0, 0, 0), margin: 2)
+        #expect(r?.x == 8 && r?.y == 3 && r?.w == 25 && r?.h == 12)  // x 8…32, y 3…14
+        #expect(SheetGolden.foregroundBox(a, a, background: (200, 0, 0)) != nil)
+        let flat = RGBAImage(width: 4, height: 4, fill: (9, 9, 9))
+        #expect(SheetGolden.foregroundBox(flat, flat, background: (0, 0, 0), tolerance: 10) == nil)
     }
 
     @Test func thumbnailFactor() {
@@ -258,6 +310,15 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
 /// Golden sheets. Skipped unless `REFS_DIR` is set.
 @Suite(.enabled(if: Golden.refsDir != nil, "set REFS_DIR to run golden-sheet tests"))
 struct SheetGoldenTests {
+    /// Every sheet the generator defines has been generated into `REFS_DIR`
+    /// (`wizrec-testgen sheets`), so a missing directory is not silently "skipped".
+    @Test("REFS_DIR holds every sheet")
+    func refsDirHoldsEverySheet() throws {
+        let found = Set(SheetGolden.discover().map(\.name))
+        let missing = TestGen.sheets.map { "\($0.group)/\($0.name)" }.filter { !found.contains($0) }
+        #expect(missing.isEmpty, "not generated under REFS_DIR: \(missing); run `swift run wizrec-testgen sheets`")
+    }
+
     @Test("sheet render matches Camtasia reference", arguments: SheetGolden.discover())
     @MainActor
     func sheetMatchesReference(_ s: GoldenSheet) async throws {
@@ -327,6 +388,48 @@ struct SheetHarnessSelfTests {
         try bundle.saveWithBackup()
         let thumb = try #require(try await runSheet(sheet))
         #expect(thumb.count == 1 && thumb[0].passed && thumb[0].whole > 0.99)
+    }
+
+    /// Movie sheets (EF6): WizRec's own frames encoded as `reference.mp4` (H.264, so lossy)
+    /// pass through the movie path, which compares every `movieFrames` entry.
+    @Test @MainActor func ownRenderPassesAsMovie() async throws {
+        let dir = try scratchDir("sheet-self-movie")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let media = try TestGen.makeSheetMedia(in: dir.appendingPathComponent("_m"))
+        let sheet = try #require(TestGen.sheets.first { $0.name == "ef6-motionblur" })
+        let frames = try #require(sheet.movieFrames)
+        let caseDir = try TestGen.write(sheet, media: media, to: dir)
+        let golden = GoldenSheet(name: "effects/ef6-motionblur", directory: caseDir)
+        let m = try golden.manifest()
+        let movie = try #require(m.referenceMovie)
+        let bundle = try ProjectBundle(url: caseDir.appendingPathComponent("ef6-motionblur.cmproj"))
+        let renderer = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve), pool: MediaPool())
+        // Half size keeps the encode quick; the harness renders at the reference's size.
+        let (w, h) = (960, 540)
+        /// Writes the reference movie with WizRec's frame `n + offset` at each compared index
+        /// (other frames stay black: the harness never reads them).
+        func writeMovie(offset: Int) async throws {
+            var images: [Int: CGImage] = [:]
+            for n in frames {
+                images[n] = try await renderer.image(at: Int64(n + offset) * 23_520_000, size: CGSize(width: w, height: h))
+            }
+            try MediaWriter.writeH264(to: golden.url(movie), width: w, height: h, fps: 30,
+                                      frameCount: (frames.max() ?? 0) + 1, bitsPerSecond: 20_000_000) { n, ctx in
+                if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
+            }
+        }
+        try await writeMovie(offset: 0)
+        let scores = try #require(try await runSheet(golden))
+        #expect(scores.count == frames.count)
+        let failed = scores.filter { !$0.passed }.map(\.description)
+        #expect(failed.isEmpty, "\(failed)")
+
+        // A reference one frame late must fail on the moving frames (frame-index sensitivity).
+        try await writeMovie(offset: 1)
+        await withKnownIssue("reference shifted by one frame on purpose") {
+            let late = try #require(try await runSheet(golden))
+            #expect(late.contains { !$0.passed })
+        }
     }
 
     @Test @MainActor func damagedCellFails() async throws {
