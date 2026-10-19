@@ -148,6 +148,22 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         #expect(frame.pixel(240, 135).a > 247, "clip is opaque")
     }
 
+    /// QuickTime ProRes 4444 alpha is straight: a half-transparent white layer must decode as
+    /// white at alpha ≈ 128 (premultiplied storage would decode as grey). Checked with ffmpeg too.
+    @Test func proRes4444StoresStraightAlpha() async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try await makeProject(background: [0, 0, 0, 0]) { b, m in
+            b.tracks = [[b.image(m[.marker]!, start: 0, duration: 2 * tpf, params: ["opacity": .constant(0.5)])]]
+        }
+        var s = ExportSettings(format: .mov(profile: "4444"))
+        s.includeAudio = false
+        let out = dir.appendingPathComponent("half.mov")
+        try await export(p, s, to: out)
+        let px = try #require(try await MovieFrameReader.frames(out, indices: [0])[0]).pixel(240, 135)
+        #expect(px.r > 250 && px.g > 250 && px.b > 250, "\(px)")
+        #expect(abs(Int(px.a) - 128) <= 2, "\(px)")
+    }
+
     @Test func proRes422HasNoAlphaAndPCMAudioWhenAvailable() async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await movingProject(frames: 6)

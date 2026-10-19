@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import AudioEngine
 import CoreMedia
@@ -22,6 +23,9 @@ enum VideoCodec: Equatable {
         case .proRes4444: .proRes4444
         }
     }
+
+    /// ProRes 4444 carries alpha; QuickTime stores it straight (not premultiplied).
+    var hasAlpha: Bool { self == .proRes4444 }
 
     var isProRes: Bool {
         switch self {
@@ -147,9 +151,11 @@ extension ExportSession {
                 Self.tagBT709(pb)
                 let box = PixelBox(buffer: pb)
                 let ticks = timing.ticks(frame: nextToSchedule)
+                let straight = codec.hasAlpha
                 inFlight.append(Task {
                     nonisolated(unsafe) let target = box.buffer
                     try await renderer.render(at: ticks, into: target)
+                    if straight { Self.unpremultiply(target) }
                     return box
                 })
                 nextToSchedule += 1
@@ -228,6 +234,21 @@ extension ExportSession {
         guard writer.status == .completed else {
             throw ExportError.failed(writer.error.map { "\($0)" } ?? "writer status \(writer.status.rawValue)")
         }
+    }
+
+    /// Converts a rendered premultiplied BGRA buffer to straight alpha in place (ProRes 4444
+    /// stores straight alpha; without this, half-transparent white decodes as half-transparent grey).
+    static func unpremultiply(_ pb: CVPixelBuffer) {
+        CVPixelBufferLockBaseAddress(pb, [])
+        defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+        guard let base = CVPixelBufferGetBaseAddress(pb) else { return }
+        var buf = vImage_Buffer(data: base, height: vImagePixelCount(CVPixelBufferGetHeight(pb)),
+                                width: vImagePixelCount(CVPixelBufferGetWidth(pb)),
+                                rowBytes: CVPixelBufferGetBytesPerRow(pb))
+        // Alpha is the 4th byte in BGRA as in RGBA; the colour order does not matter here.
+        vImageUnpremultiplyData_RGBA8888(&buf, &buf, vImage_Flags(kvImageNoFlags))
+        CVBufferSetAttachment(pb, kCVImageBufferAlphaChannelModeKey, kCVImageBufferAlphaChannelMode_StraightAlpha,
+                              .shouldPropagate)
     }
 
     /// Tags a rendered buffer with the output's BT.709 colour so the encoder converts RGB → YCbCr
