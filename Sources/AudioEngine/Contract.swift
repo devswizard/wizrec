@@ -22,10 +22,18 @@ public struct AudioScene: Sendable {
     /// Timeline length, ticks.
     public let duration: Int64
 
+    /// Top-level tracks, `trackIndex` ascending.
+    let tracks: [ATrack]
+    /// `timeline.gain` (linear master gain, default 1) [obs key, inf meaning].
+    let masterGain: Double
+
     /// `resolve` maps a source-bin entry to its file (usually `ProjectBundle.resolve`).
     public init(project: Project, resolve: (SourceMedia) -> URL) {
         timebase = project.timebase
         duration = project.duration
+        var b = AudioSceneBuilder(project: project, resolve: resolve)
+        tracks = b.tracks(project.tracks, attributes: project.timeline?.trackAttributes ?? [])
+        masterGain = project.timeline?.object["gain"]?.double ?? 1
     }
 }
 
@@ -40,20 +48,50 @@ public actor AudioMixer {
     public let pool: MediaPool
     public let format: MixFormat
 
+    // Render state (Mixer.swift). Caches only ever hold pure functions of the scene.
+    let grid: SampleGrid
+    let blockSize = 16_384
+    let stretcher: Stretcher
+    var blocks = BlockCache(limitBytes: 128 << 20)
+    var chains: [ChainKey: [Int]] = [:]
+    var loudnessGains: [Int: Double] = [:]
+    var measured: [StreamKey: (lufs: Double, peak: Double)] = [:]
+    var processorCache: [Int: [any AudioProcessor]] = [:]
+    var sourceChannels: [StreamKey: Int] = [:]
+    /// Source reads that failed because the file is missing or unsupported (played as silence).
+    var missingReads = 0
+
     public init(scene: AudioScene, pool: MediaPool, format: MixFormat = MixFormat()) {
         self.scene = scene; self.pool = pool; self.format = format
+        let rate = max(1, Int64(format.sampleRate.rounded()))
+        grid = SampleGrid(editRate: max(1, scene.timebase.editRate), rate: rate)
+        stretcher = Stretcher(sampleRate: Double(rate))
     }
 
     /// Mixed PCM for timeline `range` (ticks), effects and loudness normalisation applied.
+    ///
+    /// Output sample k sits at tick k · editRate / sampleRate; the buffer holds the samples whose
+    /// tick lies in `range` (so consecutive ranges join sample-exactly) and `startTime` is the first
+    /// one's time (timescale = sample rate). Missing or unsupported media plays as silence; other
+    /// decode failures throw `AudioError.decodeFailed`.
     public func render(_ range: Range<Int64>) async throws -> PCMBuffer {
-        throw AudioError.notImplemented
+        try await renderMix(range)
     }
 }
 
 /// ITU-R BS.1770-4 / EBU R128 loudness measurement.
 public enum Loudness {
     /// Integrated loudness in LUFS of `buffer` (gated). `-.infinity` for silence.
-    public static func integratedLUFS(_ buffer: PCMBuffer) -> Double { -.infinity }
+    /// Channel weights follow BS.1770-4 (mono weight 1, as `ffmpeg -af ebur128`).
+    public static func integratedLUFS(_ buffer: PCMBuffer) -> Double {
+        var m = LoudnessMeter(sampleRate: buffer.format.sampleRate, channels: buffer.channels.count)
+        m.feed(buffer.channels, count: buffer.frameCount)
+        return m.integrated
+    }
     /// True peak in dBTP.
-    public static func truePeak(_ buffer: PCMBuffer) -> Double { -.infinity }
+    public static func truePeak(_ buffer: PCMBuffer) -> Double {
+        var m = TruePeakMeter(sampleRate: buffer.format.sampleRate, channels: buffer.channels.count)
+        m.feed(buffer.channels, count: buffer.frameCount)
+        return m.dBTP
+    }
 }
