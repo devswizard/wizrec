@@ -64,18 +64,19 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-19, end of build session 1)
+## Current state (2026-10-19, end of build session 2)
 
-- **Resume from `docs/HANDOFF.md`**: it has a module map, the WIP branch
-  per interrupted agent, the user's pending items and how to restart the team.
-- Done and merged: M0, M1, M2 editor shell, M3 editing engine, M7 recorder,
-  most of M4–M6 rendering, all research specs, fast decoding.
-  ~486 tests green.
-- In flight (WIP branches): M8 audio, M9 export, M10 captions, M3 timeline UI
-  (nested groups), app library panel, M11 assets/release (ship).
-- Pending on the user: recorder permission check, Camtasia sessions 1 and 2
-  (`docs/testing/`), optional whisper.cpp, GitHub remote, bundle ID,
-  Developer ID.
+- **Resume from `docs/HANDOFF.md`** (session 2 snapshot, follow-ups, user's
+  pending items, team setup).
+- Done and merged: M0–M3 (incl. timeline UI nested groups), M7 recorder,
+  M8 audio, M9 export (engine + sheet), M10 captions (Apple Speech; whisper.cpp
+  pluggable, not added), M11 assets, release scripts, docs, app polish; most of
+  M4–M6 rendering. 700 tests green (18 known issues = golden harness
+  self-tests). No WIP branches.
+- Waiting on the user: recorder permission check, Camtasia sessions 1 and 2
+  (`docs/testing/`) — they unblock render/researcher and the golden gates —,
+  live speech test, optional whisper.cpp, GitHub remote, bundle ID,
+  Developer ID, Sparkle approval.
 
 ### M0 (2026-10-19)
 

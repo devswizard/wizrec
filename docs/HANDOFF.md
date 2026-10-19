@@ -6,6 +6,43 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
+## 0a. Session 2 snapshot (2026-10-19) — read this first
+
+- **`main` is green: 700 tests** (18 known issues, all deliberate golden-harness
+  self-tests). Every session-2 branch (`agent/*3`, `agent/media3`) is merged;
+  no WIP. All session-2 worktrees removed. Sections 0–2 below describe
+  session 1 and are history.
+- **Landed in session 2:** M8 audio (mixer, BS.1770 loudness, NR/leveling/
+  pitch/emphasize as own DSP, player plays through AudioMixer); M9 export
+  (H.264/HEVC/ProRes/GIF/m4a/wav/mp3 via libmp3lame, presets, batch, cancel,
+  A/V ≤ 1 frame, export sheet ⌘E, `--export` flag); M10 captions (commands,
+  SRT/VTT, Apple Speech backend, dynamic captions rendered, Captions menu);
+  M3 timeline UI (nested group editing, library apply, Remove Effect, speed
+  badge, trim limits); M11 (WizRecAssets: 18 GLSL transitions now rendered,
+  9 backgrounds, presets, cursors, 4 OFL fonts; release scripts bundling 16
+  dylibs, ad-hoc DMG; README/CONTRIBUTING/user guide/notices; Settings,
+  onboarding, opt-in local crash logs, String Catalog, a11y); QA-7/QA-8 and
+  audio/captions/export integration tests; MediaEngine extension-hint fix.
+- **Demos run (copies of the demo project):** playback 30 fps, audio clock,
+  0 underruns; export 25.67 s 1080p H.264+AAC in 4.8 s.
+- **Follow-ups (no owner yet):**
+  - inner AddTrack/RemoveTrack and media drops inside open groups (TimelineEngine);
+  - render-side parallelism for export > 2.2× real time;
+  - audio export sample rate from `audioFormatSampleRate` (AudioScene);
+  - BT.709 tag vs sRGB pixels — check against reference exports;
+  - Sparkle integration (MIT; plan in docs/RELEASING.md; needs approval);
+  - effect names/params for leveling/pitch/emphasize, limiter decision,
+    caption rules tagged [WizRec] — all wait on AU1/AU2/CA1/CA2;
+  - golden `psnrMin` once real references exist;
+  - export sheet: confirm before cancelling on window close;
+  - dynamic caption style in the inspector (now a sheet).
+- **Next team:** spawn render + researcher (and qa) when the user delivers
+  Camtasia sessions 1/2; spawn timeline for the group-track follow-up.
+- **Waiting on the user:** section 3 below, plus: live speech test
+  (`WIZREC_SPEECH_TESTS=1 swift test --filter AppleSpeechLiveTests` from a
+  terminal with Speech permission, or Captions ▸ Transcribe in the app);
+  confirm Camtasia accepts our own `.tscshadervid` backgrounds; Sparkle OK.
+
 ## 0. Snapshot (2026-10-19, end of session 1)
 
 - The previous session ended when the API usage limit was hit. Every agent

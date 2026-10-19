@@ -117,7 +117,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M10-CAP-1 | captions | done | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
 | M10-CAP-2 | captions | done | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
 | M3-TUI-1 | timelineui | done | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
-| M2-APP-4 | app | claimed | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
+| M2-APP-4 | app | done | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
 
 # Wave C — M11 polish & ship
 
@@ -167,3 +167,6 @@ worktrees removed; branches kept.
 - media3: libav content-probe misdetection → extension demuxer hint; no PDF fall-through.
 - qa3: export integration tests, golden frames with foreground SSIM + marker position (654). QA done.
 - export3: M9 Exporter — H.264/HEVC/ProRes, GIF, m4a/wav/mp3, presets, batch, cancel; A/V sync ≤ 1 frame; ~2.2× real time 1080p (695). M9 engine done; export sheet pending (app).
+- app3: export sheet (batch presets, overrides, progress/cancel), `--export` flag (698). M2-APP-4 done.
+- export3: stale work-dir sweep (700).
+- **Session 2 complete: all agents DONE, all branches merged, 700 green.** Follow-ups in docs/HANDOFF.md §0a.
