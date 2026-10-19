@@ -48,6 +48,7 @@ enum Palette {
         }
     }
 
+    static let marker = dynamic(light: 0x0F9F8F, dark: 0x3DD6C3)
     static let waveform = NSColor(white: 1, alpha: 0.85)
 }
 

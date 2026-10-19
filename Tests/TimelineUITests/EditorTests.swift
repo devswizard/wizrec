@@ -221,6 +221,45 @@ struct EditorTests {
         #expect(m.project.serialized() == after)
     }
 
+    // MARK: Engine snapping, magnetic tracks, markers
+
+    @Test func engineSnappingIncludesMarkers() throws {
+        let (m, _) = try setup()
+        let e0 = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project))
+        #expect(e0.addMarker(at: 300))
+        let e = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project))
+        #expect(e.snapshot.markers.map(\.time) == [300])
+        // B (120–210) dragged right by 88 → end 298 snaps to the marker at 300.
+        let plan = e.planMove(ids: [20], rawDelta: 88, trackOffset: 0, tolerance: 3)
+        #expect(plan.delta == 90 && plan.guide == 300)
+        // A custom snapper (no markers) does not see it.
+        var custom = e
+        custom.snapper = EdgeSnapper()
+        #expect(custom.planMove(ids: [20], rawDelta: 88, trackOffset: 0, tolerance: 3).guide == nil)
+        #expect(e.marker(near: 302, tolerance: 3)?.time == 300)
+        #expect(e.removeMarker(near: 302, tolerance: 3))
+        #expect(TimelineSnapshot(project: m.project).markers.isEmpty)
+    }
+
+    @Test func magneticTrackAcceptsOverlappingMove() throws {
+        let p = try makeProject(
+            tracks: tracksJSON(trackJSON(0, [vm(1, start: 0, dur: 60), vm(2, start: 60, dur: 60)]),
+                               trackJSON(1, [vm(3, start: 0, dur: 30)])),
+            attrs: "[\(attr(magnetic: true)), \(attr())]")
+        let m = TimelineModel(undo: UndoStack(project: p))
+        let e = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: p))
+        // Clip 3 dropped onto the middle of clip 1 on the magnetic track: allowed.
+        let plan = e.planMove(ids: [3], rawDelta: 30, trackOffset: -1, tolerance: 0)
+        #expect(plan.isValid)
+        #expect(e.performMove(plan))
+        #expect(m.project.tracks[1].clips.isEmpty)
+        #expect(m.project.tracks[0].clips.count == 3)
+        // Trimming the end of a clip on a magnetic track is not limited by the next clip.
+        let e2 = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project))
+        let first = try #require(e2.snapshot.tracks[0].clips.first)
+        #expect(e2.planTrim(id: first.id, edge: .end, rawDelta: 40, tolerance: 0)?.target == first.end + 40)
+    }
+
     // MARK: Snapper
 
     @Test func edgeSnapperTargets() throws {
