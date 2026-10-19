@@ -202,6 +202,25 @@ effects drawn per layer in `effects` order (layer → offscreen → effect passe
 `LayerContent.callout` (M5) and a cursor layer (M6). Every effect follows a
 published spec in `docs/specs/effects/<Name>.md`.
 
+### Export rendering (S3-REN-1, 2026-10-19)
+
+- **`OfflineRenderer.pipeline(ticks:maxInFlight:makeBuffer:)` → `RenderPipeline`**:
+  renders timeline times (ticks) in order with up to `maxInFlight` frames
+  (and output buffers) in flight. Fetches run strictly in frame order, so
+  decoders never seek back; GPU passes overlap. `next()` delivers frames in
+  order, byte-identical to sequential `render(at:into:)`. The first error is
+  thrown in order and ends the pipeline. `cancel()` returns once nothing is
+  in flight and no buffer is held. Single consumer.
+- **Output buffers**: 32BGRA (premultiplied, drawn straight into), or
+  BT.709 4:2:0 bi-planar `420v` (video range: Y 16–235, C 16–240) / `420f`
+  (full range), converted on the GPU [WizRec]. The composited RGB values are
+  treated as BT.709-encoded (no transfer conversion, the same assumption as
+  tagging BGRA frames BT.709 for the encoder). Matrix Kr 0.2126, Kb 0.0722.
+  Chroma uses left siting (H.264/HEVC default `chroma_loc` 0) with a
+  [1 2 1]×[1 1] filter. Alpha is dropped. Whether Camtasia exports tag sRGB
+  or BT.709 is still open (no refs). Luma matches VideoToolbox's own BGRA
+  conversion within 1 code.
+
 ## Recorder
 
 `RecordingSession` + `RecordingOptions`/`RecordingResult`
