@@ -64,21 +64,25 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-19, end of build session 3)
+## Current state (2026-10-19, end of build session 4)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 3 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 4 snapshot, follow-ups,
   user's pending items).
 - Done and merged: M0–M3 (incl. inner group tracks + media drops into open
   groups), M7 recorder (real capture confirmed by user), M8 audio, M9 export
-  (project sample rate, confirm-before-cancel, RenderPipeline ≈5× real time
-  1080p H.264), M10 captions (Apple Speech confirmed live; whisper.cpp backend
-  via `whisper-cli` subprocess, untested live), M11 assets/scripts/docs; most
-  of M4–M6 rendering incl. particle shader backgrounds. Decoder output is now
-  deterministic (HW and SW lanes byte-identical). 783 tests green (18 known
-  issues = golden harness self-tests). No WIP branches.
+  (parallel audio prefetch; release build ≈5× real time 1080p H.264, ProRes
+  demo 25.7 s in 3.1 s), M10 captions (Apple Speech confirmed live;
+  whisper.cpp backend via `whisper-cli` subprocess, untested live), M11
+  assets/scripts/docs/CI (fixture thumbnails stripped, asset audit test,
+  env-only signing with ad-hoc fallback); most of M4–M6 rendering incl.
+  particle shader backgrounds. MediaEngine: HDR10/HLG → SDR tone mapping
+  [WizRec]; ProRes/MPEG-2/MPEG-4p2 decode in software only; HW and SW lanes
+  byte-identical. 812 tests green (20 known issues = golden-harness and
+  LoadGate self-tests). No WIP branches, no worktrees.
 - Still blocked on the user: Camtasia sessions 1 and 2 reference exports
-  (golden gates for M1/M4/M5/M6, effect/caption/audio specs), GitHub remote,
-  bundle ID, Developer ID, Sparkle approval.
+  (golden gates for M1/M4/M5/M6, effect/caption/audio/group-edit/particle
+  specs), whisper.cpp + model, GitHub remote, bundle ID, Developer ID,
+  Sparkle approval, git-history decision for the old fixture thumbnail.
 
 ### M0 (2026-10-19)
 
@@ -125,6 +129,7 @@ swift build
 swift test
 swift run tscproj info "<project.cmproj|.tscproj>"
 swift run tscproj roundtrip "<project>" -o /tmp/out.tscproj
+swift run tscproj strip-thumbnail "<file.tscproj>" [-o out]
 Design/AppIcon/build-icon.sh
 ```
 

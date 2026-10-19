@@ -105,3 +105,6 @@ Dated log. Newest last.
   soft shoulder). Curve documented in `ToneMapping.swift`. (media, approved.)
 - **2026-10-19 · Perf numbers come from release builds** (`swift test -c
   release -Xswiftc -enable-testing`); debug overstates DSP cost. (export.)
+- **2026-10-19 · Test-only support target (session 4):** `WizRecTestSupport`
+  (Tests/WizRecTestSupport) holds shared test helpers (`LoadGate`); test
+  targets only, never a product dependency. (qa, approved.)

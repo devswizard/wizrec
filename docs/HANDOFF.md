@@ -6,7 +6,53 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 3 snapshot (2026-10-19) — read this first
+## 0. Session 4 snapshot (2026-10-19) — read this first
+
+- **`main` is green: 812 tests** (20 known issues = 18 golden-harness + 2
+  LoadGate self-tests). All `agent/*5` branches merged; no WIP, no worktrees.
+  Sections 0a–2 are history.
+- **User inputs at session start:** no Camtasia references (0/26), no
+  whisper.cpp/model, no GitHub remote / bundle ID / Developer ID / Sparkle
+  approval. Decided: keep SwiftPM + scripts (no Xcode project); strip the
+  Camtasia `ProjectThumbnail` from fixtures. App click-through not done.
+  So only media, export, qa, ship ran.
+- **Landed in session 4:**
+  - Media: HDR10/HLG → SDR BT.709 tone mapping [WizRec] (`ToneMapping.swift`,
+    LUT + SIMD, both lanes identical); ProRes/MPEG-2/MPEG-4p2 decode in libav
+    only (VideoToolbox not bit-exact); vectorised SW staging copy
+    (`StagingCopy.swift`, byte-identical to the scalar reference).
+  - Export: audio mixed on a prefetch task (`AudioPrefetch.swift`) in parallel
+    with video, byte-identical to serial. Release build: demo H.264 5.0 s
+    (5.1× RT), audio ≈ free. Debug numbers overstate DSP (NoiseReducer).
+  - Ship: `tscproj strip-thumbnail`; all fixture thumbnails stripped;
+    `AssetAuditTests` (fails on vendored thumbnails / Camtasia file types);
+    release.yml librsvg fix; `WIZREC_BUNDLE_ID`; NOTARIZE without identity →
+    ad-hoc with warning; docs/RELEASING.md current.
+  - QA: `LoadGate` in test-only target `WizRecTestSupport` (timing bounds
+    become known issues at load avg > 30); ExportSync + HDR integration
+    tests; 6 flaky-watch runs at load 9–42, no flakes.
+- **Demo run (copy of demo project, built app):** snapshots 0/5/12.5/25 s
+  correct; `--export … --export-preset "MOV ProRes 422" --quit-after 240`:
+  25.67 s 1080p ProRes + PCM 44.1 kHz in 3.1 s. Scripted runs need
+  `--quit-after`, else the app stays open.
+- **Follow-ups (no owner):**
+  - everything that needs references: golden parity M1/M4/M5/M6, provisional
+    Border/Reflection/BlendMode/MediaMatte, eioe, group-edit [inf] (X5),
+    particle rules (SH2), audio effect names + limiter (AU1/AU2), caption
+    rules (CA1/CA2), BT.709 vs sRGB tag, golden `psnrMin` calibration;
+  - Metal compute tone map if 4K60 HDR playback matters (CPU ≈13 ms/frame
+    4K PQ unloaded);
+  - perf check of 4K ProRes now that it is libav-only;
+  - GPU tests on GitHub's paravirtual Metal — unverified until a remote
+    exists;
+  - git history still holds the old fixture thumbnail (user decision before
+    first push: rewrite with `git filter-repo` or accept).
+- **Next team:** researcher + render + timeline + audio + captions when
+  references land; captions for whisper live test when installed; ship for
+  signing/Sparkle/CI when remote and identity arrive; app for click-through
+  findings.
+
+## 0a. Session 3 snapshot (2026-10-19) — history
 
 - **`main` is green: 783 tests** (18 known issues = golden-harness
   self-tests). All `agent/*4` branches merged; no WIP. Sections 0a–2 are
@@ -62,7 +108,7 @@ This is for the **lead session** that continues the WizRec build. Read
 - **Next team:** researcher + render + qa when references land; ship when
   remote/Developer ID/Sparkle arrive; captions to live-test whisper.
 
-## 0a. Session 2 snapshot (2026-10-19) — history
+## 0b. Session 2 snapshot (2026-10-19) — history
 
 - **`main` is green: 700 tests** (18 known issues, all deliberate golden-harness
   self-tests). Every session-2 branch (`agent/*3`, `agent/media3`) is merged;
@@ -99,7 +145,7 @@ This is for the **lead session** that continues the WizRec build. Read
   terminal with Speech permission, or Captions ▸ Transcribe in the app);
   confirm Camtasia accepts our own `.tscshadervid` backgrounds; Sparkle OK.
 
-## 0b. Snapshot (2026-10-19, end of session 1)
+## 0c. Snapshot (2026-10-19, end of session 1)
 
 - The previous session ended when the API usage limit was hit. Every agent
   stopped mid-task.
@@ -170,28 +216,31 @@ worktree is now **clean** (all work committed). Recommended start:
 
 ## 3. Waiting on the user (one batched ask; never nag)
 
-1. **Recorder real-capture check** (about 3 min).
-   - Grant Screen & System Audio Recording to the app that runs `swift`.
-   - Run `swift run wizrec-record --list`.
-   - Run `swift run wizrec-record /tmp/wizrec-rec1 --seconds 6 --pause-at 2 --pause-for 2 --mic --system-audio`.
-   - Check the result and paste the output.
-   - Then try File ▸ New Recording in `build/WizRec.app`.
-2. **Camtasia session 1**: `docs/testing/camtasia-session-1.md`. It has 15
-   reference exports and experiments X1–X8. Nothing done yet.
-3. **Camtasia session 2**: `docs/testing/camtasia-session-2.md`, written by
-   qa. It covers:
-   - shader (SH), transitions (TR), behaviours (BH);
-   - effects (EF0–EF9), callouts (CO), captions (CA);
-   - cursor (TM, CE) and audio (AU);
-   - checks of the edit behaviour.
-4. **Optional:** `brew install whisper.cpp` plus one ggml model in
-   `~/Library/Application Support/WizRec/models/`. `ggml-small.bin` is good for
-   Bengali. MIT-licensed.
-5. **Decisions still open:**
-   - the GitHub repo/remote (CI can't run without one);
-   - the real bundle ID (currently `com.devswizard.WizRec`);
-   - an Apple Developer ID, for signed/notarized releases;
-   - Xcode project vs the current SwiftPM + script setup.
+Status after session 4. Done: recorder real capture, live Apple Speech,
+SwiftPM + scripts decision, fixture thumbnail stripped.
+
+1. **Camtasia session 1**: `docs/testing/camtasia-session-1.md` — 15
+   reference exports and experiments X1–X8 (incl. X5 group edits). Not done.
+2. **Camtasia session 2**: `docs/testing/camtasia-session-2.md` — shader
+   (SH, incl. SH2 particles), transitions (TR), behaviours (BH), effects
+   (EF0–EF9), callouts (CO), captions (CA1/CA2), cursor (TM, CE), audio
+   (AU1/AU2). Not done. Exports go under `~/WorkDir/vibe_coding/camtasia_rea_refs/`;
+   check with `scripts/golden.sh --status`.
+3. **Optional:** `brew install whisper-cpp` (formula now `whisper.cpp`) plus
+   one ggml model in `~/Library/Application Support/WizRec/models/`
+   (`ggml-small.bin` is good for Bengali). MIT-licensed.
+4. **App click-through** in `build/WizRec.app`: export sheet close/quit
+   confirm, Settings ▸ Captions, media drop into an open group.
+5. **Camtasia accepts our own `.tscshadervid` backgrounds?** (open a project
+   using one in Camtasia).
+6. **Decisions still open:**
+   - the GitHub repo/remote (CI is ready but can't run without one);
+   - the real bundle ID (`WIZREC_BUNDLE_ID`, placeholder `com.devswizard.WizRec`);
+   - Apple Developer ID + notarytool keychain profile name (env only:
+     `WIZREC_SIGN_IDENTITY`, `WIZREC_NOTARY_PROFILE`);
+   - Sparkle (MIT) approval;
+   - git history still contains the old fixture `ProjectThumbnail`: rewrite
+     history (`git filter-repo`) before the first push, or accept.
 
 ## 4. Team setup for the next session
 

@@ -217,11 +217,11 @@ click-through not done.
 | id | owner | status | acceptance |
 |---|---|---|---|
 | S4-MED-1 | media | done | HDR10/HLG → SDR tone mapping in PixelConversion; tests on synthesized HDR media; lanes stay byte-identical |
-| S4-MED-2 | media | claimed | vImage-vectorised SW-lane staging copy (2.7K/4K 10-bit); LaneParityTests green; gated perf numbers |
+| S4-MED-2 | media | done | vImage-vectorised SW-lane staging copy (2.7K/4K 10-bit); LaneParityTests green; gated perf numbers |
 | S4-EXP-1 | export | done | Audio prefetch/mix in parallel with video; A/V ≤ 1 frame + determinism tests green; gated perf numbers |
 | S4-QA-1 | qa | done | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
 | S4-SHIP-1 | ship | done | Strip `ProjectThumbnail` from all `Tests/*/Fixtures/demo.tscproj`; tests needing it read the user's project in place or skip; asset audit clean; CI workflow current |
-| S4-QA-2 | qa | claimed | Shared test-only target `WizRecTestSupport` (LoadGate); remove 6 copies; Captions WhisperCpp cancel bound via LoadGate |
+| S4-QA-2 | qa | done | Shared test-only target `WizRecTestSupport` (LoadGate); remove 6 copies; Captions WhisperCpp cancel bound via LoadGate |
 
 ## Session 4 merges
 
@@ -230,3 +230,7 @@ click-through not done.
 - export5: audio mixed on a prefetch task in parallel with video; byte-identical to serial. Release build: demo H.264 5.02 s (5.1× RT), audio ≈ free. S4-EXP-1 done; S4-EXP-2 profile: debug-only mix cost (NoiseReducer), no AudioEngine change.
 - ship5: `tscproj strip-thumbnail`, fixtures stripped, AssetAuditTests, release.yml librsvg fix, WIZREC_BUNDLE_ID, env-only signing → ad-hoc fallback. S4-SHIP-1 done.
 - qa5 slices 2–3: ExportSyncIntegrationTests (clicks ±1 frame, ProRes determinism), HDRIntegrationTests (PQ/HLG/SDR, 4444 ≥ 45 dB). 809 tests, 5 flaky-watch runs clean. S4-QA-1 done.
+- media5 slice 2: vectorised SW staging copy (byte-identical), tone-map LUT/SIMD speedup. S4-MED-2 done.
+- qa5 S4-QA-2: shared test-only target `WizRecTestSupport` (LoadGate), 6 copies removed, Captions cancel bound gated. 812 tests green.
+- Demo (built app, copy of demo project): snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 3.1 s.
+- **Session 4 complete: all agents DONE, all branches merged, 812 green, worktrees removed.** Follow-ups in docs/HANDOFF.md §0.
