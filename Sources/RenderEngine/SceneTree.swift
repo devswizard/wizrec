@@ -16,6 +16,7 @@ struct SNode: Sendable {
     var effects: [SEffect]
     /// `attributes.gain` (audio), 1 when absent.
     var gain: Double
+    var keyframeBase: Conventions.KeyframeBase
     var body: Body
 
     var end: Int64 { start + duration }
@@ -35,7 +36,9 @@ struct SNode: Sendable {
     func mediaTime(_ t: Rational) -> Rational {
         Conventions.mediaTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar)
     }
-    func keyframeTime(_ t: Rational) -> Double { Conventions.keyframeTime(parent: t, start: start) }
+    func keyframeTime(_ t: Rational) -> Double {
+        Conventions.keyframeTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar, base: keyframeBase)
+    }
 
     /// Constant volume × gain of this clip (keyframes ignored in M1).
     var constantGain: Double {
@@ -107,7 +110,10 @@ struct SceneBuilder {
         return SNode(id: c.id, type: c.kind.typeName, start: c.start, duration: max(c.duration, 0),
                      mediaStart: c.mediaStart, scalar: c.scalar.num == 0 ? Q.one : c.scalar,
                      params: params, effects: effects,
-                     gain: c.attributes?["gain"]?.double ?? 1, body: body(c))
+                     gain: c.attributes?["gain"]?.double ?? 1,
+                     keyframeBase: c.kind == .image
+                        ? .timelineOffset(trimStartSum: o["trimStartSum"]?.double ?? 0) : .media,
+                     body: body(c))
     }
 
     private func body(_ c: Clip) -> SNode.Body {

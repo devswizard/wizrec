@@ -22,11 +22,29 @@ enum Conventions {
         Q.add(Rational(start), Q.mul(Q.sub(m, mediaStart), scalar))
     }
 
-    /// Time at which a clip's keyframes are evaluated: parent time minus the
-    /// clip's `start`, in parent ticks [inf: keyframes are relative to the clip start].
-    static func keyframeTime(parent t: Rational, start: Int64) -> Double {
-        Q.sub(t, Rational(start)).double
+    /// How a clip's keyframe times are measured.
+    enum KeyframeBase: Sendable, Equatable {
+        /// The clip's inner (media) time, `mediaStart + (t − start) / scalar`
+        /// [obs for scalar 1: trimmed callouts; inf for speed ≠ 1, experiment X4].
+        case media
+        /// Images have no media time: `t − start + trimStartSum` [inf].
+        case timelineOffset(trimStartSum: Double)
     }
+
+    /// Keyframe evaluation time for parent time `t` (time-mapping.md §6).
+    static func keyframeTime(parent t: Rational, start: Int64, mediaStart: Rational, scalar: Rational,
+                             base: KeyframeBase) -> Double {
+        switch base {
+        case .media:
+            mediaTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar).double
+        case .timelineOffset(let trim):
+            Q.sub(t, Rational(start)).double + trim
+        }
+    }
+
+    /// Keyframe interpolation when neither the keyframe nor the parameter names one [?]
+    /// (time-mapping.md §8). `bnce` and unknown codes are linear in M1.
+    static let defaultInterp = "eioe"
 
     /// Stream time for media ticks: stream time 0 = media tick 0 [inf].
     static func streamTime(ticks m: Rational, editRate: Int64) -> CMTime {

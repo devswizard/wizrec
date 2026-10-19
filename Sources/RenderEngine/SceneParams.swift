@@ -4,8 +4,9 @@ import TSCProjKit
 /// Sendable copy of one numeric project parameter (constant or keyframed).
 ///
 /// Same semantics as `TSCProjKit.Parameter.value(at:)`: each keyframe animates
-/// from the previous value to its own `value` across `[time, endTime]`; between
-/// keyframes the value holds. Times are clip-relative ticks.
+/// from the previous value (the first from `defaultValue`) to its own `value`
+/// across `[time, endTime]`; between keyframes the value holds. Times are ticks
+/// on the clip's keyframe axis (`Conventions.keyframeTime`).
 struct SParam: Sendable, Equatable {
     struct Key: Sendable, Equatable {
         var time: Double
@@ -30,10 +31,12 @@ struct SParam: Sendable, Equatable {
         }
         if let o = raw.object {
             let kfs = o["keyframes"]?.array?.items.compactMap(\.object) ?? []
+            let paramInterp = o["interp"]?.string
             let keys = kfs.map { k -> Key in
                 let t = k["time"]?.double ?? 0
+                let interp = k["interp"]?.string ?? paramInterp ?? Conventions.defaultInterp
                 return Key(time: t, endTime: k["endTime"]?.double ?? t, value: num(k["value"]),
-                           easeInOut: (k["interp"]?.string ?? "linr") == "eioe")
+                           easeInOut: interp == "eioe")
             }
             let base = num(o["defaultValue"])
             if base == nil && keys.allSatisfy({ $0.value == nil }) { return nil }
