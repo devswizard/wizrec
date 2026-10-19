@@ -100,7 +100,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M7-REC-4 | recorder | done | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
 | QA-5 | qa | done | RES-1 | EF1–EF9 effect test projects (+ CO1/CO2) in camtasia_rea_refs/effects/ |
 | QA-6 | qa | done | — | `docs/testing/camtasia-session-2.md` |
-| QA-7 | qa | claimed | REN-2 | golden effects harness + ProjectThumbnail extractor |
+| QA-7 | qa | done | REN-2 | golden effects harness + ProjectThumbnail extractor |
 | QA-8 | qa | done | TL-2 | M2 editing integration tests (command sequences, save/reopen, byte-identical undo) |
 
 # Wave B — M8 audio, M9 export, M10 captions
@@ -111,9 +111,9 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M8-AUD-2 | audio | done | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
 | M8-AUD-3 | audio | done | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
 | M8-AUD-4 | audio | done | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
-| M9-EXP-1 | export | claimed | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
-| M9-EXP-2 | export | claimed | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
-| M9-EXP-3 | export | claimed | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
+| M9-EXP-1 | export | done | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
+| M9-EXP-2 | export | done | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
+| M9-EXP-3 | export | done | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
 | M10-CAP-1 | captions | done | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
 | M10-CAP-2 | captions | done | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
 | M3-TUI-1 | timelineui | done | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
@@ -164,3 +164,6 @@ worktrees removed; branches kept.
 - captions3: classic captions on media axis (fixes split/trim bug found by qa).
 - app3: caption UI (transcribe, dynamic captions, SRT/VTT), usage strings (645).
 - media3 (on demand): WAV probe misdetection bug found by audio.
+- media3: libav content-probe misdetection → extension demuxer hint; no PDF fall-through.
+- qa3: export integration tests, golden frames with foreground SSIM + marker position (654). QA done.
+- export3: M9 Exporter — H.264/HEVC/ProRes, GIF, m4a/wav/mp3, presets, batch, cancel; A/V sync ≤ 1 frame; ~2.2× real time 1080p (695). M9 engine done; export sheet pending (app).
