@@ -118,6 +118,8 @@ struct ANode: Sendable {
     var volume: AParam?
     var mixToMono: Bool
     var effects: [AEffect]
+    /// Frequency factor from a `pitch` effect (2^(semitones/12)); 1 = none.
+    var pitch: Double = 1
     var fades: [AFade] = []
     /// Pre-roll before `start` / post-roll after `end` from centred transitions, ticks.
     var extendBefore: Double = 0
@@ -133,6 +135,8 @@ struct ANode: Sendable {
 
     var end: Int64 { start + duration }
     var isUnitSpeed: Bool { scalar.num == scalar.den }
+    /// Plays its content sample for sample (no WSOLA): unit speed and no pitch shift.
+    var isPlain: Bool { isUnitSpeed && pitch == 1 }
 
     /// Parent-tick span the clip sounds in, transition handles included.
     var activeLo: Double { Double(start) - extendBefore }
@@ -286,12 +290,15 @@ struct AudioSceneBuilder {
             return AEffect(name: name, parameters: params)
         }
         let scalar = c.scalar.num <= 0 ? Rational(1) : c.scalar
-        let n = ANode(key: key(), clipID: c.id, start: c.start, duration: max(0, c.duration),
+        var n = ANode(key: key(), clipID: c.id, start: c.start, duration: max(0, c.duration),
                       mediaStart: c.mediaStart, scalar: scalar,
                       gain: c.attributes?["gain"]?.double ?? 1,
                       volume: o["parameters"]?.object?["volume"].flatMap(AParam.init),
                       mixToMono: c.attributes?["mixToMono"]?.bool ?? false,
                       effects: effects, body: body)
+        if let p = effects.first(where: { $0.kind == .pitch }) {
+            n.pitch = pow(2, min(max(p.semitones, -24), 24) / 12)
+        }
         return n.isSilent || n.duration == 0 ? nil : n
     }
 }

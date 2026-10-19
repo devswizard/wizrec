@@ -46,17 +46,21 @@ private func open(_ url: URL) throws -> (ProjectBundle, AudioScene)? {
     let step = Int64(Double(tick) * 0.25)
     let clock = ContinuousClock()
     var peak: Float = 0
+    var clippedAt: [Double] = []   // seconds of chunks holding full-scale samples
     let elapsed = try await clock.measure {
         var t: Int64 = 0
         while t < d {
             let b = try await mixer.render(t ..< min(d, t + step))
             for c in b.channels { for x in c { peak = max(peak, abs(x)) } }
+            if b.channels.contains(where: { $0.contains { abs($0) >= 1 } }) { clippedAt.append(Double(t) / Double(tick)) }
             t += step
         }
     }
     let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
     let speed = Double(d) / Double(tick) / seconds
+    let clipped = await mixer.clippedSamples
     print("vlog mix: \(String(format: "%.1f", Double(d) / Double(tick))) s in \(String(format: "%.2f", seconds)) s = \(String(format: "%.1f", speed))× real time, peak \(peak)")
+    print("vlog clipping: \(clipped) samples over ±1 in \(clippedAt.count) chunks; first at \(clippedAt.prefix(8).map { String(format: "%.2f", $0) }) s")
     #expect(peak > 0)
     #if !DEBUG
     #expect(speed >= 20)

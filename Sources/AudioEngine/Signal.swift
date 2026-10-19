@@ -142,6 +142,11 @@ struct Signal: Sendable {
         }
     }
 
+    /// Samples (over all channels) whose magnitude exceeds `limit`.
+    func countAbove(_ limit: Float) -> Int {
+        channels.reduce(0) { n, ch in n + ch.reduce(0) { $0 + (abs($1) > limit ? 1 : 0) } }
+    }
+
     var isAllZero: Bool { channels.allSatisfy { $0.allSatisfy { $0 == 0 } } }
 }
 

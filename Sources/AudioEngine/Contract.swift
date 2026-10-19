@@ -58,6 +58,9 @@ public actor AudioMixer {
     var measured: [StreamKey: (lufs: Double, peak: Double)] = [:]
     var processorCache: [Int: [any AudioProcessor]] = [:]
     var sourceChannels: [StreamKey: Int] = [:]
+    /// Output samples (x channels) that exceeded +-1 before the final hard clip, summed over every
+    /// `render` call (no limiter by design, audio.md section 2; for export warnings).
+    var clippedSamples = 0
     /// Source reads that failed because the file is missing or unsupported (played as silence).
     var missingReads = 0
 

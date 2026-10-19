@@ -3,8 +3,11 @@
 //   content(node)   on the node's media/inner axis, in blocks of `blockSize` samples aligned to
 //                   media sample 0: decoded source (leaf) or the mix of its inner tracks
 //                   (group / stitched), × loudness gain, → effects → mixToMono. Cached.
-//   place(node)     on the parent axis: content shifted (speed 1) or WSOLA-stretched (speed ≠ 1),
+//   place(node)     on the parent axis: content shifted (speed 1, no pitch) or WSOLA-stretched
+//                   (speed ≠ 1; a pitch shift p reads content resampled by p, then stretches),
 //                   × gain × volume(media time) × transition fades.
+//   mixTracks       sums the placed clips of the audible tracks; `emphasize` clips duck the
+//                   other tracks at their level.
 //
 // Each output sample therefore depends only on the scene, never on how render ranges were cut.
 
@@ -18,6 +21,28 @@ struct BlockKey: Hashable, Sendable {
     var index: Int64
     /// Pre-effects content (only cached separately for nodes with effects).
     var raw: Bool
+    /// Resampled content of a pitch-shifted node (`AudioMixer.source`).
+    var pitched = false
+}
+
+/// A ducking window from an `emphasize` clip on track `track`: other tracks drop to `gain` over
+/// `[lo, hi)` (parent ticks), ramping linearly over `ramp` ticks on each side [inf, until AU1].
+struct Duck: Sendable {
+    var track: Int
+    var lo: Double
+    var hi: Double
+    var gain: Double
+
+    /// 0.25 s at editRate 705600000 (ticks).
+    static let ramp = 176_400_000.0
+
+    func factor(at t: Double) -> Double {
+        let x: Double
+        if t >= lo && t < hi { x = 1 }
+        else if t < lo { x = max(0, 1 - (lo - t) / Self.ramp) }
+        else { x = max(0, 1 - (t - hi) / Self.ramp) }
+        return 1 - (1 - gain) * x
+    }
 }
 
 struct ChainKey: Hashable, Sendable {
@@ -80,6 +105,7 @@ extension AudioMixer {
         var mix = try await mixTracks(scene.tracks, from: samples.lowerBound, count: n)
         mix.scale(by: Float(scene.masterGain))
         mix = mix.mapped(to: out.channels)
+        clippedSamples += mix.countAbove(1)
         // No limiter (audio.md §2 working rule: normalisation gains are peak-capped instead); the
         // sum is hard-clipped to ±1 like any PCM output.
         mix.clip(to: 1)
@@ -88,14 +114,34 @@ extension AudioMixer {
 
     /// Sum of the audible tracks over samples `[from, from + count)` of their (shared) axis.
     /// Mute and solo: a muted track is silent; when any track at this level is soloed, only the
-    /// soloed (unmuted) ones play [inf: Camtasia's solo isolates a track].
+    /// soloed (unmuted) ones play [inf: Camtasia's solo isolates a track]. A clip with an
+    /// `emphasize` effect ducks every *other* audible track at this level while it sounds.
     func mixTracks(_ tracks: [ATrack], from: Int64, count: Int) async throws -> Signal {
         var acc = Signal.zeros(channels: 1, count: count)
         let anySolo = tracks.contains { $0.solo && !$0.muted }
         let lo = grid.ticks(from), hi = grid.ticks(from + Int64(count))
-        for t in tracks where !t.muted && (!anySolo || t.solo) {
-            for c in t.clips where c.activeLo < hi && c.activeHi > lo {
-                try await place(c, into: &acc, from: from)
+        let audible = tracks.indices.filter { !tracks[$0].muted && (!anySolo || tracks[$0].solo) }
+        let emphasis = audible.flatMap { i in
+            tracks[i].clips.compactMap { c in
+                c.effects.first { $0.kind == .emphasize }.map { Duck(track: i, lo: c.activeLo, hi: c.activeHi, gain: $0.duckGain) }
+            }
+        }
+        for i in audible {
+            let t = tracks[i]
+            let clips = t.clips.filter { $0.activeLo < hi && $0.activeHi > lo }
+            guard !clips.isEmpty else { continue }
+            let ducks = emphasis.filter { $0.track != i && $0.lo - Duck.ramp < hi && $0.hi + Duck.ramp > lo }
+            if ducks.isEmpty {
+                for c in clips { try await place(c, into: &acc, from: from) }
+            } else {
+                var own = Signal.zeros(channels: 1, count: count)
+                for c in clips { try await place(c, into: &own, from: from) }
+                var env = [Float](repeating: 1, count: count)
+                for k in 0..<count {
+                    let tk = grid.ticks(from + Int64(k))
+                    env[k] = Float(ducks.reduce(1.0) { min($0, $1.factor(at: tk)) })
+                }
+                acc.add(own, at: 0, gain: env)
             }
         }
         return acc
@@ -109,7 +155,7 @@ extension AudioMixer {
         guard a < b else { return }
         let count = Int(b - a)
         let sig: Signal
-        if n.isUnitSpeed {
+        if n.isPlain {
             let shift = Int64(((n.mediaStart.double - Double(n.start)) / grid.ticksPerSample).rounded())
             sig = try await content(n, from: a + shift, count: count)
         } else {
@@ -257,9 +303,32 @@ extension AudioMixer {
 
     // MARK: Speed ≠ 1 (WSOLA, Stretch.swift)
 
-    /// Analysis position (content sample) of output sample `s` for a stretched node.
+    /// Analysis position of output sample `s` for a stretched node, on the axis `source` reads:
+    /// content samples, or resampled-content samples (÷ pitch) for a pitch-shifted node.
     func analysisPosition(_ n: ANode, _ s: Int64) -> Int64 {
-        Int64((n.mediaTicks(at: grid.ticks(s)) / grid.ticksPerSample).rounded())
+        Int64((n.mediaTicks(at: grid.ticks(s)) / grid.ticksPerSample / n.pitch).rounded())
+    }
+
+    /// What WSOLA reads: the node's content, or for a pitch shift p the content resampled so that
+    /// sample k = content at k·p (frequencies × p, running p× faster). WSOLA then restores the
+    /// duration, so pitch and speed compose: pitch shift = resample + time-stretch.
+    func source(_ n: ANode, from: Int64, count: Int) async throws -> Signal {
+        guard n.pitch != 1 else { return try await content(n, from: from, count: count) }
+        return try await assemble(from: from, count: count) { b in try await self.pitchedBlock(n, b) }
+    }
+
+    /// Block `b` of the resampled content (cached; a pure function of the scene).
+    func pitchedBlock(_ n: ANode, _ b: Int64) async throws -> Signal {
+        let key = BlockKey(node: n.key, index: b, raw: false, pitched: true)
+        if let s = blocks.get(key) { return s }
+        let B = Int64(blockSize), from = b * B
+        let p = n.pitch, w = Resampler.halfWidth(pitch: p)
+        let lo = Int64((Double(from) * p).rounded(.down)) - Int64(w) - 1
+        let hi = Int64((Double(from + B) * p).rounded(.up)) + Int64(w) + 2
+        let c = try await content(n, from: lo, count: Int(hi - lo))
+        let s = Resampler.resample(c, inputStart: lo, ratio: p, from: from, count: blockSize)
+        blocks.put(key, s)
+        return s
     }
 
     func stretched(_ n: ANode, from s0: Int64, count: Int) async throws -> Signal {
@@ -270,11 +339,13 @@ extension AudioMixer {
         let kLo = floorDiv(s0 - n0 - half, hop), kHi = floorDiv(s1 - 1 - n0 + half, hop)
         func center(_ k: Int64) -> Int64 { n0 + k * hop }
         var offsets: [Int64: Int] = [:]
+        // Extend the δ chain to kHi first (64-frame batches); the per-frame calls then hit the cache.
+        _ = try await offset(n, frame: kHi, n0: n0)
         for k in kLo...kHi { offsets[k] = try await offset(n, frame: k, n0: n0) }
         let tol = Int64(st.tolerance)
         let inLo = analysisPosition(n, center(kLo)) - tol - half - 1
         let inHi = analysisPosition(n, center(kHi)) + tol + half + 1
-        let input = try await content(n, from: inLo, count: Int(inHi - inLo))
+        let input = try await source(n, from: inLo, count: Int(inHi - inLo))
         var out = Signal.zeros(channels: input.channelCount, count: count)
         for k in kLo...kHi {
             let pos = analysisPosition(n, center(k)) + Int64(offsets[k] ?? 0)
@@ -300,7 +371,7 @@ extension AudioMixer {
             let jEnd = min(k, jStart + 63)
             let lo = pos(jStart - 1) - tol - half - 1
             let hi = pos(jEnd) + tol + hop + half + 2
-            let mono = try await content(n, from: lo, count: Int(hi - lo)).monoMix().channels[0]
+            let mono = try await source(n, from: lo, count: Int(hi - lo)).monoMix().channels[0]
             mono.withUnsafeBufferPointer { mp in
                 guard let base = mp.baseAddress else { return }
                 for j in jStart...jEnd {
