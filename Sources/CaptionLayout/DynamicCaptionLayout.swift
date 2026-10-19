@@ -1,4 +1,5 @@
 import Foundation
+import TSCProjKit
 
 /// How words are grouped into on-screen blocks. Camtasia's own block rule is [?]
 /// (`docs/specs/captions.md` §4, experiment CA2); this is WizRec's rule.
@@ -29,6 +30,13 @@ public struct CaptionBlockRules: Sendable, Equatable {
         let perChar = max(fontSize, 1) * 0.55
         self.init(maxCharsPerLine: min(60, max(8, Int(boxWidth / perChar))),
                   sentenceBreak: style.newParagraphForEachSentence)
+    }
+
+    /// Rules for a dynamic-caption callout `def`: its `width` (default 1728) and base `font.size`
+    /// (default 96). Export (Captions) and rendering (RenderEngine) both use this, so their blocks match.
+    public init(def: JSONObject) {
+        self.init(boxWidth: def["width"]?.double ?? 1728, fontSize: def["font"]?.object?["size"]?.double ?? 96,
+                  style: DynamicCaptionStyle(def: def))
     }
 }
 

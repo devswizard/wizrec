@@ -1,3 +1,4 @@
+import CaptionLayout
 import CoreGraphics
 import CoreMedia
 import Foundation
@@ -20,6 +21,8 @@ struct SNode: Sendable {
     var gain: Double
     var keyframeBase: Conventions.KeyframeBase
     var body: Body
+    /// Audio leaves: the source track's transcription (seconds of media time), empty when none.
+    var words: [TranscriptWord] = []
 
     var end: Int64 { start + duration }
 
@@ -106,18 +109,21 @@ struct SceneBuilder {
 
     let sources: [Int64: Source]
     let canvas: CGSize
+    /// Project ticks per second (transcription keyframe times are project ticks).
+    let editRate: Int64
 
     init(project: Project, resolve: (SourceMedia) -> URL) {
         var s: [Int64: Source] = [:]
         for m in project.sourceBin { s[m.id] = Source(media: m, url: resolve(m)) }
         sources = s
         canvas = CGSize(width: project.width, height: project.height)
+        editRate = project.timebase.editRate
     }
 
     /// `attributes`: per-track UI state index-aligned with `tracks` (top level);
     /// nested group tracks carry the same keys inline.
     func tracks(_ tracks: [Track], attributes: [JSONObject] = []) -> [STrack] {
-        tracks.enumerated().map { i, t in
+        let built = tracks.enumerated().map { i, t in
             let a = i < attributes.count ? attributes[i] : nil
             func flag(_ k: String) -> Bool { a?[k]?.bool ?? t.object[k]?.bool ?? false }
             let clips = t.clips.map(node).sorted { $0.start < $1.start }
@@ -125,6 +131,50 @@ struct SceneBuilder {
                           clips: clips, transitions: transitions(t.transitions, clips: clips))
         }
         .sorted { $0.index < $1.index }
+        return Self.pairDynamicCaptions(built)
+    }
+
+    /// Gives every dynamic-caption callout the transcribed audio clips of the same track list
+    /// (`docs/specs/captions.md` §3: no key links them; the caption shows the audio playing at the
+    /// same time [inf]). Candidates are `AMFile`s and `UnifiedMedia` audio halves whose source track
+    /// has words, overlapping the callout, bottom track first; at time t the first one playing wins
+    /// [WizRec rule; which clip Camtasia picks with several is ?, experiment CA2]. Audio inside
+    /// groups or stitched clips is not considered.
+    static func pairDynamicCaptions(_ tracks: [STrack]) -> [STrack] {
+        var audio: [SNode] = []
+        for tr in tracks {
+            for c in tr.clips {
+                switch c.body {
+                case .audio where !c.words.isEmpty: audio.append(c)
+                case .unified(_, let a?) where !a.words.isEmpty: audio.append(a)
+                default: break
+                }
+            }
+        }
+        guard !audio.isEmpty else { return tracks }
+        return tracks.map { tr in
+            var tr = tr
+            tr.clips = tr.clips.map { c in
+                guard case .callout(var sc, let size) = c.body, var dc = sc.caption else { return c }
+                dc.audio = audio.filter { $0.start < c.end && $0.end > c.start }.map {
+                    SDynamicCaption.Audio(start: $0.start, end: $0.end, mediaStart: $0.mediaStart, scalar: $0.scalar,
+                                          timeline: DynamicCaptionTimeline(words: $0.words, rules: dc.rules, style: dc.style))
+                }
+                sc.caption = dc
+                var n = c
+                n.body = .callout(sc, size: size)
+                return n
+            }
+            return tr
+        }
+    }
+
+    /// Words of a clip's source track when it carries a transcription.
+    func words(_ c: Clip) -> [TranscriptWord] {
+        guard let src = c.sourceID.flatMap({ sources[$0] }) else { return [] }
+        let tracks = src.media.tracks, i = Int(c.sourceTrackNumber ?? 0)
+        guard tracks.indices.contains(i), tracks[i].object["parameters"]?.object?["transcription"] != nil else { return [] }
+        return Transcript.words(tracks[i], editRate: editRate)
     }
 
     /// Resolves transitions against `clips`; bypassed ones and ones naming no existing clip are dropped.
@@ -160,7 +210,7 @@ struct SceneBuilder {
                      gain: c.attributes?["gain"]?.double ?? 1,
                      keyframeBase: c.kind == .image
                         ? .timelineOffset(trimStartSum: o["trimStartSum"]?.double ?? 0) : .media,
-                     body: body(c))
+                     body: body(c), words: c.kind == .audio ? words(c) : [])
     }
 
     private func body(_ c: Clip) -> SNode.Body {
@@ -349,7 +399,14 @@ struct SceneEvaluator {
             l.effects += inner.effects
             return l
         case .callout(let c, let size):
-            return make(.callout(c.content(at: kt, size: size)), size)
+            var content = c.content(at: kt, size: size)
+            if let dc = c.caption {
+                let frame = dc.frame(at: t, editRate: editRate)
+                content.dynamicCaption = DynamicCaptionRender(frame: frame, style: dc.style)
+                content.text = frame?.text ?? ""
+                content.runs = SDynamicCaption.textRun(content.runs, length: content.text.utf16.count)
+            }
+            return make(.callout(content), size)
         case .unsupported(let type, let size):
             return make(.unsupported(type: type), size)
         }

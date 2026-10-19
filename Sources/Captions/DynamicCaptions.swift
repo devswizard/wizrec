@@ -106,8 +106,7 @@ public enum DynamicCaptions {
 
     /// Block rules for a dynamic-caption `def` (box width and base font size, see `CaptionBlockRules`).
     public static func rules(def: JSONObject) -> CaptionBlockRules {
-        CaptionBlockRules(boxWidth: def["width"]?.double ?? 1728, fontSize: Callout(def).fontSize ?? 96,
-                          style: DynamicCaptionStyle(def: def))
+        CaptionBlockRules(def: def)
     }
 
     /// Every block of every top-level dynamic caption as a cue (timeline seconds, lines joined by

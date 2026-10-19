@@ -1,6 +1,44 @@
+import CaptionLayout
 import CoreGraphics
 import Foundation
 import TSCProjKit
+
+/// A dynamic caption's style, block rules and the transcribed audio clips it reads from
+/// (`docs/specs/captions.md` §3–§4). Times: ticks of the callout's parent timeline.
+struct SDynamicCaption: Sendable {
+    struct Audio: Sendable {
+        var start: Int64
+        var end: Int64
+        var mediaStart: Rational
+        var scalar: Rational
+        /// Words on the source's media axis, seconds.
+        var timeline: DynamicCaptionTimeline
+    }
+
+    var style: DynamicCaptionStyle
+    var rules: CaptionBlockRules
+    /// Paired audio clips, bottom track first.
+    var audio: [Audio] = []
+
+    /// The caption at parent time `t`: the first paired clip playing at `t`, at its media time.
+    func frame(at t: Rational, editRate: Int64) -> DynamicCaptionFrame? {
+        guard let a = audio.first(where: { Q.le(Rational($0.start), t) && Q.lt(t, Rational($0.end)) }) else { return nil }
+        let m = Conventions.mediaTime(parent: t, start: a.start, mediaStart: a.mediaStart, scalar: a.scalar)
+        return a.timeline.frame(at: m.double / Double(max(editRate, 1)))
+    }
+
+    /// One run over the whole block text with the `def` runs' font, weight, italic and colour (the
+    /// runs' ranges index the placeholder `def.text`, and their fitted `fontSize` belongs to it too).
+    static func textRun(_ runs: [CalloutTextRun], length: Int) -> [CalloutTextRun] {
+        guard length > 0 else { return [] }
+        var r = CalloutTextRun(range: 0..<length)
+        for x in runs {
+            r.fontName = r.fontName ?? x.fontName; r.fontWeight = r.fontWeight ?? x.fontWeight
+            r.italic = r.italic ?? x.italic; r.color = r.color ?? x.color
+        }
+        return [r]
+    }
+}
 
 /// Sendable projection of a callout's `def` (`docs/specs/callouts.md` §2–§5). Numeric keys stay
 /// animatable (`tail-x`/`tail-y` on arrows are keyframed objects); strings and text runs are fixed,
@@ -12,8 +50,12 @@ struct SCallout: Sendable {
     var font: (name: String, weight: String, size: Double, color: RGBA, tracking: Double)
     /// `textAttributes.keyframes`: keyframe time (keyframe axis, ticks) and its runs, sorted.
     var runKeys: [(time: Double, runs: [CalloutTextRun])]
+    /// Set when the `def` is a dynamic caption; its audio is paired by `SceneBuilder`.
+    var caption: SDynamicCaption?
 
     init(_ def: JSONObject) {
+        caption = DynamicCaptionStyle.isDynamicCaption(def)
+            ? SDynamicCaption(style: DynamicCaptionStyle(def: def), rules: CaptionBlockRules(def: def)) : nil
         var strings: [String: String] = [:]
         for (k, v) in def.entries { if let s = v.string { strings[k] = s } }
         self.strings = strings
