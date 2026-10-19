@@ -18,6 +18,9 @@ import Foundation
 /// - `--frame-policy exact|thin|nearest`: high-speed playback policy (default nearest).
 /// - `--import-captions <file.srt|.vtt>`: import captions after the scripted imports.
 /// - `--export-captions <file.srt|.vtt>`: write the project's captions after the scripted steps.
+/// - `--export <file>` [`--export-preset <name>`…]: export through the queue after the scripted steps,
+///   then report. Without a preset, the first built-in preset whose extension matches `<file>`; with
+///   several presets, each writes `<file>`'s folder and name with its own extension.
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -46,6 +49,10 @@ public struct LaunchOptions: Sendable, Equatable {
     public var importCaptions: String?
     /// Where to export the project's captions (format from the extension).
     public var exportCaptions: String?
+    /// Export output file (scripted export).
+    public var exportPath: String?
+    /// Export preset names (batch); empty = chosen from `exportPath`'s extension.
+    public var exportPresets: [String] = []
 
     public init() {}
 
@@ -56,6 +63,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.importPaths == b.importPaths && a.nudge?.x == b.nudge?.x && a.nudge?.y == b.nudge?.y
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
+            && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
     }
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
@@ -92,6 +100,8 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--frame-policy": framePolicy = value() ?? framePolicy
             case "--import-captions": importCaptions = value()
             case "--export-captions": exportCaptions = value()
+            case "--export": exportPath = value()
+            case "--export-preset": if let v = value() { exportPresets.append(v) }
             default:
                 if a.hasPrefix("-psn_") { break }
                 if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }

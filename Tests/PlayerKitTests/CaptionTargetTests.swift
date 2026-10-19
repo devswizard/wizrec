@@ -32,5 +32,10 @@ import Testing
         #expect(CaptionTarget.find(in: doc.project, selection: [img]).isEmpty)
         #expect(CaptionTarget.find(in: doc.project, selection: []).isEmpty)
         #expect(CaptionTarget.find(in: doc.project, selection: [a2]).first?.clipID == a2)
+
+        // Export range of a selection: from the earliest start to the latest end.
+        let end = try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == a2 }?.end)
+        #expect(ExportRange.selection(in: doc.project, clipIDs: [a1, a2]) == 0..<end)
+        #expect(ExportRange.selection(in: doc.project, clipIDs: []) == nil)
     }
 }

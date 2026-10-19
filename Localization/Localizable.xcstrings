@@ -7,7 +7,31 @@
     "%arg" : {
 
     },
+    "1080p (1920)" : {
+
+    },
+    "24 fps" : {
+
+    },
+    "25 fps" : {
+
+    },
+    "30 fps" : {
+
+    },
     "3D" : {
+
+    },
+    "480p (854)" : {
+
+    },
+    "4K (3840)" : {
+
+    },
+    "60 fps" : {
+
+    },
+    "720p (1280)" : {
 
     },
     "About WizRec" : {
@@ -37,6 +61,9 @@
     "Apply" : {
 
     },
+    "As preset" : {
+
+    },
     "Back" : {
 
     },
@@ -58,7 +85,13 @@
     "Cancel" : {
 
     },
+    "Cancel All" : {
+
+    },
     "Cancel Transcription" : {
+
+    },
+    "Cancelled" : {
 
     },
     "Cannot export captions: %arg" : {
@@ -84,6 +117,19 @@
         }
       }
     },
+    "Cannot write to %arg." : {
+
+    },
+    "Cannot write to %arg: %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cannot write to %1$arg: %2$arg"
+          }
+        }
+      }
+    },
     "Canvas preview" : {
 
     },
@@ -93,7 +139,19 @@
     "Change Caption Style" : {
 
     },
+    "Choose" : {
+
+    },
     "Choose an SRT or WebVTT caption file." : {
+
+    },
+    "Choose one or more; each becomes its own file." : {
+
+    },
+    "Choose…" : {
+
+    },
+    "Clear" : {
 
     },
     "Clear Menu" : {
@@ -156,13 +214,25 @@
     "Every frame (may stutter)" : {
 
     },
+    "Export" : {
+
+    },
     "Export Captions as SRT…" : {
 
     },
     "Export Captions as WebVTT…" : {
 
     },
+    "Export is not available in this build." : {
+
+    },
     "Exported captions to %arg." : {
+
+    },
+    "Exports" : {
+
+    },
+    "Export…" : {
 
     },
     "Extend Frame" : {
@@ -171,16 +241,34 @@
     "Fades" : {
 
     },
+    "Failed" : {
+
+    },
     "Fast playback" : {
 
     },
     "File" : {
 
     },
+    "File name" : {
+
+    },
+    "Formats" : {
+
+    },
     "Frame number" : {
 
     },
+    "Frame rate" : {
+
+    },
     "Free, open-source screen recorder & editor by Devs Wizard." : {
+
+    },
+    "GIF: dither colours" : {
+
+    },
+    "GIF: loop forever" : {
 
     },
     "General" : {
@@ -238,6 +326,9 @@
     "Importing…" : {
 
     },
+    "Include audio" : {
+
+    },
     "Kept in ~/Library/Logs/WizRec so you can attach one to a bug report. Never sent. Change it any time in Settings." : {
 
     },
@@ -280,6 +371,9 @@
     "Outline color" : {
 
     },
+    "Overall progress" : {
+
+    },
     "Page %arg of %arg" : {
       "localizations" : {
         "en" : {
@@ -317,10 +411,16 @@
     "Privacy" : {
 
     },
+    "Progress" : {
+
+    },
     "Properties" : {
 
     },
     "Quit WizRec" : {
+
+    },
+    "Range" : {
 
     },
     "Redo" : {
@@ -338,6 +438,9 @@
     "Reset to Defaults" : {
 
     },
+    "Resolution" : {
+
+    },
     "Ripple Delete" : {
 
     },
@@ -348,6 +451,9 @@
 
     },
     "Save crash reports on this Mac" : {
+
+    },
+    "Save to" : {
 
     },
     "Search" : {
@@ -369,6 +475,9 @@
 
     },
     "Select clips on the timeline first, or drag the effect onto a clip." : {
+
+    },
+    "Selected clips" : {
 
     },
     "Separate Video and Audio" : {
@@ -502,7 +611,13 @@
     "View" : {
 
     },
+    "Waiting" : {
+
+    },
     "Welcome to WizRec" : {
+
+    },
+    "Whole timeline" : {
 
     },
     "Window" : {

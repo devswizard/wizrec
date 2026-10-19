@@ -1,5 +1,7 @@
 import AppKit
 import Captions
+import Exporter
+import MediaEngine
 import MetalKit
 import PlayerKit
 import QuartzCore
@@ -44,6 +46,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var recordingStart: Int64 = 0
     /// The running transcription (Captions ▸ Transcribe); cancel with Captions ▸ Cancel.
     var transcription: Task<Void, Never>?
+    /// File ▸ Export… sheet while shown, its remembered choices, and the job queue.
+    var exportSheet: NSWindow?
+    let exportState = ExportSheetState()
+    var exportSpecs: [Int: ExportJobSpec] = [:]
+    /// Exports decode on their own pool so they never evict playback frames.
+    lazy var exportPool = MediaPool(cacheLimitBytes: 256 << 20)
+    lazy var exportQueue: ExportQueue = Self.makeExportQueue(
+        specs: { [weak self] id in self?.exportSpecs[id] },
+        pool: { [weak self] in self?.exportPool ?? MediaPool(cacheLimitBytes: 64 << 20) })
 
     init(document: ProjectDocument, model: EditorDocumentModel, options: LaunchOptions) {
         self.model = model
@@ -190,7 +201,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
               + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
         fflush(stdout)
         if options.snapshotDir != nil || !options.importPaths.isEmpty || options.importCaptions != nil
-            || options.exportCaptions != nil {
+            || options.exportCaptions != nil || options.exportPath != nil {
             Task { await runScript() }
         } else {
             if options.autoplay { engine.play() }
@@ -557,6 +568,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 print("script: export captions failed: \(Self.describe(error))")
             }
         }
+        if let path = options.exportPath {
+            let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            let all = ExportSession.presets
+            let presets = options.exportPresets.isEmpty
+                ? Array(all.first { $0.settings.format.fileExtension == file.pathExtension.lowercased() }.map { [$0] } ?? [])
+                : options.exportPresets.compactMap { n in all.first { $0.name == n } }
+            if presets.count != max(1, options.exportPresets.count) {
+                print("script: unknown export preset; available: \(all.map(\.name).joined(separator: " | "))")
+            }
+            let started = Date()
+            queueScriptedExports(presets, to: file)
+            await exportQueue.waitUntilIdle()
+            for j in exportQueue.jobs { print("script: export \(j.name) → \(j.output.path): \(j.state)") }
+            print(String(format: "script: exports took %.1f s", Date().timeIntervalSince(started)))
+        }
         if options.select, timelineModel.selection.isEmpty, let first = model.project.tracks.flatMap(\.clips).last {
             select([first.id])
         }
@@ -813,6 +839,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// Stops the display link, audio and decoding. Idempotent.
     func shutdown() {
         transcription?.cancel()
+        exportQueue.cancelAll()
         link?.invalidate()
         link = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m) }
