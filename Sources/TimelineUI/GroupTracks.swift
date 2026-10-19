@@ -29,10 +29,10 @@ protocol GroupTrackCommands {
     func removeTrack(group: Int64, at index: Int) -> (any EditCommand)?
 }
 
-/// Not available until TimelineEngine's group-track commands land (S3-TL-1).
+/// TimelineEngine's `AddGroupTrack` / `RemoveGroupTrack`.
 struct EngineGroupTracks: GroupTrackCommands {
-    func addTrack(group: Int64, at index: Int) -> (any EditCommand)? { nil }
-    func removeTrack(group: Int64, at index: Int) -> (any EditCommand)? { nil }
+    func addTrack(group: Int64, at index: Int) -> (any EditCommand)? { AddGroupTrack(group: group, at: index) }
+    func removeTrack(group: Int64, at index: Int) -> (any EditCommand)? { RemoveGroupTrack(group: group, at: index) }
 }
 
 extension TimelineEditor {

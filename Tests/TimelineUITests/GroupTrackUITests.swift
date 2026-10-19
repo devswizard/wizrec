@@ -35,12 +35,35 @@ struct GroupTrackUITests {
         TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project, openGroups: m.openGroups))
     }
 
-    @Test func innerTracksUnavailableWithoutEngineCommands() throws {
+    func group(_ p: Project) -> Clip? { p.tracks[0].clips.first { $0.id == 50 } }
+
+    @Test func engineAddsAndRemovesInnerTracksWithUndo() throws {
+        let m = TimelineModel(undo: UndoStack(project: try project()))
+        let original = m.project.serialized()
+        m.openGroups = [50]
+        #expect(editor(m).canAddTrack && editor(m).canRemoveTrack(at: 0))
+        #expect(editor(m).addTrack(at: 1))  // between the two inner tracks
+        let g = try #require(group(m.project))
+        #expect(g.tracks.count == 3)
+        #expect(g.tracks.map { $0.clips.map(\.id) } == [[51], [], [52]])
+        #expect(m.project.tracks.count == 1)  // the scene is untouched
+        let s = TimelineSnapshot(project: m.project, openGroups: [50])
+        #expect(s.tracks.count == 3 && s.groupPath == [50])
+        m.selection = [51]
+        #expect(editor(m).removeTrack(at: 0))
+        #expect(group(m.project)?.tracks.map { $0.clips.map(\.id) } == [[], [52]])
+        #expect(m.selection.isEmpty)
+        #expect(m.lastError == nil)
+        try m.undo.undo(); try m.undo.undo()
+        #expect(m.project.serialized() == original)
+    }
+
+    @Test func engineKeepsLastInnerTrack() throws {
         let m = TimelineModel(undo: UndoStack(project: try project()))
         m.openGroups = [50]
-        #expect(!editor(m).canAddTrack && !editor(m).canRemoveTrack(at: 0))
-        #expect(!editor(m).addTrack(at: 0) && !editor(m).removeTrack(at: 1))
-        #expect(!m.undo.canUndo)
+        #expect(editor(m).removeTrack(at: 1))
+        #expect(!editor(m).canRemoveTrack(at: 0) && !editor(m).removeTrack(at: 0))
+        #expect(group(m.project)?.tracks.count == 1)
     }
 
     @Test func addAndRemoveInnerTracksGoThroughGroupCommands() throws {
@@ -92,6 +115,20 @@ struct GroupTrackUITests {
         #expect(e.groupDropTarget(track: 7, ticks: 140) == nil)
     }
 
+    @Test func groupDropTargetFeedsInsertClipInGroup() throws {
+        let m = TimelineModel(undo: UndoStack(project: try project()))
+        m.openGroups = [50]
+        // Inner track 0 holds clip 51 at inner 0…100 (root 80…180); drop a still image at root 180 = inner 100.
+        let target = try #require(editor(m).groupDropTarget(track: 0, ticks: 180))
+        #expect(target.ticks == 100)
+        let insert = InsertClipInGroup(sourceID: 3, group: target.group, track: target.track, at: .inner(target.ticks))
+        try m.undo.perform(insert)
+        let id = try #require(insert.clipID)
+        let s = TimelineSnapshot(project: m.project, openGroups: [50])
+        let placed = try #require(s.clip(id))
+        #expect(placed.track == 0 && placed.clip.start == 180)  // shown where it was dropped
+    }
+
     func makeView() throws -> (TimelineModel, TimelineView, NSWindow) {
         let model = TimelineModel(undo: UndoStack(project: try project()))
         model.pointsPerSecond = 60
@@ -140,11 +177,11 @@ struct GroupTrackUITests {
         func titles(_ menu: NSMenu?) -> [String: Bool] {
             Dictionary(uniqueKeysWithValues: (menu?.items ?? []).filter { !$0.isSeparatorItem }.map { ($0.title, $0.isEnabled) })
         }
-        // Without engine support the items are shown but disabled.
+        // Engine commands: enabled inside the group.
         var menu = titles(canvas.contextMenu(for: .header(track: 1, control: nil)))
-        #expect(menu["Add Track Above"] == false && menu["Remove Track"] == false)
+        #expect(menu["Add Track Above"] == true && menu["Remove Track"] == true)
         let addItem = NSMenuItem(title: "Add", action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
-        #expect(!view.validateMenuItem(addItem))
+        #expect(view.validateMenuItem(addItem))
 
         let rec = RecordingGroupTracks()
         model.groupTracks = rec
