@@ -257,7 +257,7 @@ public struct TimelineEditor {
             if let best = edges.min(by: { abs($0 - s) < abs($1 - s) }), abs(best - s) <= tolerance { s = best; guide = s }
         }
         if guide == nil { s = max(origin, snapshot.quantize(s)) }
-        let valid = !src.locked && !dst.locked && (s != clip.start || to != from || dst.magnetic)
+        let valid = !src.locked && !dst.locked && (s != clip.start || to != from)  // same place: no-op
         return RippleMovePlan(id: id, fromTrack: from, toTrack: to, start: s, isValid: valid, guide: guide)
     }
 
@@ -380,7 +380,10 @@ public struct TimelineEditor {
     /// Adds a timeline marker at `t` (frame-rounded by the command); an existing marker there is renamed.
     @discardableResult
     public func addMarker(at t: Int64, name: String = "") -> Bool {
-        perform(AddMarker(at: max(0, t), name: name))
+        // The same marker already there would be an empty undo entry.
+        let q = snapshot.quantize(max(0, t))
+        guard !snapshot.markers.contains(where: { $0.time == q && $0.name == name }) else { return false }
+        return perform(AddMarker(at: max(0, t), name: name))
     }
 
     /// The marker nearest `t` within `tolerance` ticks.
@@ -391,7 +394,7 @@ public struct TimelineEditor {
     /// Moves the marker at `from` to `to` (ticks; the command frame-snaps).
     @discardableResult
     public func moveMarker(from: Int64, to: Int64) -> Bool {
-        guard from != to, snapshot.markers.contains(where: { $0.time == from }) else { return false }
+        guard snapshot.quantize(max(0, to)) != from, snapshot.markers.contains(where: { $0.time == from }) else { return false }
         return perform(MoveMarker(from: from, to: max(0, to)))
     }
 
@@ -414,7 +417,8 @@ public struct TimelineEditor {
     /// into its neighbour makes the command fail.
     @discardableResult
     public func setSpeed(_ speed: Double, ripple: Bool = false) -> Bool {
-        let ids = retimableSelection
+        // Clips already at `speed` would land on the undo stack as empty entries.
+        let ids = retimableSelection.filter { id in snapshot.clip(id).map { abs($0.clip.speed - speed) > 1e-6 } ?? false }
         guard speed > 0, speed.isFinite, !ids.isEmpty else { return false }
         let r = Rational(Int64((speed * 1000).rounded()), 1000)
         let cmds: [any EditCommand] = ids.map { SetClipSpeed(clipID: $0, speed: r, ripple: ripple) }
@@ -442,6 +446,86 @@ public struct TimelineEditor {
         let preset = TimelineLibrary.effect(named: name)
         return perform(AddEffect(clipID: clipID, name: name, category: preset?.category ?? "categoryVisualEffects",
                                  parameters: (preset?.parameters ?? []).map { ($0.key, $0.value) }))
+    }
+
+    /// Removes the effect at combined `index` (`TimelineEffectRef.index`) from clip `clipID`.
+    @discardableResult
+    public func removeEffect(at index: Int, from clipID: Int64) -> Bool {
+        guard let (track, c) = snapshot.clip(clipID), snapshot.track(track)?.locked == false,
+              c.effects.contains(where: { $0.index == index }) else { return false }
+        return perform(RemoveEffect(clipID: clipID, index: index))
+    }
+
+    /// Selected clips on unlocked tracks that can take an effect or transition.
+    var decoratableSelection: [TimelineClipItem] {
+        snapshot.tracks.filter { !$0.locked }.flatMap(\.clips).filter { model.selection.contains($0.id) }
+    }
+
+    /// Adds library effect `name` to every selected clip on an unlocked track (one undo step).
+    @discardableResult
+    public func applyEffect(named name: String) -> Bool {
+        let ids = decoratableSelection.map(\.id)
+        guard !ids.isEmpty else { return false }
+        let preset = TimelineLibrary.effect(named: name)
+        let cmds: [any EditCommand] = ids.map {
+            AddEffect(clipID: $0, name: name, category: preset?.category ?? "categoryVisualEffects",
+                      parameters: (preset?.parameters ?? []).map { ($0.key, $0.value) })
+        }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Add Effect", cmds))
+    }
+
+    /// Transition sides `applyTransition` would add: the cut under the playhead (two touching
+    /// clips on an unlocked track, one of them selected or nothing selected, within
+    /// `tolerance` ticks); otherwise both edges of each selected clip, two-sided where the
+    /// edge touches a neighbour, one-sided (fade in/out) where it does not. No duplicates.
+    public func transitionTargets(tolerance: Int64) -> [(left: Int64?, right: Int64?)] {
+        let sel = model.selection
+        for t in snapshot.tracks where !t.locked {
+            for (a, b) in zip(t.clips, t.clips.dropFirst()) where a.end == b.start
+                && abs(model.playhead - a.end) <= tolerance
+                && (sel.isEmpty || sel.contains(a.id) || sel.contains(b.id)) {
+                return [(a.id, b.id)]
+            }
+        }
+        var out: [(left: Int64?, right: Int64?)] = []
+        func add(_ l: Int64?, _ r: Int64?) {
+            if !out.contains(where: { $0.left == l && $0.right == r }) { out.append((l, r)) }
+        }
+        for t in snapshot.tracks where !t.locked {
+            for c in t.clips where sel.contains(c.id) {
+                add(t.clips.first { $0.end == c.start }?.id, c.id)
+                add(c.id, t.clips.first { $0.start == c.end }?.id)
+            }
+        }
+        return out
+    }
+
+    /// Adds library transition `name` where `transitionTargets` says (one undo step).
+    @discardableResult
+    public func applyTransition(named name: String, tolerance: Int64 = 0) -> Bool {
+        let targets = transitionTargets(tolerance: tolerance)
+        guard !targets.isEmpty else { return false }
+        let cmds: [any EditCommand] = targets.map { t in
+            let d = transitionDuration(left: t.left, right: t.right)
+            return AddTransition(name: name, leftClipID: t.left, rightClipID: t.right,
+                                 duration: map.isIdentity ? d : max(1, Int64((Double(d) / map.scale).rounded())))
+        }
+        return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Add Transition", cmds))
+    }
+
+    /// Media limit of the edge a trim plan drags (`minStart` / `maxEnd`, ticks), nil when the
+    /// clip's media is unbounded there; `reached` when the plan's target sits on it.
+    public func mediaLimit(for plan: TrimPlan) -> (tick: Int64, reached: Bool)? {
+        guard let c = snapshot.clip(plan.id)?.clip else { return nil }
+        switch plan.edge {
+        case .start:
+            guard let m = c.minStart else { return nil }
+            // A ripple start trim keeps the clip's start and moves its in-point instead.
+            return (m, plan.target <= m)
+        case .end:
+            guard let m = c.maxEnd else { return nil }
+            return (m, plan.target >= m)
+        }
     }
 
     /// Which clip edges a transition dropped at tick `t` on `track` covers: a cut between two

@@ -219,6 +219,15 @@ extension TimelineCanvas {
             let s = CGRect(x: body.minX, y: body.minY, width: body.width, height: strip)
             base.setFill(); ctx.fill(s)
             drawClipLabel(c, strip: s, visible: visible)
+        } else if let speed = Self.badges(for: c, width: body.width).first, abs(c.speed - 1) > 0.001 {
+            // Short rows have no name strip: the speed still shows, as a pill in the corner.
+            let text = NSAttributedString(string: speed, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.white])
+            let sz = text.size()
+            let pill = CGRect(x: body.maxX - sz.width - 9, y: body.minY + 2, width: sz.width + 6, height: sz.height)
+            NSColor(white: 0, alpha: 0.45).setFill()
+            NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+            text.draw(at: CGPoint(x: pill.minX + 3, y: pill.minY))
         }
         ctx.restoreGState()
 
@@ -232,15 +241,29 @@ extension TimelineCanvas {
         ctx.strokePath()
     }
 
+    /// Clip speed as a badge: "2×", "0.5×", "1.25×" (at most two decimals, no trailing zeros).
+    static func speedLabel(_ speed: Double) -> String {
+        var s = String(format: "%.2f", speed)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s + "×"
+    }
+
+    /// Badges for a clip `width` points wide: speed (when ≠ 1) from 36 pt, effect count from 90 pt.
+    static func badges(for c: TimelineClipItem, width: CGFloat) -> [String] {
+        var out: [String] = []
+        if abs(c.speed - 1) > 0.001, width > 36 { out.append(speedLabel(c.speed)) }
+        if c.effectCount > 0, width > 90 { out.append("fx\(c.effectCount > 1 ? " \(c.effectCount)" : "")") }
+        return out
+    }
+
     func drawClipLabel(_ c: TimelineClipItem, strip s: CGRect, visible: CGRect) {
-        var badges: [String] = []
-        if abs(c.speed - 1) > 0.001 { badges.append(String(format: "%.2f×", c.speed)) }
-        if c.effectCount > 0 { badges.append("fx\(c.effectCount > 1 ? " \(c.effectCount)" : "")") }
+        let badges = Self.badges(for: c, width: s.width)
         let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
         let small = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
         let white = NSColor(white: 1, alpha: 0.95)
         var right = s.maxX - 5
-        if !badges.isEmpty, s.width > 90 {
+        if !badges.isEmpty {
             let text = NSAttributedString(string: badges.joined(separator: "  "),
                                           attributes: [.font: small, .foregroundColor: NSColor(white: 1, alpha: 0.8)])
             let w = text.size().width
@@ -408,6 +431,30 @@ extension TimelineCanvas {
 
     // MARK: Previews (drag ghosts, marquee, snap guide, drop indicator)
 
+    /// While an edge is dragged: the media still available beyond the edge as a dashed ghost up
+    /// to the media limit, and a red bar on the limit once the edge reaches it.
+    func drawMediaLimit(_ ctx: CGContext, _ L: TimelineLayout, _ plan: TrimPlan) {
+        guard let limit = editor.mediaLimit(for: plan), let row = L.row(forTrack: plan.track),
+              let c = snapshot.clip(plan.id)?.clip else { return }
+        let rr = L.rowRect(row).insetBy(dx: 0, dy: 2)
+        let edge = plan.ripple && plan.edge == .start ? c.start : plan.target
+        // Ripple start trims keep the clip's start: show the in-point's room left of it instead.
+        let room = plan.edge == .start ? edge - (plan.target - limit.tick) : limit.tick
+        let a = L.x(ofTicks: min(edge, room)), b = L.x(ofTicks: max(edge, room))
+        if b - a >= 1 {
+            let ghost = CGRect(x: a, y: rr.minY, width: b - a, height: rr.height).insetBy(dx: 0.5, dy: 0.5)
+            ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(1)
+            ctx.setLineDash(phase: 0, lengths: [4, 3])
+            ctx.stroke(ghost)
+            ctx.setLineDash(phase: 0, lengths: [])
+        }
+        if limit.reached {
+            Palette.invalid.setFill()
+            ctx.fill(CGRect(x: L.x(ofTicks: plan.edge == .start ? edge : limit.tick).rounded() - 1, y: rr.minY,
+                            width: 2, height: rr.height))
+        }
+    }
+
     func drawPreviews(_ ctx: CGContext, _ L: TimelineLayout) {
         var guide: Int64?
         switch drag {
@@ -425,6 +472,7 @@ extension TimelineCanvas {
             }
         case .trim(_, let plan):
             guide = plan.guide  // the resized clip is drawn by drawClips from previewPositions
+            drawMediaLimit(ctx, L, plan)
         case .rippleMove(_, let plan):
             guide = plan.guide
             if let row = L.row(forTrack: plan.toTrack) {
@@ -724,6 +772,21 @@ extension TimelineCanvas {
                 menu.addItem(open)
                 menu.addItem(.separator())
             }
+            if case .clip(let id, _, _) = hit, let c = snapshot.clip(id)?.clip, !c.effects.isEmpty {
+                let sub = NSMenu()
+                for e in c.effects {
+                    let title = TimelineLibrary.effect(named: e.name)?.displayName ?? e.name
+                    let i = NSMenuItem(title: title, action: #selector(menuRemoveEffect(_:)), keyEquivalent: "")
+                    i.target = self
+                    i.representedObject = [NSNumber(value: id), NSNumber(value: e.index)] as NSArray
+                    sub.addItem(i)
+                }
+                let parent = NSMenuItem(title: "Remove Effect", action: nil, keyEquivalent: "")
+                parent.submenu = sub
+                parent.isEnabled = snapshot.track(track)?.locked == false
+                menu.addItem(parent)
+                menu.addItem(.separator())
+            }
             item("Split at Playhead", #selector(menuSplit(_:)), enabled: !editor.splitTargets(at: model.playhead).isEmpty)
             menu.addItem(.separator())
             item("Delete", #selector(menuDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
@@ -770,6 +833,11 @@ extension TimelineCanvas {
         guard let pair = sender.representedObject as? NSArray, pair.count == 2 else { return }
         let l = (pair[0] as? NSNumber)?.int64Value, r = (pair[1] as? NSNumber)?.int64Value
         if !editor.removeTransition(left: l, right: r) { NSSound.beep() }
+    }
+    @objc func menuRemoveEffect(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? NSArray, pair.count == 2,
+              let id = (pair[0] as? NSNumber)?.int64Value, let index = (pair[1] as? NSNumber)?.intValue else { return }
+        if !editor.removeEffect(at: index, from: id) { NSSound.beep() }
     }
     @objc func menuAddMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
     @objc func menuRenameMarker(_ sender: NSMenuItem) {

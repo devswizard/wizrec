@@ -89,6 +89,19 @@ extension TimelineView: NSMenuItemValidation {
         if !editor.closeGroups(toLevel: canvas.snapshot.groupPath.count - 1) { NSSound.beep() }
     }
 
+    /// Adds library effect `name` (`TimelineLibrary.effects`) to the selected clips, one undo
+    /// step (library double-click). False, with `model.lastError` set on failure, when nothing changed.
+    @discardableResult
+    public func applyEffect(named name: String) -> Bool { editor.applyEffect(named: name) }
+
+    /// Adds library transition `name` at the cut under the playhead (within 6 pt), else on both
+    /// edges of each selected clip (see `TimelineEditor.transitionTargets`), one undo step.
+    @discardableResult
+    public func applyTransition(named name: String) -> Bool {
+        let editor = self.editor
+        return editor.applyTransition(named: name, tolerance: canvas.layout.ticks(forWidth: 6))
+    }
+
     var selectedGroup: Int64? {
         canvas.rebuildIfNeeded()
         let groups = canvas.snapshot.allClips.filter { $0.style == .group && model.selection.contains($0.id) }
