@@ -39,3 +39,25 @@ Status: `todo` · `claimed` · `review` · `done` · `blocked`
 | M1-FMT-2 | format | done | — | `docs/specs/transform.md`: coordinate system, y direction, scale vs `default-scale`, crop edge order, rotation units |
 | M1-FMT-3 | format | done | — | `docs/specs/media-streams.md`: `trackNumber` ↔ stream, stream time origin, `sourceTracks.range`, VFR in `.trec` |
 | M1-APP-1 | app | done | MED-4, REN-3 | Player window: open `.cmproj`, canvas, play/pause/scrub, 60 fps at 1080p, audio clock |
+
+## M1 result (2026-10-19)
+
+All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
+60 fps. Pending on the user: `docs/testing/camtasia-session-1.md`.
+
+## Backlog from M1 agents (for M2+ planning)
+
+| Item | From | Target |
+|---|---|---|
+| Async `VTDecompressionSession` decode (several frames in flight) for high-speed long-GOP HEVC; meanwhile a player policy to drop distinct frames when speed × fps > decode rate | media, app | M2 |
+| Separate `MediaPool` (or thumbnail decoder) for media-bin/filmstrip thumbnails | media | M2 |
+| Min/max peak API for timeline waveforms | media | M2/M8 |
+| Show `MediaPool.cacheStats` in the player overlay | app | M2 |
+| Open Recent menu; audio-device change handling; pitch-preserving speed | app | M2/M8 |
+| Shader time uniform in `LayerContent` for real `.tscshadervid` rendering | render | M4 |
+| Pool offscreen group textures if profiling shows a need | render | M4 |
+| Apply timeline-level `gain` in `AudioSegment` | render | M8 |
+| Ripple, magnetic tracks, edge/playhead snapping, group/ungroup, stitch/unstitch, copy/paste, nested moves, locked tracks, clip speed | timeline | M3 |
+| Resolve crop order, rotation sign, group composition/time, `trimStartSum`, edit semantics from X1–X7 | format | after user session |
+| Fit `eioe` curve with `wizrec-testgen track-marker` on reference exports | qa, format | after user session |
+| Run CI once a GitHub remote exists; check Metal-less runners skip GPU tests | qa | when repo is published |
