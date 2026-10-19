@@ -37,6 +37,13 @@ public struct AssetColor: Sendable, Hashable, Codable {
     }
 }
 
+/// One scalar default as stored in a project's `parameters` dictionary (`key` → `value`).
+public struct PresetValue: Sendable, Hashable {
+    public var key: String
+    public var value: Double
+    public init(_ key: String, _ value: Double) { self.key = key; self.value = value }
+}
+
 /// The value of one asset parameter.
 public enum ParameterValue: Sendable, Hashable {
     case double(Double)
@@ -87,71 +94,15 @@ public struct AssetParameter: Sendable, Hashable {
     /// The scalar keys this parameter takes in a project's `parameters` dictionary, with the default
     /// values: colours split into `<name>-red/-green/-blue/-alpha` (0–1), positions into
     /// `<name>-x/-y` (px), booleans as 0/1 [shader-backgrounds.md §6].
-    public var projectDefaults: [(key: String, value: Double)] {
+    public var projectDefaults: [PresetValue] {
         switch defaultValue {
-        case .double(let v): return [(name, v)]
-        case .bool(let b): return [(name, b ? 1 : 0)]
+        case .double(let v): return [PresetValue(name, v)]
+        case .bool(let b): return [PresetValue(name, b ? 1 : 0)]
         case .color(let c):
-            return [("\(name)-red", c.red), ("\(name)-green", c.green), ("\(name)-blue", c.blue),
-                    ("\(name)-alpha", c.alpha)]
-        case .position(let x, let y): return [("\(name)-x", x), ("\(name)-y", y)]
+            return [PresetValue("\(name)-red", c.red), PresetValue("\(name)-green", c.green),
+                    PresetValue("\(name)-blue", c.blue), PresetValue("\(name)-alpha", c.alpha)]
+        case .position(let x, let y): return [PresetValue("\(name)-x", x), PresetValue("\(name)-y", y)]
         }
-    }
-}
-
-// MARK: JSON form
-
-/// `{"name", "displayName", "type", "default", "min"?, "max"?, "unit"?}` as written in our asset files.
-struct ParameterRecord: Codable {
-    var name: String
-    var displayName: String?
-    var type: AssetParameter.Kind
-    var `default`: DefaultValue
-    var min: Double?
-    var max: Double?
-    var unit: AssetParameter.Unit?
-
-    /// `default` is a number, a hex colour string, a boolean or `[x, y]`.
-    enum DefaultValue: Codable {
-        case number(Double), string(String), bool(Bool), pair([Double])
-
-        init(from decoder: any Decoder) throws {
-            let c = try decoder.singleValueContainer()
-            if let b = try? c.decode(Bool.self) { self = .bool(b) }
-            else if let d = try? c.decode(Double.self) { self = .number(d) }
-            else if let s = try? c.decode(String.self) { self = .string(s) }
-            else { self = .pair(try c.decode([Double].self)) }
-        }
-
-        func encode(to encoder: any Encoder) throws {
-            var c = encoder.singleValueContainer()
-            switch self {
-            case .number(let d): try c.encode(d)
-            case .string(let s): try c.encode(s)
-            case .bool(let b): try c.encode(b)
-            case .pair(let p): try c.encode(p)
-            }
-        }
-    }
-
-    func parameter() throws -> AssetParameter {
-        let value: ParameterValue
-        switch (type, self.default) {
-        case (.double, .number(let d)): value = .double(d)
-        case (.bool, .bool(let b)): value = .bool(b)
-        case (.color, .string(let s)):
-            guard let c = AssetColor(hex: s) else { throw AssetError.invalid("parameter \(name): colour \(s)") }
-            value = .color(c)
-        case (.position, .pair(let p)) where p.count == 2: value = .position(x: p[0], y: p[1])
-        default: throw AssetError.invalid("parameter \(name): default does not match type \(type.rawValue)")
-        }
-        var range: ClosedRange<Double>?
-        if type == .double {
-            guard let lo = min, let hi = max, lo <= hi else { throw AssetError.invalid("parameter \(name): min/max") }
-            range = lo...hi
-        }
-        return AssetParameter(name: name, displayName: displayName ?? name, kind: type, defaultValue: value,
-                              range: range, unit: unit ?? .none)
     }
 }
 
