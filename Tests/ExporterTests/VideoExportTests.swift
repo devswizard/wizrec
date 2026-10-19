@@ -245,3 +245,45 @@ final class ProgressLog: @unchecked Sendable {
     func append(_ v: Double) { lock.lock(); storage.append(v); lock.unlock() }
     var values: [Double] { lock.lock(); defer { lock.unlock() }; return storage }
 }
+
+/// Polling `progress` from the main actor while a movie exports must not slow the export down
+/// (agent "app" saw a crawl with 200 ms polling).
+@Suite(.enabled(if: hasGPU), .serialized) struct ProgressPollingTests {
+    @MainActor @Test func pollingProgressDoesNotStallExport() async throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let p = try movingProject(frames: 290)
+        let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(),
+                                    settings: ExportSettings(format: .mp4(codec: "h264", bitrate: nil)),
+                                    output: dir.appendingPathComponent("poll.mp4"))
+        let t0 = Date()
+        let run = Task.detached { try await session.run() }
+        var polls = 0
+        while await session.progress < 1 {
+            polls += 1
+            try await Task.sleep(nanoseconds: 200_000_000)
+            if Date().timeIntervalSince(t0) > 60 { break }
+        }
+        try await run.value
+        let elapsed = Date().timeIntervalSince(t0)
+        #expect(elapsed < 60, "export with polling took \(elapsed) s (\(polls) polls)")
+    }
+}
+
+struct WorkDirectoryTests {
+    @Test func staleWorkDirectoriesOfDeadProcessesAreSwept() throws {
+        let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let fm = FileManager.default
+        let me = ProcessInfo.processInfo.processIdentifier
+        // PID 99999999 cannot exist (pid_max is far lower); our own PID is alive.
+        let dead = dir.appendingPathComponent(".wizrec-export-99999999-AAAA")
+        let live = dir.appendingPathComponent(".wizrec-export-\(me)-BBBB")
+        let legacy = dir.appendingPathComponent(".wizrec-export-CCCC-DDDD")
+        for d in [dead, live, legacy] { try fm.createDirectory(at: d, withIntermediateDirectories: true) }
+        ExportSession.sweepStaleWorkDirectories(near: dir.appendingPathComponent("out.mp4"))
+        #expect(!fm.fileExists(atPath: dead.path))
+        #expect(fm.fileExists(atPath: live.path))
+        #expect(fm.fileExists(atPath: legacy.path))
+        #expect(ExportSession.workDirectory(for: dir.appendingPathComponent("x.mp4")).lastPathComponent
+                    .hasPrefix(".wizrec-export-\(me)-"))
+    }
+}
