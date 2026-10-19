@@ -62,3 +62,8 @@ Dated log. Newest last.
   `.trec` cursor/click stream layout (CLAUDE.md rule 4.4) with ledger entries.
   No runtime observation of Camtasia (needs user approval, not given). Nothing
   licensing-related, ever.
+- **2026-10-19 · Built-in transitions and backgrounds are our own.** Camtasia's
+  `.tsceffect` transitions and `.tscshadervid` backgrounds are TechSmith
+  assets: WizRec renders one only from the user's copy when a project
+  references it, and never ships or copies them. WizRec's own catalog is
+  written from scratch.
