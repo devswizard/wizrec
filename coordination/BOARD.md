@@ -221,3 +221,7 @@ click-through not done.
 | S4-EXP-1 | export | claimed | Audio prefetch/mix in parallel with video; A/V ≤ 1 frame + determinism tests green; gated perf numbers |
 | S4-QA-1 | qa | claimed | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
 | S4-SHIP-1 | ship | claimed | Strip `ProjectThumbnail` from all `Tests/*/Fixtures/demo.tscproj`; tests needing it read the user's project in place or skip; asset audit clean; CI workflow current |
+
+## Session 4 merges
+
+- qa5 slice 1: LoadGate — timing bounds report as known issues at load avg > 30 (788 tests, 18 golden + 2 LoadGate known issues).
