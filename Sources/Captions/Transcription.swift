@@ -11,9 +11,9 @@ import TimelineEngine
 ///   output frame (`editRate / videoFormatFrameRate`; CP1's words are all whole 30-fps frames
 ///   [obs]). Words that land on an earlier or equal frame are pushed one frame later so times stay
 ///   strictly increasing.
-/// - Closing marks: a `value: ""` keyframe at the word's `end` after the last word, and after any
-///   word followed by at least `closeGap` seconds of silence [WizRec rule; CP1 shows the closing
-///   mark after the last word only].
+/// - Closing marks: a `value: ""` keyframe at the word's `end` after the last word (always; pushed
+///   to the next frame when needed), and after any word followed by at least `closeGap` seconds of
+///   silence [WizRec rule; CP1 shows the closing mark after the last word only].
 /// - Words are trimmed; empty words are skipped. An empty list writes an empty `keyframes` array.
 /// - Replaces any existing transcription of that track. Revert is byte-identical.
 @MainActor public final class ApplyTranscription: EditCommand {
@@ -53,19 +53,19 @@ import TimelineEngine
             var w = w; w.text = w.text.trimmingCharacters(in: .whitespacesAndNewlines); return w
         }.filter { !$0.text.isEmpty }.sorted { $0.start < $1.start }
         var out: [JSON] = []
-        var last: Int64 = -1
-        func mark(_ t: Int64, _ text: String) -> Int64 {
-            let t = max(t, last + step)
+        var last: Int64?
+        func mark(_ t: Int64, _ text: String) {
+            let t = last.map { max(t, $0 + step) } ?? t
             out.append(J.obj([("endTime", J.int(t)), ("time", J.int(t)), ("value", J.str(text)), ("duration", J.int(0))]))
             last = t
-            return t
         }
         for (i, w) in clean.enumerated() {
-            _ = mark(Tree.ticks(w.start, project), w.text)
-            let isLast = i + 1 == clean.count
-            if isLast || clean[i + 1].start - w.end >= closeGap {
-                let end = Tree.ticks(w.end, project)
-                if end > last { _ = mark(end, "") }
+            mark(Tree.ticks(w.start, project), w.text)
+            let end = Tree.ticks(w.end, project)
+            if i + 1 == clean.count {
+                mark(end, "")  // always closed, at least one frame after its start
+            } else if clean[i + 1].start - w.end >= closeGap, let l = last, end > l {
+                mark(end, "")
             }
         }
         return out

@@ -66,8 +66,10 @@ public enum DynamicCaptions {
     /// A whole dynamic-caption `Callout` clip.
     static func callout(id: Int64, start: Int64, duration: Int64, appearance a: DynamicCaptionAppearance,
                         canvas: (w: Double, h: Double), text: String) -> JSONObject {
-        let w = canvas.w * a.widthFraction, h = canvas.h * a.heightFraction
-        let y = -(canvas.h / 2) + canvas.h * a.bottomMargin + h / 2
+        // Rounded to 1/1000 px so float noise (1080 × 0.2 = 216.00000000000003) never reaches the file.
+        func r(_ x: Double) -> Double { (x * 1000).rounded() / 1000 }
+        let w = r(canvas.w * a.widthFraction), h = r(canvas.h * a.heightFraction)
+        let y = r(-(canvas.h / 2) + canvas.h * a.bottomMargin + h / 2)
         return JSONObject([
             ("id", J.int(id)), ("_type", J.str("Callout")),
             ("def", .object(def(a, width: w, height: h, text: text))),
@@ -228,15 +230,21 @@ public enum DynamicCaptions {
 
     public func revert(on project: Project) throws { try swap.restore(in: project) }
 
-    /// Sets `key`; a new key goes before the first key of the same JSON kind that sorts after it.
+    /// Sets `key`. A new key goes right after the largest key of the same JSON kind (number or
+    /// string) that sorts before it, else before the smallest one that sorts after it, else at the
+    /// end. That keeps Camtasia's alphabetical runs intact (`kind`/`shape`/`style` lead the `def`
+    /// out of order, so "the first key that sorts after" would put a new string key before `kind`).
     static func set(_ o: JSONObject, _ key: String, _ v: JSON) -> JSONObject {
         if let old = o[key] {
             // Keep the number lexeme when the value is unchanged.
-            if old.double == v.double, v.double != nil { return o }
+            if old == v || (old.double == v.double && v.double != nil) { return o }
             o[key] = v; return o
         }
         let sameKind: (JSON) -> Bool = { j in v.string != nil ? j.string != nil : j.number != nil }
-        let before = o.entries.first { sameKind($0.value) && $0.key > key }?.key
-        return withKey(o, setting: key, to: v, before: before)
+        let peers = o.entries.filter { sameKind($0.value) }.map(\.key)
+        if let pred = peers.filter({ $0 < key }).max(), let i = o.keys.firstIndex(of: pred) {
+            return withKey(o, setting: key, to: v, before: o.keys.indices.contains(i + 1) ? o.keys[i + 1] : nil)
+        }
+        return withKey(o, setting: key, to: v, before: peers.filter { $0 > key }.min())
     }
 }
