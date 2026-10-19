@@ -19,10 +19,10 @@ enum BuiltInTransitions {
             _FragColor = mix(textureA(_TexCoord), textureB(_TexCoord), _Progress);
         }
         """),
+        // RenderEngine draws Fade, Dissolve and FadeThroughBlack natively with the same maths.
         TransitionAsset(name: "Dissolve", displayName: "Dissolve", category: .fades, glsl: """
         void main() {
-            float p = smoothstep(0.0, 1.0, _Progress);
-            _FragColor = mix(textureA(_TexCoord), textureB(_TexCoord), p);
+            _FragColor = mix(textureA(_TexCoord), textureB(_TexCoord), _Progress);
         }
         """),
         TransitionAsset(name: "FadeThroughBlack", displayName: "Fade Through Black", category: .fades, glsl: """

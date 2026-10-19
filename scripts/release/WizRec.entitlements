@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened-runtime entitlements for Developer ID builds. Not sandboxed (direct download,
+     GPL-3.0; not for the Mac App Store). Camera and microphone are for the recorder; screen
+     capture needs no entitlement, only the user's Screen Recording permission. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.device.camera</key><true/>
+    <key>com.apple.security.device.audio-input</key><true/>
+</dict>
+</plist>

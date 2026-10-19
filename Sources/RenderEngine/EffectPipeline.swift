@@ -171,6 +171,63 @@ final class EffectGPU {
         return out
     }
 
+    // MARK: Runtime-translated programs (GLSL transitions)
+
+    private var customLibraries: [String: any MTLLibrary] = [:]
+    /// Programs that failed to translate or compile, by key, with the reason (never retried).
+    private(set) var customFailures: [String: String] = [:]
+
+    /// A full-texture pipeline for `fragment` from a library compiled once from `source()`,
+    /// cached under `key`. Throws (and remembers the failure) when it cannot be built.
+    func customPipeline(key: String, fragment: String, format: MTLPixelFormat,
+                        source: () throws -> String) throws -> any MTLRenderPipelineState {
+        let pkey = "\(key)|\(fragment)|\(format.rawValue)"
+        if let p = pipelines[pkey] { return p }
+        if let why = customFailures[key] { throw RenderError.shaderCompile(why) }
+        do {
+            let lib: any MTLLibrary
+            if let l = customLibraries[key] { lib = l } else {
+                lib = try device.makeLibrary(source: try source(), options: nil)
+                customLibraries[key] = lib
+            }
+            guard let f = lib.makeFunction(name: fragment), let v = core.makeFunction(name: "fullscreen_vs") else {
+                throw RenderError.shaderCompile("missing function \(fragment)")
+            }
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = v
+            d.fragmentFunction = f
+            d.colorAttachments[0].pixelFormat = format
+            let p = try device.makeRenderPipelineState(descriptor: d)
+            pipelines[pkey] = p
+            return p
+        } catch {
+            customFailures[key] = String(describing: error)
+            throw RenderError.shaderCompile(String(describing: error))
+        }
+    }
+
+    /// One full-texture pass with a custom pipeline: textures in slots 0…, `uniforms` (float4s)
+    /// in buffer 1 → a new pooled texture of `size`.
+    func customPass(_ pipeline: any MTLRenderPipelineState, textures: [(any MTLTexture)?],
+                    uniforms: [SIMD4<Float>], size: (Int, Int),
+                    commandBuffer: any MTLCommandBuffer) throws -> any MTLTexture {
+        let out = try pool.take(width: size.0, height: size.1, format: EffectGPU.format, commandBuffer: commandBuffer)
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = out
+        rp.colorAttachments[0].loadAction = .clear
+        rp.colorAttachments[0].storeAction = .store
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        guard let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) else { return out }
+        enc.setRenderPipelineState(pipeline)
+        var u = uniforms.isEmpty ? [SIMD4<Float>(repeating: 0)] : uniforms
+        enc.setFragmentBytes(&u, length: MemoryLayout<SIMD4<Float>>.stride * u.count, index: 1)
+        enc.setFragmentSamplerState(sampler, index: 0)
+        for (i, t) in textures.enumerated() { enc.setFragmentTexture(t ?? clear, index: i) }
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        enc.endEncoding()
+        return out
+    }
+
     /// Draws a full-texture pass into `target` (cleared first).
     func draw(_ fragment: String, into target: any MTLTexture, textures: [(any MTLTexture)?], fx: Shaders.FX,
               commandBuffer: any MTLCommandBuffer) throws {

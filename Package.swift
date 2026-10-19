@@ -30,7 +30,7 @@ let package = Package(
         ),
         .target(name: "TSCProjKit"),
         .target(name: "MediaEngine", dependencies: ["TSCProjKit", "CFFmpeg"]),
-        .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine", "CaptionLayout"]),
+        .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine", "CaptionLayout", "WizRecAssets"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
         // M2: timeline view (agent "timelineui").
         .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine"]),
@@ -70,7 +70,7 @@ let package = Package(
         .testTarget(name: "MediaEngineTests", dependencies: ["MediaEngine", "TSCProjKit"]),
         .testTarget(
             name: "RenderEngineTests",
-            dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine"],
+            dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine", "WizRecAssets"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

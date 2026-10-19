@@ -1,5 +1,6 @@
 import Foundation
 import Metal
+import WizRecAssets
 
 /// Draws one transition type from the outgoing (`from`) and incoming (`to`) images, both
 /// rendered over the transition layer's full rect. A nil side is transparent
@@ -12,11 +13,18 @@ protocol TransitionRenderer: Sendable {
 }
 
 enum TransitionRegistry {
-    static let renderers: [String: any TransitionRenderer] = [
-        "Fade": FadeTransition(),
-        "Dissolve": FadeTransition(),
-        "FadeThroughBlack": FadeThroughBlackTransition(),
-    ]
+    /// Native Metal transitions, then every other WizRecAssets transition through its GLSL.
+    static let renderers: [String: any TransitionRenderer] = {
+        var r: [String: any TransitionRenderer] = [
+            "Fade": FadeTransition(),
+            "Dissolve": FadeTransition(),
+            "FadeThroughBlack": FadeThroughBlackTransition(),
+        ]
+        for t in AssetCatalog.transitions where r[t.name] == nil {
+            r[t.name] = GLSLTransition(name: t.name, glsl: t.glsl)
+        }
+        return r
+    }()
 
     /// Unknown names (classic transitions without a spec yet, `.tsceffect` names) cross-fade, so
     /// the cut is at least soft and both clips stay visible for the window [inf; placeholder].
