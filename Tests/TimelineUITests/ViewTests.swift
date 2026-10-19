@@ -172,16 +172,16 @@ struct ViewTests {
     }
 
     @Test func dragMovesClipAcrossTracks() throws {
-        let (model, view) = try makeView()
+        let (model, view) = try makeView(pps: 60)
         let w = window(for: view)
         defer { w.close() }
         let canvas = view.canvas
         let L = view.currentLayout
-        // C (track 1, 30–150) dragged to track 0 after B: +210 ticks (1 tick = 4 pt at 120 pt/s).
+        // C (track 1, 30–150) dragged to track 0 after B: +210 ticks (1 tick = 2 pt at 60 pt/s).
         let c = try #require(L.clipRect(track: 1, start: 30, duration: 120))
         let start = CGPoint(x: c.midX, y: c.midY)
         let row0 = L.rowRect(try #require(L.row(forTrack: 0)))
-        let end = CGPoint(x: start.x + 210 * 4, y: row0.midY)
+        let end = CGPoint(x: start.x + 210 * 2, y: row0.midY)
         canvas.mouseDown(with: mouse(.leftMouseDown, start, in: canvas))
         #expect(model.selection == [30])
         canvas.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: start.x + 20, y: start.y), in: canvas))
@@ -200,18 +200,38 @@ struct ViewTests {
     }
 
     @Test func edgeDragTrims() throws {
-        let (model, view) = try makeView()
+        let (model, view) = try makeView(pps: 60)
         let w = window(for: view)
         defer { w.close() }
         let canvas = view.canvas
         let b = try #require(view.currentLayout.clipRect(track: 0, start: 120, duration: 90))
         let p = CGPoint(x: b.maxX - 2, y: b.midY)
         canvas.mouseDown(with: mouse(.leftMouseDown, p, in: canvas))
-        canvas.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: p.x - 120, y: p.y), in: canvas))
-        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: p.x - 120, y: p.y), in: canvas))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: p.x - 60, y: p.y), in: canvas))
+        canvas.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: p.x - 60, y: p.y), in: canvas))
         let clip = try #require(model.project.tracks[0].clips.first { $0.id == 20 })
         #expect(clip.duration == 60)
         #expect(model.undo.undoName == "Trim")
+    }
+
+    @Test func dragNearEdgeAutoscrolls() throws {
+        let (_, view) = try makeView(pps: 60)
+        let w = window(for: view)
+        defer { w.close() }
+        let canvas = view.canvas
+        let c = try #require(view.currentLayout.clipRect(track: 1, start: 30, duration: 120))
+        let start = CGPoint(x: c.midX, y: c.midY)
+        canvas.mouseDown(with: mouse(.leftMouseDown, start, in: canvas))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: start.x + 20, y: start.y), in: canvas))
+        let edge = CGPoint(x: 895, y: start.y)
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, edge, in: canvas))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, edge, in: canvas))
+        let scrolled = view.scrollOffset.x
+        #expect(scrolled > 0)
+        guard case .move(_, let plan) = canvas.drag else { Issue.record("not moving"); return }
+        // Delta follows the pointer in content space: (895 + scroll − start) / 2 pt per tick.
+        #expect(abs(Double(plan.delta) - Double(edge.x + scrolled - start.x) / 2) <= 1)
+        canvas.mouseUp(with: mouse(.leftMouseUp, edge, in: canvas))
     }
 
     @Test func rulerClickSeeks() throws {
@@ -269,6 +289,15 @@ struct ViewTests {
         view.canvas.keyDown(with: key)
         #expect(model.project.tracks[0].clips.count == 3)
         #expect(model.undo.undoName == "Split")
+        // Focus on the outer view forwards keys; an unhandled key does not loop.
+        #expect(w.makeFirstResponder(view))
+        model.playhead = 30
+        view.keyDown(with: key)
+        #expect(model.project.tracks[0].clips.count == 4)
+        let other = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                     windowNumber: w.windowNumber, context: nil, characters: "q",
+                                     charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 12)!
+        view.keyDown(with: other)
     }
 
     @Test func headerButtonTogglesFlag() throws {

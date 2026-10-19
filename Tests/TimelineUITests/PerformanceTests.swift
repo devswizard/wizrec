@@ -78,7 +78,7 @@ struct PerformanceTests {
         #expect(s.allClips.count > 70)
         let rebuild = time(10) { _ = TimelineSnapshot(project: p) }
         let rep = render(view)
-        savePNG(rep, "vlog-fit")
+        if ProcessInfo.processInfo.environment["WIZREC_TUI_PNG_DIR"] != nil { savePNG(rep, "vlog-fit") }
         let draw = time(10) { view.canvas.cacheDisplay(in: view.bounds, to: rep) }
         print(String(format: "TimelineUI vlog: %d clips, rebuild %.2f ms, draw %.2f ms", s.allClips.count, rebuild, draw))
         #expect(draw < 50)

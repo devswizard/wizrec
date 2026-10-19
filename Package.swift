@@ -80,7 +80,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TimelineUITests",
-            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit"],
+            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit", "MediaEngine"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
