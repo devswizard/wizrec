@@ -26,7 +26,7 @@ VERSION=${VERSION:-0.1.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
 # Bundle id is a placeholder until Devs Wizard confirms its domain (see CLAUDE.md "Open decisions").
-# Type identifiers are our own imported declarations; the role is Viewer and the
+# Type identifiers are our own imported declarations; the role is Editor (M2) and the
 # rank Alternate, so WizRec never claims to be the default app for these files.
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -54,7 +54,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <array>
         <dict>
             <key>CFBundleTypeName</key><string>Project Package</string>
-            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
             <key>LSHandlerRank</key><string>Alternate</string>
             <key>LSTypeIsPackage</key><true/>
             <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.cmproj</string></array>
@@ -63,11 +63,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
         </dict>
         <dict>
             <key>CFBundleTypeName</key><string>Project File</string>
-            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
             <key>LSHandlerRank</key><string>Alternate</string>
             <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.tscproj</string></array>
             <key>CFBundleTypeExtensions</key><array><string>tscproj</string></array>
             <key>NSDocumentClass</key><string>ProjectDocument</string>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.devswizard.wizrec.source-id</string>
+            <key>UTTypeDescription</key><string>WizRec media bin item</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
         </dict>
     </array>
     <key>UTImportedTypeDeclarations</key>

@@ -48,7 +48,7 @@ let package = Package(
         .target(name: "TestGenKit", dependencies: ["TSCProjKit"]),
         .executableTarget(name: "wizrec-testgen", dependencies: ["TestGenKit"]),
         // Player logic (clock, frame snapping, audio mix, playback pipeline), testable without UI.
-        .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
+        .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine"]),
         .executableTarget(
             name: "WizRecApp",
             dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine",
@@ -72,7 +72,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlayerKitTests",
-            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit"]
+            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit"]
         ),
         .testTarget(
             name: "GoldenTests",

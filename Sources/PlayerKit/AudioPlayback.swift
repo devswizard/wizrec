@@ -12,7 +12,8 @@ import RenderEngine
 /// `lookaheadSeconds` ahead of what is audible.
 @MainActor
 public final class AudioPlayback {
-    public let scene: SceneModel
+    /// Scene being mixed; swap with `replaceScene(_:)` after an edit.
+    public private(set) var scene: SceneModel
     public let pool: MediaPool
     /// Output sample rate, Hz (the project's `audioFormatSampleRate`).
     public let sampleRate: Double
@@ -66,6 +67,10 @@ public final class AudioPlayback {
         pumpTask = Task { [weak self] in await self?.pump(gen) }
         return true
     }
+
+    /// Uses `newScene` for chunks mixed from now on. Callers restart playback
+    /// (`stop` + `start`) so already scheduled audio does not play the old mix.
+    public func replaceScene(_ newScene: SceneModel) { scene = newScene }
 
     /// Stops playback and drops scheduled audio.
     public func stop() {
