@@ -107,10 +107,10 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 
 | id | owner | status | depends-on | acceptance |
 |---|---|---|---|---|
-| M8-AUD-1 | audio | todo | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
-| M8-AUD-2 | audio | todo | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
-| M8-AUD-3 | audio | todo | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
-| M8-AUD-4 | audio | todo | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
+| M8-AUD-1 | audio | claimed | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
+| M8-AUD-2 | audio | claimed | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
+| M8-AUD-3 | audio | claimed | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
+| M8-AUD-4 | audio | claimed | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
 | M9-EXP-1 | export | todo | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
 | M9-EXP-2 | export | todo | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
 | M9-EXP-3 | export | todo | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
