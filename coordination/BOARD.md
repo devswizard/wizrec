@@ -94,7 +94,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M4-REN-2 | render | claimed | RES-1 | group-1 effects from published specs, golden-ready |
 | M5-REN-1 | render | claimed | M5-RES-1 | callout rendering (own vector shapes, text) |
 | M6-REN-1 | render | claimed | M6-RES-1 | cursor layer + cursor effects |
-| M7-REC-1 | recorder | claimed | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
-| M7-REC-2 | recorder | claimed | REC-1 | mic, system audio, camera |
-| M7-REC-3 | recorder | claimed | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
+| M7-REC-1 | recorder | done | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
+| M7-REC-2 | recorder | done | REC-1 | mic, system audio, camera |
+| M7-REC-3 | recorder | done | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
 | M7-REC-4 | recorder | claimed | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
