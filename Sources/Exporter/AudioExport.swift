@@ -14,7 +14,7 @@ enum AudioFileKind {
 extension ExportSession {
     /// Writes the project mix over `range` as m4a (AAC) or wav (16-bit PCM).
     func writeAudioFile(to url: URL, kind: AudioFileKind, range: Range<Int64>) async throws {
-        let mixer = requireMixer()
+        let mixer = requireMixer(lossy: kind == .m4a)
         var feed = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: range, format: await mixer.format)
         let fileType: AVFileType = kind == .m4a ? .m4a : .wav
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
@@ -46,12 +46,13 @@ extension ExportSession {
         finished = true
     }
 
-    /// Writes the project mix over `range` as MP3 (libavcodec `libmp3lame`, 192 kbit/s CBR,
+    /// Writes the project mix over `range` as MP3 (libavcodec `libmp3lame`, CBR per `MP3Encoder.bitrate`,
     /// libavformat mp3 muxer with a Xing/LAME header for exact length and gapless delay).
     func writeMP3(to url: URL, range: Range<Int64>) async throws {
-        let mixer = requireMixer()
+        let mixer = requireMixer(lossy: true)
         var feed = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: range, format: await mixer.format)
-        let enc = try MP3Encoder(url: url, sampleRate: feed.sampleRate, channels: feed.channels, bitrate: 192_000)
+        let enc = try MP3Encoder(url: url, sampleRate: feed.sampleRate, channels: feed.channels,
+                                 bitrate: MP3Encoder.bitrate(sampleRate: feed.sampleRate))
         let total = Double(max(feed.totalSamples, 1))
         while let chunk = try await feed.nextChunk() {
             if isCancelled { throw ExportError.cancelled }
@@ -76,6 +77,12 @@ final class MP3Encoder {
     private var pts: Int64 = 0
     private var headerWritten = false
     private var finished = false
+
+    /// CBR bitrate, bits/s: 192 k for MPEG-1 rates (≥ 32 kHz), 128 k for MPEG-2 (16–24 kHz,
+    /// max 160 k), 64 k for MPEG-2.5 (≤ 12 kHz, max 64 k).
+    static func bitrate(sampleRate: Int) -> Int {
+        sampleRate >= 32_000 ? 192_000 : sampleRate >= 16_000 ? 128_000 : 64_000
+    }
 
     init(url: URL, sampleRate: Int, channels: Int, bitrate: Int) throws {
         self.channels = channels

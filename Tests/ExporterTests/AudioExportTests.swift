@@ -9,7 +9,7 @@ import Testing
 import TSCProjKit
 @testable import Exporter
 
-/// Click track: 3 s of stereo silence at 48 kHz with 2 ms full-scale bursts at 1.0 s and 2.0 s.
+/// Click track: 3 s of stereo silence at 48 kHz with 2 ms bursts (1 kHz square, ±0.9) at 1.0 s and 2.0 s.
 enum ClickTrack {
     static let rate = 48_000
     static let seconds = 3
@@ -22,7 +22,7 @@ enum ClickTrack {
         var x = [Float](repeating: 0, count: n)
         for c in clicks {
             let s = Int(c * Double(rate))
-            for i in s..<min(s + 96, n) { x[i] = i % 2 == 0 ? 0.9 : -0.9 }
+            for i in s..<min(s + 96, n) { x[i] = (i - s) / 24 % 2 == 0 ? 0.9 : -0.9 }
         }
         // Float32 stereo WAV (both channels equal).
         var d = Data()
@@ -139,8 +139,9 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
     }
 
     /// S3-EXP-1: the output rate is the project's `audioFormatSampleRate`; 48 kHz when absent/invalid.
-    /// (The click is a 24 kHz burst, so rates below 48 kHz near Nyquist would filter it away.)
-    @Test(arguments: [("44100", 44_100), ("48000", 48_000), ("96000", 96_000), (nil, 48_000), ("0", 48_000),
+    /// (The click is a 1 kHz burst, so it survives resampling down to 8 kHz.)
+    @Test(arguments: [("44100", 44_100), ("48000", 48_000), ("96000", 96_000), ("22050", 22_050), ("8000", 8_000),
+                      (nil, 48_000), ("0", 48_000),
                       ("\"44100\"", 48_000)] as [(String?, Int)])
     func wavUsesProjectSampleRate(_ raw: String?, _ want: Int) async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
@@ -158,15 +159,17 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         for (f, w) in zip(found, [want, 2 * want]) { #expect(abs(f - w) <= tol, "onset \(f), want \(w)") }
     }
 
-    @Test(arguments: ["m4a", "mp3"])
-    func compressedAudioUsesProjectSampleRate(_ container: String) async throws {
+    /// AAC/MP3 take 8–48 kHz table rates only: others map to the next higher one (48 kHz above).
+    /// AAC bitrates are capped per rate (22.05 kHz stereo failed at 192 kbit/s).
+    @Test(arguments: ["m4a", "mp3"], [("44100", 44_100.0), ("22050", 22_050), ("37000", 44_100), ("96000", 48_000)])
+    func compressedAudioUsesProjectSampleRate(_ container: String, _ rate: (String, Double)) async throws {
         if container == "mp3" && !mp3Available { return }
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
-        let p = try await avProject(sampleRate: "44100")
+        let p = try await avProject(sampleRate: rate.0)
         let out = dir.appendingPathComponent("a.\(container)")
         try await export(p, ExportSettings(format: .audio(container: container)), to: out)
         let a = try await decodeAudio(out)
-        #expect(a.rate == 44_100)
+        #expect(a.rate == rate.1)
         let found = onsets(a.samples, rate: a.rate).map { a.start + Double($0) / a.rate }
         #expect(found.count == 2)
         for (f, want) in zip(found, [1.0, 2.0]) { #expect(abs(f - want) < 1.0 / 30, "click at \(f), want \(want)") }
@@ -202,7 +205,7 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
     /// Acceptance: A/V sync within 1 frame. The click at timeline 1.0 s must sound at the output
     /// time of the video frame that shows timeline frame 30 (source frame 30 of clip A).
     @Test(.enabled(if: hasGPU), arguments: [ExportFormat.mp4(codec: "h264", bitrate: nil), .mov(profile: "422")],
-          ["44100", "48000"])
+          ["44100", "48000", "22050"])
     func audioAndVideoStayInSync(_ format: ExportFormat, _ rate: String) async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject(sampleRate: rate)
