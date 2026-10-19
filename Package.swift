@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "AudioEngine", targets: ["AudioEngine"]),
         .library(name: "Exporter", targets: ["Exporter"]),
         .library(name: "Captions", targets: ["Captions"]),
+        .library(name: "WizRecAssets", targets: ["WizRecAssets"]),
         .executable(name: "tscproj", targets: ["tscproj"]),
         .executable(name: "WizRec", targets: ["WizRecApp"]),
         .executable(name: "wizrec-testgen", targets: ["wizrec-testgen"]),
@@ -45,6 +46,8 @@ let package = Package(
         .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine", "CaptionLayout"]),
         // M10: pure dynamic-caption layout/state + transcript decoding, shared with RenderEngine (agent "captions").
         .target(name: "CaptionLayout", dependencies: ["TSCProjKit"]),
+        // M11: WizRec's own asset library (backgrounds, transitions, presets, cursors, OFL fonts) (agent "ship").
+        .target(name: "WizRecAssets", resources: [.copy("Resources/Fonts")]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
         // qa: synthetic test media + golden test-project generator (library shared with the tests).
         .target(name: "TestGenKit", dependencies: ["TSCProjKit", "TimelineEngine"]),
@@ -92,6 +95,8 @@ let package = Package(
         .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine"]),
         .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine"]),
         .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine"]),
+        // RenderEngine only to check that every built-in shader translates, compiles and draws.
+        .testTarget(name: "WizRecAssetsTests", dependencies: ["WizRecAssets", "RenderEngine", "MediaEngine"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
             name: "PerfTests",
