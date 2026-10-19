@@ -101,7 +101,7 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | QA-5 | qa | done | RES-1 | EF1–EF9 effect test projects (+ CO1/CO2) in camtasia_rea_refs/effects/ |
 | QA-6 | qa | done | — | `docs/testing/camtasia-session-2.md` |
 | QA-7 | qa | claimed | REN-2 | golden effects harness + ProjectThumbnail extractor |
-| QA-8 | qa | claimed | TL-2 | M2 editing integration tests (command sequences, save/reopen, byte-identical undo) |
+| QA-8 | qa | done | TL-2 | M2 editing integration tests (command sequences, save/reopen, byte-identical undo) |
 
 # Wave B — M8 audio, M9 export, M10 captions
 
@@ -110,11 +110,11 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M8-AUD-1 | audio | done | — | `AudioScene` + `AudioMixer.render`: time mapping, gain × volume keyframes × nested gains, mute/solo, fades/transitions, deterministic + chunk-seamless; tests on synthesized audio + demo |
 | M8-AUD-2 | audio | done | AUD-1 | BS.1770 loudness (integrated LUFS, true peak) + normalisation to `targetLoudness` |
 | M8-AUD-3 | audio | claimed | AUD-1 | pitch-preserving clip speed; noise removal (open model), leveling, ducking, pitch effects by effectName |
-| M8-AUD-4 | audio | claimed | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
+| M8-AUD-4 | audio | done | AUD-1 | PlayerKit switches to AudioMixer (coordinate with app) |
 | M9-EXP-1 | export | claimed | — | MP4 H.264/HEVC + MOV ProRes via AVAssetWriter from OfflineRenderer frames, progress, cancel |
 | M9-EXP-2 | export | claimed | AUD-1 | audio track via AudioMixer, A/V sync ≤ 1 frame; audio-only m4a/wav/mp3 |
 | M9-EXP-3 | export | claimed | EXP-1 | GIF; presets; batch export; export frame N == preview frame N test |
-| M10-CAP-1 | captions | claimed | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
+| M10-CAP-1 | captions | done | — | SRT/VTT import/export; Apple Speech recognizer; `ApplyTranscription` + caption commands |
 | M10-CAP-2 | captions | claimed | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
 | M3-TUI-1 | timelineui | claimed | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
 | M2-APP-4 | app | claimed | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
@@ -149,3 +149,8 @@ worktrees removed; branches kept.
 - app3 slice 1: library panel (search, double-click effects, a11y), Open Recent, M key (490 green). M2-APP-4 remaining: export sheet.
 - audio3 slice 1: AUD-1 AudioMixer + AUD-2 BS.1770 loudness/normalisation (512 green).
 - Decision: MP3 via libmp3lame.
+- timelineui3: nested group editing (520); apply effect/transition, Remove Effect, speed badge, trim limits, no-op skips (595).
+- qa3: QA-8 editing integration tests (527).
+- app3: AUD-4 playback through AudioMixer, basic mix removed (526).
+- captions3: CAP-1 commands, SRT/VTT, TranscriptionBackend + Apple Speech (gated) (587 with ship).
+- ship3 slice 1: WizRecAssets catalog, own shaders/art, 4 OFL fonts.
