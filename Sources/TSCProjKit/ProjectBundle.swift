@@ -18,6 +18,9 @@ public struct ProjectBundle {
     public let directory: URL
     public let projectFile: URL
     public let project: Project
+    /// True for a `.cmproj` package (a folder holding `project.tscproj`),
+    /// false for a bare `.tscproj` file.
+    public let isPackage: Bool
 
     public init(url: URL) throws {
         var isDir: ObjCBool = false
@@ -32,7 +35,16 @@ public struct ProjectBundle {
             directory = url.deletingLastPathComponent()
             projectFile = url
         }
+        isPackage = isDir.boolValue
         project = try Project(contentsOf: projectFile)
+    }
+
+    /// Wraps an in-memory project (used by `create` and `saveAs`).
+    init(directory: URL, projectFile: URL, project: Project, isPackage: Bool) {
+        self.directory = directory
+        self.projectFile = projectFile
+        self.project = project
+        self.isPackage = isPackage
     }
 
     /// Absolute URL for a source's `src`.
