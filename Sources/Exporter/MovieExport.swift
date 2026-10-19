@@ -78,6 +78,29 @@ enum VideoCodec: Equatable {
     }
 }
 
+/// Audio side of a movie export: the feed and its writer input (nil = no audio).
+struct AudioPump {
+    var feed: AudioFeed?
+    let input: AVAssetWriterInput?
+    var done: Bool
+    init(feed: AudioFeed?, input: AVAssetWriterInput?) {
+        self.feed = feed; self.input = input; done = feed == nil || input == nil
+    }
+}
+
+/// Fails an export whose writer accepts nothing for `limit` seconds (instead of spinning forever
+/// if AVAssetWriter's interleaving ever waits on input we cannot give it).
+struct StallWatch {
+    var last = Date()
+    var limit: TimeInterval = 30
+    mutating func progressed() { last = Date() }
+    func check() throws {
+        if Date().timeIntervalSince(last) > limit {
+            throw ExportError.failed("writer stalled for \(Int(limit)) s")
+        }
+    }
+}
+
 /// A rendered output frame handed between pipeline stages.
 // @unchecked: each buffer is owned by exactly one stage at a time (allocated by the session,
 // filled by one render call, then appended to the writer); nothing touches it concurrently.
@@ -162,53 +185,60 @@ extension ExportSession {
             }
         }
 
+        // AVAssetWriter interleaves its inputs: an input stops being ready while the other lags
+        // (or is not marked finished). So never block on one input: feed whichever is ready, keep
+        // audio ≤ `audioLead` s ahead, and mark audio finished as soon as its feed ends.
+        var pump = AudioPump(feed: feed, input: audio)
+        var stall = StallWatch()
+
         for n in 0..<frameCount {
             if isCancelled { throw ExportError.cancelled }
             try schedule()
             let box = try await inFlight.removeFirst().value
             try schedule()
             let pts = timing.presentationTime(frame: n)
-            // Keep audio a little ahead so the writer can interleave.
-            if var f = feed, let audio {
-                try await feedAudio(&f, into: audio, writer: writer, until: pts.seconds + Self.audioLead)
-                feed = f
-            }
-            while !video.isReadyForMoreMediaData {
+            while true {
                 try checkWriter(writer)
-                if var f = feed, let audio, !f.isFinished, audio.isReadyForMoreMediaData {
-                    try await appendAudioChunk(&f, into: audio)
-                    feed = f
-                } else {
-                    try await pause()
-                }
+                if try await pumpAudio(&pump, until: pts.seconds + Self.audioLead) { stall.progressed(); continue }
+                if video.isReadyForMoreMediaData { break }
+                // The writer wants more audio before it takes more video: give it past the lead.
+                if try await pumpAudio(&pump, until: .infinity) { stall.progressed(); continue }
+                try stall.check()
+                try await pause()
             }
             nonisolated(unsafe) let buffer = box.buffer
             guard adaptor.append(buffer, withPresentationTime: pts) else {
                 throw ExportError.failed(writer.error.map { "\($0)" } ?? "append frame \(n)")
             }
+            stall.progressed()
             report(Double(n + 1) / Double(frameCount) * 0.99)
         }
         video.markAsFinished()
-        if var f = feed, let audio {
-            try await feedAudio(&f, into: audio, writer: writer, until: .infinity)
-            audio.markAsFinished()
+        while !pump.done {
+            try checkWriter(writer)
+            if try await pumpAudio(&pump, until: .infinity) { stall.progressed(); continue }
+            try stall.check()
+            try await pause()
         }
-        let end = max(timing.duration, feed.map { CMTime(value: $0.totalSamples, timescale: CMTimeScale($0.sampleRate)) } ?? .zero)
+        let end = max(timing.duration, pump.feed.map { CMTime(value: $0.totalSamples, timescale: CMTimeScale($0.sampleRate)) } ?? .zero)
         writer.endSession(atSourceTime: end)
         try await finish(writer)
         finished = true
     }
 
-    /// Appends audio chunks until `seconds` of output audio are written (or the feed ends).
-    func feedAudio(_ feed: inout AudioFeed, into input: AVAssetWriterInput, writer: AVAssetWriter,
-                   until seconds: Double) async throws {
-        while !feed.isFinished, feed.writtenSeconds < seconds {
-            while !input.isReadyForMoreMediaData {
-                try checkWriter(writer)
-                try await pause()
-            }
-            try await appendAudioChunk(&feed, into: input)
+    /// Appends one audio chunk if the input is ready and audio is < `seconds` ahead, or marks the
+    /// input finished once the feed is exhausted. Returns true when it did something.
+    func pumpAudio(_ pump: inout AudioPump, until seconds: Double) async throws -> Bool {
+        guard !pump.done, var f = pump.feed, let input = pump.input else { return false }
+        if f.isFinished {
+            input.markAsFinished()
+            pump.done = true
+            return true
         }
+        guard f.writtenSeconds < seconds, input.isReadyForMoreMediaData else { return false }
+        try await appendAudioChunk(&f, into: input)
+        pump.feed = f
+        return true
     }
 
     func appendAudioChunk(_ feed: inout AudioFeed, into input: AVAssetWriterInput) async throws {
