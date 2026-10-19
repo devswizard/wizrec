@@ -13,6 +13,14 @@ final class EditorCanvasView: MTKView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    // VoiceOver: the canvas is the video preview; clips are selected on the timeline.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .image }
+    override func accessibilityLabel() -> String? { String(localized: "Canvas preview") }
+    override func accessibilityHelp() -> String? {
+        String(localized: "Shows the frame at the playhead. Click a clip to select it, drag to move it.")
+    }
+
     /// View point (AppKit, +y up) → canvas px (origin centre, +y up).
     func canvasPoint(_ p: CGPoint) -> CGPoint? {
         guard let editor else { return nil }

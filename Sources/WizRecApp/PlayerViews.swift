@@ -20,6 +20,8 @@ struct TransportBar: View {
             Text(tb.timecode(engine.currentTicks))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.primary)
+                .accessibilityLabel("Playhead")
+                .accessibilityValue(tb.timecode(engine.currentTicks))
             Slider(
                 value: Binding(get: { Double(engine.currentFrame) },
                                set: { engine.seek(toFrame: Int64($0.rounded())) }),
@@ -34,24 +36,31 @@ struct TransportBar: View {
                 }
             )
             .controlSize(.small)
+            .accessibilityLabel("Playhead position")
+            .accessibilityValue(tb.timecode(engine.currentTicks))
             Text(tb.timecode(grid.duration))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("Duration")
+                .accessibilityValue(tb.timecode(grid.duration))
             Text("\(engine.currentFrame)")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 44, alignment: .trailing)
                 .help("Frame number")
+                .accessibilityLabel("Frame number")
+                .accessibilityValue("\(engine.currentFrame)")
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.bar)
     }
 
-    private func button(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
+    private func button(_ symbol: String, _ help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol).font(.system(size: 13)) }
             .buttonStyle(.borderless)
             .help(help)
+            .accessibilityLabel(help)
     }
 }
 
@@ -102,6 +111,7 @@ struct CanvasOverlay: View {
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
             .allowsHitTesting(false)
+            .accessibilityAddTraits(.isStaticText)
     }
 
     private var stats: some View {
