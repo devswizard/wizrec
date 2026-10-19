@@ -199,13 +199,30 @@ public final class Compositor {
 public actor OfflineRenderer {
     public let scene: SceneModel
     public let pool: MediaPool
+    /// Frame lookup; `pool.frame` unless a test injects another source.
+    let frames: @Sendable (FrameRequest) async throws -> VideoFrame
+    private var gpu: OfflineGPU?
 
     public init(scene: SceneModel, pool: MediaPool) {
         self.scene = scene; self.pool = pool
+        frames = { [pool] in try await pool.frame($0) }
+    }
+
+    init(scene: SceneModel, pool: MediaPool, frames: @escaping @Sendable (FrameRequest) async throws -> VideoFrame) {
+        self.scene = scene; self.pool = pool; self.frames = frames
     }
 
     /// Frame at timeline `ticks`, at `size` px (default: canvas size).
+    /// Frames whose file is missing or unsupported are left out (the layer is not drawn);
+    /// other decode errors are thrown.
     public func image(at ticks: Int64, size: CGSize? = nil) async throws -> CGImage {
-        throw RenderError.notImplemented
+        if gpu == nil { gpu = try OfflineGPU() }
+        guard let gpu else { throw RenderError.noMetalDevice }
+        let plan = scene.evaluate(at: ticks)
+        let fetched = try await OfflineGPU.fetch(plan.frameRequests, using: frames)
+        let target = size ?? scene.canvasSize
+        return try gpu.render(plan, frames: fetched,
+                                    width: max(Int(target.width.rounded()), 1),
+                                    height: max(Int(target.height.rounded()), 1))
     }
 }
