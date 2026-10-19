@@ -94,6 +94,23 @@ private func secs(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale
         }
     }
 
+    @Test func cacheStatsCountHitsAndMisses() async throws {
+        let dir = try Synth.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("m.mp4")
+        try await Synth.writeMovie(to: url, times: [0, 0.5, 1.0])
+        let pool = MediaPool()
+        #expect(await pool.cacheStats == CacheStats(hits: 0, misses: 0, frames: 0, bytes: 0))
+        _ = try await pool.frame(FrameRequest(url: url, stream: 0, time: secs(0.1)))  // miss
+        _ = try await pool.frame(FrameRequest(url: url, stream: 0, time: secs(0.4)))  // hit (same frame)
+        _ = try await pool.frame(FrameRequest(url: url, stream: 0, time: secs(0.7)))  // miss
+        let s = await pool.cacheStats
+        #expect(s.hits == 1 && s.misses == 2 && s.frames == 2)
+        #expect(s.bytes >= 2 * 320 * 64 * 4) // rows may be padded
+        await pool.purge()
+        #expect(await pool.cacheStats == CacheStats(hits: 0, misses: 0, frames: 0, bytes: 0))
+    }
+
     @Test func sameSourceReused() async throws {
         let dir = try Synth.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
