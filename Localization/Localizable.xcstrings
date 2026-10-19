@@ -10,6 +10,9 @@
     "About WizRec" : {
 
     },
+    "Add Dynamic Captions" : {
+
+    },
     "Add Marker  (M)" : {
 
     },
@@ -31,7 +34,39 @@
     "Back" : {
 
     },
+    "Cancel Transcription" : {
+
+    },
+    "Cannot export captions: %arg" : {
+
+    },
+    "Cannot import %arg: %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cannot import %1$arg: %2$arg"
+          }
+        }
+      }
+    },
+    "Cannot transcribe %arg: %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cannot transcribe %1$arg: %2$arg"
+          }
+        }
+      }
+    },
     "Canvas preview" : {
+
+    },
+    "Captions" : {
+
+    },
+    "Choose an SRT or WebVTT caption file." : {
 
     },
     "Clear Menu" : {
@@ -53,6 +88,12 @@
 
     },
     "Delete" : {
+
+    },
+    "Delete All Captions" : {
+
+    },
+    "Delete Captions" : {
 
     },
     "Delete Crash Reports" : {
@@ -77,6 +118,15 @@
 
     },
     "Every frame (may stutter)" : {
+
+    },
+    "Export Captions as SRT…" : {
+
+    },
+    "Export Captions as WebVTT…" : {
+
+    },
+    "Exported captions to %arg." : {
 
     },
     "Extend Frame" : {
@@ -115,6 +165,12 @@
     "Hide WizRec" : {
 
     },
+    "Import Captions" : {
+
+    },
+    "Import Captions…" : {
+
+    },
     "Import Media" : {
 
     },
@@ -122,6 +178,22 @@
 
     },
     "Import Media… (⌘I)" : {
+
+    },
+    "Imported %arg captions from %arg." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Imported %1$arg captions from %2$arg."
+          }
+        }
+      }
+    },
+    "Imported captions; %arg fall outside any audio clip and were skipped." : {
+
+    },
+    "Importing…" : {
 
     },
     "Kept in ~/Library/Logs/WizRec so you can attach one to a bug report. Never sent. Change it any time in Settings." : {
@@ -236,6 +308,12 @@
     "Select All" : {
 
     },
+    "Select a transcribed audio clip on the timeline." : {
+
+    },
+    "Select an audio clip, or a clip with audio, on the timeline." : {
+
+    },
     "Select clips on the timeline first, or drag the effect onto a clip." : {
 
     },
@@ -284,6 +362,18 @@
     "Snapping" : {
 
     },
+    "Speech recognition does not support %arg." : {
+
+    },
+    "Speech recognition is ready." : {
+
+    },
+    "Speech recognition is unavailable: %arg" : {
+
+    },
+    "Speech recognition needs a download: %arg" : {
+
+    },
     "Speed" : {
 
     },
@@ -294,6 +384,44 @@
 
     },
     "Timeline" : {
+
+    },
+    "Transcribe" : {
+
+    },
+    "Transcribe Selected Audio" : {
+
+    },
+    "Transcribe the clip first (Captions ▸ Transcribe Selected Audio)." : {
+
+    },
+    "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas." : {
+
+    },
+    "Transcribing %arg%arg…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Transcribing %1$arg%2$arg…"
+          }
+        }
+      }
+    },
+    "Transcribing %arg%arg… %arg%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Transcribing %1$arg%2$arg… %3$arg%%"
+          }
+        }
+      }
+    },
+    "Transcription cancelled." : {
+
+    },
+    "Transcription needs the WizRec app bundle (scripts/make-app.sh)." : {
 
     },
     "Undo" : {
@@ -321,6 +449,9 @@
 
     },
     "WizRec keeps this effect in the project but does not draw it yet." : {
+
+    },
+    "WizRec may not use speech recognition. Allow it in System Settings ▸ Privacy & Security ▸ Speech Recognition." : {
 
     },
     "Your privacy" : {

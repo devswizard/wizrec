@@ -89,6 +89,13 @@ private let tb = Timebase.camtasia
 }
 
 @Suite struct LaunchOptionsTests {
+    @Test func parsesCaptionScripting() {
+        let o = LaunchOptions(arguments: ["p.cmproj", "--import-captions", "in.srt", "--export-captions", "out.vtt"])
+        #expect(o.paths == ["p.cmproj"])
+        #expect(o.importCaptions == "in.srt" && o.exportCaptions == "out.vtt")
+        #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+    }
+
     @Test func parsesPathsAndFlags() {
         let o = LaunchOptions(arguments: ["-NSDocumentRevisionsDebugMode", "YES", "--autoplay", "/a b.cmproj",
                                           "--seek", "3.5", "-psn_0_123", "--stats-log", "--no-audio",

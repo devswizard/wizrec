@@ -86,7 +86,10 @@ struct CanvasOverlay: View {
                 banner(color: .black.opacity(0.75), text: m)
             }
             if ui.isImporting {
-                banner(color: .blue, text: "Importing…")
+                banner(color: .blue, text: String(localized: "Importing…"))
+            }
+            if let a = ui.activity {
+                banner(color: .blue, text: a)
             }
             if ui.showOverlay {
                 stats.allowsHitTesting(false)

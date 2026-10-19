@@ -11,6 +11,8 @@ final class EditorUIState {
     /// Last error or status line shown above the canvas; cleared after a few seconds.
     var message: String?
     var isImporting = false
+    /// A long-running job's status (e.g. "Transcribing voice.wav… 40%"); nil when idle.
+    var activity: String?
     private var messageToken = 0
 
     func show(_ text: String, seconds: Double = 6) {

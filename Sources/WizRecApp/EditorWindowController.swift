@@ -1,4 +1,5 @@
 import AppKit
+import Captions
 import MetalKit
 import PlayerKit
 import QuartzCore
@@ -41,6 +42,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var recorderHUD: RecorderHUDController?
     /// Playhead (ticks) when the current recording started; the result is placed there.
     private var recordingStart: Int64 = 0
+    /// The running transcription (Captions ▸ Transcribe); cancel with Captions ▸ Cancel.
+    var transcription: Task<Void, Never>?
 
     init(document: ProjectDocument, model: EditorDocumentModel, options: LaunchOptions) {
         self.model = model
@@ -186,7 +189,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
               + "canvas=\(Int(model.scene.canvasSize.width))x\(Int(model.scene.canvasSize.height)) "
               + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
         fflush(stdout)
-        if options.snapshotDir != nil || !options.importPaths.isEmpty {
+        if options.snapshotDir != nil || !options.importPaths.isEmpty || options.importCaptions != nil
+            || options.exportCaptions != nil {
             Task { await runScript() }
         } else {
             if options.autoplay { engine.play() }
@@ -269,7 +273,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     // MARK: Edits
 
-    private func run(_ what: String, _ body: () throws -> Void) {
+    func run(_ what: String, _ body: () throws -> Void) {
         do {
             try body()
             inspector.error = nil
@@ -539,6 +543,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             run("Move") { try model.set(i.changes(.positionX, x) + i.changes(.positionY, y)) }
             print("script: moved clip \(id) by \(n.x),\(n.y) px; error=\(inspector.error ?? "none")")
         }
+        if let c = options.importCaptions {
+            importCaptions(from: URL(fileURLWithPath: (c as NSString).expandingTildeInPath))
+            print("script: captions now \(CaptionFiles.cues(in: model.project).count) cues; \(ui.message ?? "")")
+        }
+        if let c = options.exportCaptions {
+            let url = URL(fileURLWithPath: (c as NSString).expandingTildeInPath)
+            let text = url.pathExtension.lowercased() == "vtt" ? CaptionFiles.vtt(model.project) : CaptionFiles.srt(model.project)
+            do {
+                try Data(text.utf8).write(to: url, options: .atomic)
+                print("script: exported captions to \(url.path)")
+            } catch {
+                print("script: export captions failed: \(Self.describe(error))")
+            }
+        }
         if options.select, timelineModel.selection.isEmpty, let first = model.project.tracks.flatMap(\.clips).last {
             select([first.id])
         }
@@ -761,6 +779,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if let a = item.action, Self.forwarded.contains(a) { return timelineView.validateMenuItem(item) }
+        if let a = item.action, let ok = validateCaptionsItem(a) { return ok }
         switch item.action {
         case #selector(togglePerformanceOverlay(_:)):
             item.title = ui.showOverlay ? "Hide Performance Overlay" : "Show Performance Overlay"
@@ -793,6 +812,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     /// Stops the display link, audio and decoding. Idempotent.
     func shutdown() {
+        transcription?.cancel()
         link?.invalidate()
         link = nil
         if let m = keyMonitor { NSEvent.removeMonitor(m) }
