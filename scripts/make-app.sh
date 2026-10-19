@@ -51,6 +51,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleLocalizations</key><array>$LOCALIZATIONS</array>
+    <key>NSCameraUsageDescription</key><string>WizRec records your camera when you include it in a recording.</string>
+    <key>NSMicrophoneUsageDescription</key><string>WizRec records your microphone when you include it in a recording.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>WizRec transcribes your clips' audio to create captions. Audio is processed on this Mac.</string>
     <key>CFBundleExecutable</key><string>WizRec</string>
     <key>CFBundleIdentifier</key><string>com.devswizard.WizRec</string>

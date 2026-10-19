@@ -7,6 +7,9 @@
     "%arg" : {
 
     },
+    "3D" : {
+
+    },
     "About WizRec" : {
 
     },
@@ -130,6 +133,9 @@
 
     },
     "Extend Frame" : {
+
+    },
+    "Fades" : {
 
     },
     "Fast playback" : {
@@ -326,6 +332,9 @@
     "Settings…" : {
 
     },
+    "Shapes" : {
+
+    },
     "Show All" : {
 
     },
@@ -357,6 +366,9 @@
 
     },
     "Skip frames, show nearest while seeking" : {
+
+    },
+    "Slides" : {
 
     },
     "Snapping" : {
@@ -440,6 +452,9 @@
 
     },
     "Window" : {
+
+    },
+    "Wipes" : {
 
     },
     "WizRec" : {
