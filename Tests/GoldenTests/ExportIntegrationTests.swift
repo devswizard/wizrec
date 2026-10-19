@@ -76,7 +76,7 @@ private struct ExportFixture {
 /// Index of the first sample whose magnitude exceeds `threshold`.
 private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex { abs($0) > threshold } }
 
-@Suite(.serialized) @MainActor struct ExportIntegrationTests {
+@Suite(.serialized, .timeLimit(.minutes(2))) @MainActor struct ExportIntegrationTests {
 
     /// Exported frame N shows what the preview renderer draws at frame N (SSIM ≥ 0.95 through
     /// H.264) and the same source frame (barcode), across a split and a gap.
@@ -97,7 +97,9 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         #expect(abs(info.duration * 30 - Double(expectedFrames)) < 0.5, "duration \(info.duration) s")
 
         // Frame → source frame shown (nil = background in the gap).
-        let probes: [Int: Int?] = [0: 0, 7: 7, 19: 19, 20: nil, 25: nil, 30: 20, 41: 31, expectedFrames - 1: 59]
+        // Video ends at frame 70; the click's audio clip runs to 2.5 s (frame 75), so the tail is background.
+        #expect(expectedFrames == 75)
+        let probes: [Int: Int?] = [0: 0, 7: 7, 19: 19, 20: nil, 25: nil, 30: 20, 41: 31, 69: 59, 72: nil]
         let exported = try await MovieFrameReader.frames(out, indices: Array(probes.keys))
         let renderer = OfflineRenderer(scene: f.scene, pool: MediaPool())
         for (n, source) in probes.sorted(by: { $0.key < $1.key }) {

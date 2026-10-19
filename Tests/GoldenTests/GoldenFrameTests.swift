@@ -1,4 +1,9 @@
+import CoreGraphics
 import Foundation
+import MediaEngine
+import Metal
+import RenderEngine
+import TSCProjKit
 import TestGenKit
 import Testing
 
@@ -18,6 +23,47 @@ import Testing
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
         #expect(files == ["frame-00012-diff4x.png", "frame-00012-reference.png", "frame-00012-rendered.png",
                           "frame-00012-ssim.png"])
+    }
+}
+
+/// End-to-end check of `runGoldenCase` without Camtasia: WizRec's own frames as
+/// `reference.mp4` pass; the same frames one frame late fail.
+@Suite(.serialized, .enabled(if: MTLCreateSystemDefaultDevice() != nil, "needs a Metal device"))
+struct GoldenHarnessSelfTests {
+    @Test @MainActor func ownRenderPassesAndOneFrameLateFails() async throws {
+        let dir = try scratchDir("golden-self")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let media = try TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
+        let testCase = try #require(TestGen.cases.first { $0.name == "keyframes-linear" })
+        let caseDir = try TestGen.write(testCase, media: media, to: dir)
+        let golden = GoldenCase(name: testCase.name, directory: caseDir)
+        let m = try golden.manifest()
+        let bundle = try ProjectBundle(url: golden.url(m.project))
+        let renderer = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve), pool: MediaPool())
+
+        /// Reference movie with WizRec's frame `n + offset` at each compared index (others black).
+        func writeReference(offset: Int) async throws {
+            var images: [Int: CGImage] = [:]
+            for n in m.frames {
+                images[n] = try await renderer.image(at: Golden.ticks(frame: n + offset, fps: m.fps, editRate: 705_600_000),
+                                                     size: CGSize(width: m.width, height: m.height))
+            }
+            try MediaWriter.writeH264(to: golden.url(m.reference), width: m.width, height: m.height, fps: m.fps,
+                                      frameCount: (m.frames.max() ?? 0) + 1, bitsPerSecond: 40_000_000) { n, ctx in
+                if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: m.width, height: m.height)) }
+            }
+        }
+        try await writeReference(offset: 0)
+        let scores = try #require(try await runGoldenCase(golden))
+        #expect(scores.count == m.frames.count)
+        let failed = scores.filter { !$0.passed }.map(\.description)
+        #expect(failed.isEmpty, "\(failed)")
+
+        try await writeReference(offset: 1)
+        await withKnownIssue("reference one frame late on purpose") {
+            let late = try #require(try await runGoldenCase(golden))
+            #expect(late.contains { !$0.passed })
+        }
     }
 }
 

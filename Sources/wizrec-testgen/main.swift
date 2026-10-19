@@ -56,22 +56,12 @@ if args.first == "track-marker" {
     do {
         try await MovieFrameReader.forEachFrame(URL(fileURLWithPath: path)) { n, _, pb in
             guard let img = RGBAImage(pixelBuffer: pb) else { return true }
-            var sx = 0.0, sy = 0.0, count = 0.0
-            for y in 0..<img.height {
-                for x in 0..<img.width {
-                    let p = img.pixel(x, y)
-                    // Marker fill: magenta (242, 26, 217); its white cross is ignored. The
-                    // test cards' 75 % magenta bar (191, 0, 191) stays below the red cut.
-                    if p.r > 215, p.g < 90, p.b > 180 { sx += Double(x); sy += Double(y); count += 1 }
-                }
-            }
-            if count == 0 {
-                print("\(n),0,,,,")
-            } else {
-                let cx = sx / count + 0.5, cy = sy / count + 0.5
+            if let c = MarkerTracker.centroid(img) {
                 let kx = canvas.w / Double(img.width), ky = canvas.h / Double(img.height)
-                print(String(format: "%d,%.0f,%.3f,%.3f,%.3f,%.3f", n, count, cx, cy,
-                             cx * kx - canvas.w / 2, canvas.h / 2 - cy * ky))
+                print(String(format: "%d,%d,%.3f,%.3f,%.3f,%.3f", n, c.pixels, c.x, c.y,
+                             c.x * kx - canvas.w / 2, canvas.h / 2 - c.y * ky))
+            } else {
+                print("\(n),0,,,,")
             }
             return true
         }

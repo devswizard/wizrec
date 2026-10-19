@@ -35,6 +35,9 @@ enum Golden {
 
     static var dumpAll: Bool { ProcessInfo.processInfo.environment["GOLDEN_DUMP"] == "1" }
 
+    /// Allowed marker-centroid distance, px: 2 px at 1920 wide, scaled with the frame.
+    static func markerTolerance(width: Int) -> Double { max(1, 2 * Double(width) / 1920) }
+
     /// Every `<case>/golden.json` under `REFS_DIR`, by name; empty without `REFS_DIR`.
     static func discover() -> [GoldenCase] {
         guard let root = refsDir,
@@ -89,9 +92,12 @@ struct FrameScore: CustomStringConvertible {
     let frame: Int
     let ssim: Double
     let psnr: Double
+    /// Luma SSIM over the foreground box (`SheetGolden.foregroundBox`); nil when the frame is all background.
+    var foregroundSSIM: Double? = nil
     let passed: Bool
     var description: String {
-        String(format: "frame %4d  SSIM %.4f  PSNR %6.2f dB  %@", frame, ssim, psnr, passed ? "ok" : "FAIL")
+        String(format: "frame %4d  SSIM %.4f  fg %@  PSNR %6.2f dB  %@", frame, ssim,
+               foregroundSSIM.map { String(format: "%.4f", $0) } ?? "–", psnr, passed ? "ok" : "FAIL")
     }
 }
 
@@ -116,6 +122,8 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
     let renderer = OfflineRenderer(scene: scene, pool: MediaPool())
     let editRate = bundle.project.timebase.editRate
     let references = try await MovieFrameReader.frames(refURL, indices: m.frames)
+    let bg = scene.evaluate(at: 0).background
+    let bg8 = (UInt8((bg.r * 255).rounded()), UInt8((bg.g * 255).rounded()), UInt8((bg.b * 255).rounded()))
 
     var scores: [FrameScore] = []
     for n in m.frames {
@@ -131,8 +139,35 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
         }
         let ssim = Metrics.ssim(rendered, reference)
         let psnr = Metrics.psnr(rendered, reference)
-        let passed = ssim.mean >= m.ssimMin && psnr >= (m.psnrMin ?? -.infinity)
-        let score = FrameScore(frame: n, ssim: ssim.mean, psnr: psnr, passed: passed)
+        // A small clip moving over the background barely dents whole-frame SSIM when it is a
+        // frame off (see SheetGolden.foregroundBox), so the foreground box must pass too.
+        var fg: Double?
+        if let b = SheetGolden.foregroundBox(rendered, reference, background: bg8), b.w > 11, b.h > 11,
+           b.w * b.h < rendered.width * rendered.height * 9 / 10 {
+            fg = Metrics.ssim(rendered.cropped(x: b.x, y: b.y, width: b.w, height: b.h),
+                              reference.cropped(x: b.x, y: b.y, width: b.w, height: b.h)).mean
+        }
+        // Marker cases: the magenta marker must sit where the reference has it (whole-frame
+        // SSIM stays ≥ 0.996 with the marker one frame / 27 px off; the centroid does not).
+        var markerOff: Double?
+        if let a = MarkerTracker.centroid(rendered), a.pixels >= 100 {
+            // Search the reference only near the rendered marker (±3 marker sizes).
+            let r = Int(3 * Double(a.pixels).squareRoot()), cx = Int(a.x), cy = Int(a.y)
+            let win = (cx - r, cy - r, cx + r, cy + r)
+            if let a2 = MarkerTracker.centroid(rendered, window: win),
+               let b = MarkerTracker.centroid(reference, window: win), b.pixels >= a2.pixels / 4 {
+                markerOff = hypot(a2.x - b.x, a2.y - b.y)
+            } else {
+                markerOff = .infinity  // marker missing near where WizRec draws it
+            }
+        }
+        let markerOK = (markerOff ?? 0) <= Golden.markerTolerance(width: rendered.width)
+        if let markerOff, !markerOK {
+            print(String(format: "golden %@ frame %d: marker %.1f px off", m.caseName, n, markerOff))
+        }
+        let passed = ssim.mean >= m.ssimMin && (fg ?? 1) >= m.ssimMin && markerOK
+            && psnr >= (m.psnrMin ?? -.infinity)
+        let score = FrameScore(frame: n, ssim: ssim.mean, psnr: psnr, foregroundSSIM: fg, passed: passed)
         scores.append(score)
         print("golden \(m.caseName): \(score)")
         if !passed || Golden.dumpAll {
