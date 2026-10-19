@@ -31,7 +31,7 @@ default, plus crops on most video clips [obs].
 | `scale0`, `scale1` | 1 | never absent where `default-scale` ≠ 1 [inf] |
 | `rotation0`, `rotation1`, `rotation2` | 0 | [inf] |
 | `geometryCrop0..3`, `sourceCrop0..3` | 0 | [inf] |
-| `opacity` | 1 | absent on all 261 non-callout, non-image clips, which render visible [obs] |
+| `opacity` | 1 | absent on all 261 non-callout, non-image clips; the demo ones render fully visible in its thumbnail [obs] |
 | `volume` | 1 | written only on `Group` and `StitchedMedia`, always 1.0 (17) [obs] |
 
 ## Audio attributes (`attributes.*` on `AMFile`, `StitchedMedia`, `Group`)
