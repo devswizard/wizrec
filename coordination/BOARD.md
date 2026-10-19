@@ -170,3 +170,24 @@ worktrees removed; branches kept.
 - app3: export sheet (batch presets, overrides, progress/cancel), `--export` flag (698). M2-APP-4 done.
 - export3: stale work-dir sweep (700).
 - **Session 2 complete: all agents DONE, all branches merged, 700 green.** Follow-ups in docs/HANDOFF.md §0a.
+
+## Session 3 (2026-10-19)
+
+Main green at start: 700 tests (18 known issues). No stale worktrees.
+User inputs: no Camtasia references yet (no researcher, golden gates stay
+skipped); recorder real capture OK; live speech OK; whisper.cpp reported
+installed but not found on disk (backend runtime-detected); no GitHub remote,
+Developer ID or Sparkle approval (no ship agent).
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| S3-TL-1 | timeline | claimed | `AddTrack`/`RemoveTrack` inside a group, media drop into an open group: expected-JSON + byte-identical undo tests |
+| S3-TUI-1 | timelineui | claimed | Group-track add/remove + media drops in open groups in the UI, on S3-TL-1 commands |
+| S3-TUI-2 | timelineui | claimed | Dynamic caption style as an inspector section (with app) |
+| S3-REN-1 | render | claimed | Parallel `OfflineRenderer`: several frames in flight, deterministic, frame N unchanged; ≥ 4× real time 1080p (perf test gated) |
+| S3-REN-2 | render | claimed | Optional: particle shaders (vertexCode), HDR tone mapping |
+| S3-EXP-1 | export | claimed | Audio export sample rate from `audioFormatSampleRate` (additive AudioScene API) |
+| S3-EXP-2 | export | claimed | Confirm-before-cancel hook for the app; use render's parallel path |
+| S3-APP-1 | app | claimed | Export sheet confirm on window close; wire group/inspector features; make-app.sh + String Catalog current |
+| S3-CAP-1 | captions | claimed | whisper.cpp backend via `whisper-cli` subprocess, runtime-detected, gated live test; fake-binary unit tests |
+| S3-QA-1 | qa | claimed | Integration tests for every new command/feature; flaky watch; golden re-run ready for references |
