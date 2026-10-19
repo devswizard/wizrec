@@ -86,10 +86,10 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M2-APP-1 | app | claimed | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
 | M2-APP-2 | app | claimed | TL-1 | new/open/save/save-as (backup), import (drag-drop + menu), relink missing media |
 | M2-APP-3 | app | claimed | — | inspector edits via `SetParameter`; cacheStats in overlay; high-speed frame policy |
-| M4-RES-1 | researcher | todo | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
-| M4-RES-2 | researcher | todo | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
-| M5-RES-1 | researcher | todo | — | spec: callouts (shapes, text, fills, strokes, tails) |
-| M6-RES-1 | researcher | todo | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
+| M4-RES-1 | researcher | claimed | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
+| M4-RES-2 | researcher | claimed | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
+| M5-RES-1 | researcher | claimed | — | spec: callouts (shapes, text, fills, strokes, tails) |
+| M6-RES-1 | researcher | claimed | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
 | M4-REN-1 | render | claimed | — | effect pipeline (offscreen + passes), shader backgrounds for real, transition framework + fade |
 | M4-REN-2 | render | claimed | RES-1 | group-1 effects from published specs, golden-ready |
 | M5-REN-1 | render | claimed | M5-RES-1 | callout rendering (own vector shapes, text) |
