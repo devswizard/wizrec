@@ -145,6 +145,22 @@ public protocol MediaSource: AnyObject, Sendable {
     func thumbnail(stream: Int, at time: CMTime, maxPixelSize: Int) async throws -> CGImage
 }
 
+/// Frame-cache counters of a `MediaPool`.
+public struct CacheStats: Sendable, Equatable {
+    /// `frame(_:)` calls answered from the cache.
+    public var hits: Int
+    /// `frame(_:)` calls that had to decode (pre-roll decodes are not counted).
+    public var misses: Int
+    /// Frames currently cached.
+    public var frames: Int
+    /// Bytes currently held by cached frames.
+    public var bytes: Int
+
+    public init(hits: Int, misses: Int, frames: Int, bytes: Int) {
+        self.hits = hits; self.misses = misses; self.frames = frames; self.bytes = bytes
+    }
+}
+
 /// Opens and caches media sources and decoded frames. One per document.
 public actor MediaPool {
     public let cacheLimitBytes: Int
@@ -245,6 +261,13 @@ public actor MediaPool {
         prefetchQueue.removeAll()
         cache.removeAll()
         sources.removeAll()
+        cacheHits = 0
+        cacheMisses = 0
+    }
+
+    /// Frame-cache counters since creation or the last `purge()`.
+    public var cacheStats: CacheStats {
+        CacheStats(hits: cacheHits, misses: cacheMisses, frames: cache.count, bytes: cache.totalBytes)
     }
 
     /// Bytes currently held by the frame cache.
