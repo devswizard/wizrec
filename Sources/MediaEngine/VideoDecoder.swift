@@ -68,7 +68,13 @@ actor VideoDecoder {
 /// software lane is playing forward, the hardware lane is repositioned in the background just
 /// ahead of the playhead and takes over there.
 ///
-/// Both lanes return identical frames for a time (same frame rule), so switching is invisible.
+/// Both lanes return byte-identical frames for a time, so switching is invisible and a frame
+/// never depends on decode history: they pick the same picture (same frame rule), H.264/HEVC
+/// decoding is bit-exact, and both convert YCbCr to BGRA through one path (`FrameConverter`:
+/// software pictures are staged into the bi-planar layout VideoToolbox returns, both get the
+/// same stream-level colour tags, one `VTPixelTransferSession` converts). Exception: software
+/// formats with no bi-planar CoreVideo equivalent (12-bit, alpha, e.g. ProRes 4444) fall back
+/// to swscale and may differ from the hardware lane by rounding.
 /// Codecs without hardware decode (tscc2, …) use one software lane.
 actor VideoStreamDecoder {
     nonisolated let url: URL
@@ -262,7 +268,7 @@ final class VideoDecodeCore {
             kf.sort()
         }
         self.keyframes = kf
-        self.converter = FrameConverter(codec: par.pointee.codec_id)
+        self.converter = FrameConverter(par: par)
 
         if allowHardware, Self.asyncVideoToolboxEnabled,
            let vt = VTPictureDecoder(par: par, depth: Self.asyncDepth) {
