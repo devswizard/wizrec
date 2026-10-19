@@ -50,10 +50,12 @@ struct PixelBufferBox: @unchecked Sendable {
         let (scene, dir) = try await RenderPerf.demoCopy()
         defer { try? FileManager.default.removeItem(at: dir) }
         let pool = MediaPool()
+        let clock = ContinuousClock()
+        let tInit0 = clock.now
         let gpu = try OfflineGPU()
+        let tInit = clock.now - tInit0
         let ticks = RenderPerf.ticks(fps: 30, scene: scene)
         nonisolated(unsafe) let pb = try Buffers.make(1920, 1080)
-        let clock = ContinuousClock()
         var tEval = Duration.zero, tFetch = Duration.zero, tGPU = Duration.zero
         for (n, t) in ticks.enumerated() {
             let t0 = clock.now
@@ -69,7 +71,11 @@ struct PixelBufferBox: @unchecked Sendable {
                 } catch { c.resume(throwing: error) }
             }
             let t3 = clock.now
-            if n > 0 { tEval += t1 - t0; tFetch += t2 - t1; tGPU += t3 - t2 }  // frame 0 = warm-up
+            if n > 0 { tEval += t1 - t0; tFetch += t2 - t1; tGPU += t3 - t2 } else {  // frame 0 = warm-up
+                RenderPerf.report(String(format: "cold start: OfflineGPU() %.0f ms, first evaluate %.1f ms, first fetch %.0f ms, first GPU frame %.0f ms",
+                                         RenderPerf.seconds(tInit) * 1000, RenderPerf.seconds(t1 - t0) * 1000,
+                                         RenderPerf.seconds(t2 - t1) * 1000, RenderPerf.seconds(t3 - t2) * 1000))
+            }
         }
         let k = Double(ticks.count - 1) / 1000
         RenderPerf.report(String(format: "sequential per frame: evaluate %.2f ms, fetch %.2f ms, GPU %.2f ms (%d frames)",
