@@ -26,7 +26,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     let timelineModel: TimelineModel
     let inspector = InspectorState()
     private weak var projectDocument: ProjectDocument?
-    private let options: LaunchOptions
+    let options: LaunchOptions
     private let canvas: EditorCanvasView
     private let selectionOverlay = SelectionOverlayView()
     private let timelineView: TimelineUI.TimelineView
@@ -50,6 +50,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     var exportSheet: NSWindow?
     let exportState = ExportSheetState()
     var exportSpecs: [Int: ExportJobSpec] = [:]
+    /// Asks before a close or quit cancels running exports.
+    let exportCloseGuard = ExportCloseGuard()
     /// Exports decode on their own pool so they never evict playback frames.
     lazy var exportPool = MediaPool(cacheLimitBytes: 256 << 20)
     lazy var exportQueue: ExportQueue = Self.makeExportQueue(

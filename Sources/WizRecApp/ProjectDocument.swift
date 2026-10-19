@@ -136,6 +136,41 @@ final class ProjectDocument: NSDocument {
         addWindowController(EditorWindowController(document: self, model: model, options: AppEnvironment.options))
     }
 
+    /// Window close (and closing during quit): ask before cancelling running exports, then
+    /// continue with NSDocument's usual unsaved-changes review.
+    override func canClose(withDelegate delegate: Any, shouldClose shouldCloseSelector: Selector?,
+                           contextInfo: UnsafeMutableRawPointer?) {
+        guard let wc = windowControllers.lazy.compactMap({ $0 as? EditorWindowController }).first,
+              wc.exportsBlockingClose > 0 else {
+            super.canClose(withDelegate: delegate, shouldClose: shouldCloseSelector, contextInfo: contextInfo)
+            return
+        }
+        let context = CloseContext(delegate: delegate, selector: shouldCloseSelector, info: contextInfo)
+        wc.confirmCancellingExports { [weak self] ok in
+            guard let self else { return }
+            if ok {
+                self.canClose(withDelegate: context.delegate, shouldClose: context.selector, contextInfo: context.info)
+            } else {
+                self.reply(false, to: context)
+            }
+        }
+    }
+
+    /// NSDocument's close callback arguments, kept across the alert.
+    private struct CloseContext {
+        let delegate: Any
+        let selector: Selector?
+        let info: UnsafeMutableRawPointer?
+    }
+
+    /// Calls `- (void)document:(NSDocument *)doc shouldClose:(BOOL)flag contextInfo:(void *)info` on the delegate.
+    private func reply(_ flag: Bool, to c: CloseContext) {
+        guard let sel = c.selector, let obj = c.delegate as? NSObject, obj.responds(to: sel) else { return }
+        typealias Fn = @convention(c) (NSObject, Selector, NSDocument, ObjCBool, UnsafeMutableRawPointer?) -> Void
+        let fn = unsafeBitCast(obj.method(for: sel), to: Fn.self)
+        fn(obj, sel, self, ObjCBool(flag), c.info)
+    }
+
     override func close() {
         for wc in windowControllers { (wc as? EditorWindowController)?.shutdown() }
         model?.discardUntitled()

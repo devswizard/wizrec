@@ -58,3 +58,39 @@ private struct Boom: Error {}
         #expect(q.pendingOutputs.isEmpty)
     }
 }
+
+@Suite @MainActor struct ExportCloseGuardTests {
+    private let dir = URL(fileURLWithPath: "/tmp/out")
+
+    @Test func asksOnlyWhileExportsAreActive() {
+        let g = ExportCloseGuard()
+        #expect(g.decide(activeJobs: 0) == .proceed)
+        #expect(g.decide(activeJobs: 2) == .ask(jobs: 2))
+        #expect(g.decide(activeJobs: 2, scripted: true) == .proceed)
+        g.beginAsking()
+        #expect(g.isAsking)
+        g.answer(cancelExports: false)
+        #expect(!g.isAsking)
+        #expect(g.decide(activeJobs: 1) == .ask(jobs: 1))
+        g.answer(cancelExports: true)
+        #expect(g.decide(activeJobs: 1) == .proceed)
+    }
+
+    @Test func activeCountAndCancelAllAndWait() async {
+        let q = ExportQueue { _, _, progress in
+            progress(0.1)
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        #expect(q.activeJobCount == 0)
+        await q.cancelAllAndWait()
+        _ = q.add(name: "A", output: dir.appendingPathComponent("a.mp4"))
+        _ = q.add(name: "B", output: dir.appendingPathComponent("b.mp4"))
+        #expect(q.activeJobCount == 2)
+        while q.jobs.first?.state == .waiting { await Task.yield() }
+        #expect(q.activeJobCount == 2)
+        await q.cancelAllAndWait()
+        #expect(!q.isRunning)
+        #expect(q.activeJobCount == 0)
+        #expect(q.jobs.map(\.state) == [.cancelled, .cancelled])
+    }
+}

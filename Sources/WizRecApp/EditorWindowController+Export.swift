@@ -117,3 +117,66 @@ extension EditorWindowController {
         }
     }
 }
+
+// MARK: Closing while exporting
+
+extension EditorWindowController {
+    /// Exports a close or quit would cancel; 0 when none or when the user already agreed.
+    var exportsBlockingClose: Int {
+        if case .ask(let n) = exportCloseGuard.decide(activeJobs: exportQueue.activeJobCount,
+                                                       scripted: options.exportPath != nil) { return n }
+        return 0
+    }
+
+    /// Asks whether to cancel the running exports (sheet on this window), then cancels them and
+    /// waits until their partial files are removed. `done(true)` = go ahead and close.
+    func confirmCancellingExports(_ done: @escaping @MainActor (Bool) -> Void) {
+        let n = exportsBlockingClose
+        guard n > 0 else { done(true); return }
+        guard !exportCloseGuard.isAsking else { done(false); return }
+        exportCloseGuard.beginAsking()
+        let alert = Self.cancelExportsAlert(jobs: n, quitting: false)
+        let finish: @MainActor (NSApplication.ModalResponse) -> Void = { [weak self] r in
+            guard let self else { return }
+            let cancel = r == .alertFirstButtonReturn
+            self.exportCloseGuard.answer(cancelExports: cancel)
+            guard cancel else { done(false); return }
+            Task { @MainActor in
+                await self.exportQueue.cancelAllAndWait()
+                done(true)
+            }
+        }
+        if let window, window.isVisible {
+            if let s = exportSheet { window.endSheet(s); exportSheet = nil }
+            alert.beginSheetModal(for: window) { r in MainActor.assumeIsolated { finish(r) } }
+        } else {
+            finish(alert.runModal())
+        }
+    }
+
+    /// Cancels this window's exports after the app-wide quit confirmation. No further asking.
+    func cancelExportsForQuit() async {
+        exportCloseGuard.answer(cancelExports: true)
+        await exportQueue.cancelAllAndWait()
+    }
+
+    /// "Cancel export?" alert. First button cancels the exports, second keeps them running.
+    static func cancelExportsAlert(jobs: Int, quitting: Bool) -> NSAlert {
+        let a = NSAlert()
+        a.alertStyle = .warning
+        if quitting {
+            a.messageText = jobs == 1 ? String(localized: "An export is still running. Quit anyway?")
+                : String(localized: "\(jobs) exports are still running. Quit anyway?")
+            a.informativeText = String(localized: "Quitting cancels the export and deletes its unfinished file.")
+            a.addButton(withTitle: String(localized: "Cancel Export and Quit"))
+        } else {
+            a.messageText = jobs == 1 ? String(localized: "An export is still running. Close anyway?")
+                : String(localized: "\(jobs) exports are still running. Close anyway?")
+            a.informativeText = String(localized: "Closing the project cancels the export and deletes its unfinished file.")
+            a.addButton(withTitle: String(localized: "Cancel Export and Close"))
+        }
+        a.addButton(withTitle: String(localized: "Keep Exporting"))
+        a.buttons.last?.keyEquivalent = "\u{1b}"
+        return a
+    }
+}

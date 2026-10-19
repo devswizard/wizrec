@@ -7,6 +7,12 @@
     "%arg" : {
 
     },
+    "%arg exports are still running. Close anyway?" : {
+
+    },
+    "%arg exports are still running. Quit anyway?" : {
+
+    },
     "1080p (1920)" : {
 
     },
@@ -49,6 +55,12 @@
     "Add to Timeline at Playhead" : {
 
     },
+    "An export is still running. Close anyway?" : {
+
+    },
+    "An export is still running. Quit anyway?" : {
+
+    },
     "Animated" : {
 
     },
@@ -86,6 +98,12 @@
 
     },
     "Cancel All" : {
+
+    },
+    "Cancel Export and Close" : {
+
+    },
+    "Cancel Export and Quit" : {
 
     },
     "Cancel Transcription" : {
@@ -161,6 +179,9 @@
 
     },
     "Close" : {
+
+    },
+    "Closing the project cancels the export and deletes its unfinished file." : {
 
     },
     "Continue" : {
@@ -329,6 +350,9 @@
     "Include audio" : {
 
     },
+    "Keep Exporting" : {
+
+    },
     "Kept in ~/Library/Logs/WizRec so you can attach one to a bug report. Never sent. Change it any time in Settings." : {
 
     },
@@ -418,6 +442,9 @@
 
     },
     "Quit WizRec" : {
+
+    },
+    "Quitting cancels the export and deletes its unfinished file." : {
 
     },
     "Range" : {

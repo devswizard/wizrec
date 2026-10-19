@@ -48,6 +48,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Quit while exporting: one confirmation for every window, then cancel and wait until
+    /// the unfinished files are removed. Windows closed afterwards do not ask again.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let editors = NSDocumentController.shared.documents
+            .flatMap(\.windowControllers).compactMap { $0 as? EditorWindowController }
+            .filter { $0.exportsBlockingClose > 0 }
+        guard !editors.isEmpty else { return .terminateNow }
+        let jobs = editors.map(\.exportsBlockingClose).reduce(0, +)
+        let alert = EditorWindowController.cancelExportsAlert(jobs: jobs, quitting: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        Task { @MainActor in
+            for e in editors { await e.cancelExportsForQuit() }
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.present() }

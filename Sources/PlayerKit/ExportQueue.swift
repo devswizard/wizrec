@@ -92,6 +92,18 @@ public final class ExportQueue {
             .map { $0.output.standardizedFileURL })
     }
 
+    /// Jobs still to finish (waiting or running). Closing the window or quitting asks first when > 0.
+    public var activeJobCount: Int {
+        jobs.filter { if case .running = $0.state { true } else { $0.state == .waiting } }.count
+    }
+
+    /// Cancels every active job and waits until the queue is idle, so partial outputs are
+    /// removed before the window closes. Returns at once when nothing is active.
+    public func cancelAllAndWait() async {
+        cancelAll()
+        await waitUntilIdle()
+    }
+
     /// Called when job `id` is cancelled while running (e.g. `ExportSession.cancel()`).
     public func onCancel(_ id: Int, _ hook: @escaping @MainActor () -> Void) { cancelHooks[id] = hook }
 
