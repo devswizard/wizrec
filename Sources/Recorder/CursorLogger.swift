@@ -118,7 +118,10 @@ final class CursorLogger {
 
     /// Current bounds of a window in global points, top-left origin.
     nonisolated static func windowFrame(_ id: CGWindowID) -> CGRect? {
-        guard let list = CGWindowListCreateDescriptionFromArray([UInt(id)] as CFArray) as? [[String: Any]],
+        // The array holds raw CGWindowID values (not CFNumbers), so build it without callbacks.
+        var value = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let ids = CFArrayCreate(kCFAllocatorDefault, &value, 1, nil),
+              let list = CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]],
               let bounds = list.first?[kCGWindowBounds as String] as? NSDictionary,
               let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
         return rect
