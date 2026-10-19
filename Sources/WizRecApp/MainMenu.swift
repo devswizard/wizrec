@@ -30,6 +30,7 @@ enum MainMenu {
         file.addItem(withTitle: String(localized: "Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         file.addItem(withTitle: String(localized: "Save"), action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         file.addItem(withTitle: String(localized: "Save As…"), action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "S")
+        file.addItem(withTitle: String(localized: "Export…"), action: #selector(EditorWindowController.showExport(_:)), keyEquivalent: "e")
         file.addItem(.separator())
         file.addItem(withTitle: String(localized: "New Recording…"), action: #selector(EditorWindowController.newRecording(_:)), keyEquivalent: "r")
         file.addItem(withTitle: String(localized: "Import Media…"), action: #selector(EditorWindowController.importMedia(_:)), keyEquivalent: "i")

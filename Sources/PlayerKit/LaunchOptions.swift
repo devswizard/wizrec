@@ -18,6 +18,7 @@ import Foundation
 /// - `--frame-policy exact|thin|nearest`: high-speed playback policy (default nearest).
 /// - `--import-captions <file.srt|.vtt>`: import captions after the scripted imports.
 /// - `--export-captions <file.srt|.vtt>`: write the project's captions after the scripted steps.
+/// - `--export <preset name>` (repeatable) / `--export-dir <dir>`: export through the queue, then report.
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -46,6 +47,10 @@ public struct LaunchOptions: Sendable, Equatable {
     public var importCaptions: String?
     /// Where to export the project's captions (format from the extension).
     public var exportCaptions: String?
+    /// Export preset names to run (batch) after the scripted steps.
+    public var exportPresets: [String] = []
+    /// Folder for `exportPresets` outputs.
+    public var exportDir: String?
 
     public init() {}
 
@@ -56,6 +61,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.importPaths == b.importPaths && a.nudge?.x == b.nudge?.x && a.nudge?.y == b.nudge?.y
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
+            && a.exportPresets == b.exportPresets && a.exportDir == b.exportDir
     }
 
     /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
@@ -92,6 +98,8 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--frame-policy": framePolicy = value() ?? framePolicy
             case "--import-captions": importCaptions = value()
             case "--export-captions": exportCaptions = value()
+            case "--export": if let v = value() { exportPresets.append(v) }
+            case "--export-dir": exportDir = value()
             default:
                 if a.hasPrefix("-psn_") { break }
                 if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }
