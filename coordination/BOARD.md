@@ -79,14 +79,14 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M2-TL-1 | timeline | done | — | `ProjectBundle.create/importFile/saveWithBackup`; new project opens in our app; round-trip tests |
 | M2-TL-2 | timeline | done | TL-1 | `ContractM2` commands, expected-JSON + byte-identical revert tests |
 | M3-TL-1 | timeline | claimed | TL-2 | ripple, magnetic, snapping helper, copy/paste, group/ungroup, stitch/unstitch, detach audio, speed, extend frame, markers, effects/transitions add/remove |
-| M2-MED-1 | media | claimed | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
+| M2-MED-1 | media | done | — | `StreamInfo` timescale/length/bitDepth; peaks API; filmstrip thumbnails on own pool |
 | M2-MED-2 | media | claimed | — | high-speed playback throughput (async VT) + nearest-frame policy |
-| M2-TUI-1 | timelineui | claimed | — | ruler, tracks, headers, clips, playhead, zoom/scroll; view tests on hand-built projects |
+| M2-TUI-1 | timelineui | done | — | ruler, tracks, headers, clips, playhead, zoom/scroll; view tests on hand-built projects |
 | M2-TUI-2 | timelineui | claimed | TL-2 | select/move/trim/split/delete/ripple, track flags, snapping, thumbnails + waveforms |
 | M2-APP-1 | app | claimed | TUI-1 | editor window: media bin, canvas, timeline, inspector; undo/redo menus |
 | M2-APP-2 | app | claimed | TL-1 | new/open/save/save-as (backup), import (drag-drop + menu), relink missing media |
 | M2-APP-3 | app | claimed | — | inspector edits via `SetParameter`; cacheStats in overlay; high-speed frame policy |
-| M4-RES-1 | researcher | claimed | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
+| M4-RES-1 | researcher | done | — | specs: effects group 1 (`RoundCorners`, `DropShadow`, `Border`, `ColorAdjustment`, `Mask`, `BlendModeEffect`, `MotionBlur`, `MediaMatte`, `Reflection`) |
 | M4-RES-2 | researcher | claimed | — | specs: transitions catalog, behaviours, `.tscshadervid` uniforms, markers |
 | M5-RES-1 | researcher | claimed | — | spec: callouts (shapes, text, fills, strokes, tails) |
 | M6-RES-1 | researcher | claimed | — | specs: `.trec` cursor/click stream (`docs/specs/trec.md`), cursor effects |
@@ -97,4 +97,4 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M7-REC-1 | recorder | done | — | ScreenCaptureKit display/window/region → MP4, pause/resume, countdown |
 | M7-REC-2 | recorder | done | REC-1 | mic, system audio, camera |
 | M7-REC-3 | recorder | done | REC-1 | cursor/click log + cursor images, `docs/specs/cursor-log.md`; keystrokes behind consent |
-| M7-REC-4 | recorder | claimed | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
+| M7-REC-4 | recorder | done | REC-1 | HUD window controller (countdown, timer, pause/stop, hotkeys) for the app to present |
