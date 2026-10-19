@@ -42,7 +42,7 @@ let package = Package(
         // M8: mixing, gain/volume keyframes, loudness, audio effects (agent "audio").
         .target(name: "AudioEngine", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine"]),
         // M9: MP4/MOV/GIF/audio export (agent "export").
-        .target(name: "Exporter", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "AudioEngine"]),
+        .target(name: "Exporter", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "AudioEngine", "CFFmpeg"]),
         // M10: transcription + captions (agent "captions").
         .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine", "CaptionLayout"]),
         // M10: pure dynamic-caption layout/state + transcript decoding, shared with RenderEngine (agent "captions").
@@ -95,7 +95,7 @@ let package = Package(
         ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
         .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine"]),
-        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine"]),
+        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine", "TestGenKit"]),
         .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine"]),
         // RenderEngine only to check that every built-in shader translates, compiles and draws.
         .testTarget(name: "WizRecAssetsTests", dependencies: ["WizRecAssets", "RenderEngine", "MediaEngine"]),

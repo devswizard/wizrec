@@ -20,16 +20,36 @@ public enum ExportFormat: Sendable, Equatable {
     case audio(container: String)
 }
 
+/// GIF encoding options (used by `ExportFormat.gif`).
+public struct GIFOptions: Sendable, Equatable {
+    /// Floyd–Steinberg error diffusion (true) or nearest palette colour (false).
+    public var dither: Bool
+    /// Times the animation repeats after the first play; 0 = forever.
+    public var loopCount: Int
+    /// Opaque palette entries per segment, 2–255 (one more index is kept for "unchanged" pixels).
+    public var maxColors: Int
+    /// A new palette starts when the visible clips change or after this many frames.
+    public var maxSegmentFrames: Int
+
+    public init(dither: Bool = true, loopCount: Int = 0, maxColors: Int = 255, maxSegmentFrames: Int = 90) {
+        self.dither = dither; self.loopCount = loopCount; self.maxColors = maxColors
+        self.maxSegmentFrames = maxSegmentFrames
+    }
+}
+
 /// What to export.
 public struct ExportSettings: Sendable, Equatable {
     public var format: ExportFormat
-    /// Output frame size in px (aspect-fit of the canvas; default = canvas size).
+    /// Output frame size in px: the canvas is aspect-fitted into this box (rounded to even px for
+    /// H.264/HEVC/ProRes), so the output never has letterbox bars. Default = canvas size.
     public var size: CGSize?
-    /// Output frames per second (default = project `videoFormatFrameRate`).
+    /// Output frames per second (default = project `videoFormatFrameRate`; GIF uses its own `fps`).
     public var frameRate: Rational?
     /// Timeline range in ticks (default = whole project).
     public var range: Range<Int64>?
     public var includeAudio: Bool = true
+    /// GIF palette and dithering options.
+    public var gif = GIFOptions()
     public init(format: ExportFormat) { self.format = format }
 }
 
@@ -37,6 +57,7 @@ public struct ExportSettings: Sendable, Equatable {
 public struct ExportPreset: Sendable, Equatable {
     public var name: String
     public var settings: ExportSettings
+    public init(name: String, settings: ExportSettings) { self.name = name; self.settings = settings }
 }
 
 public enum ExportError: Error, Sendable, Equatable {
@@ -46,20 +67,54 @@ public enum ExportError: Error, Sendable, Equatable {
 }
 
 /// One export job. Progress 0–1 via `progress`; `cancel()` stops and removes the partial file.
+///
+/// The file is written next to `output` under a temporary name and moved into place only when
+/// complete, so a failed or cancelled export never leaves a partial file (or destroys an existing one).
 public actor ExportSession {
     public let settings: ExportSettings
     public let output: URL
+    let scene: SceneModel
+    let audioScene: AudioScene
+    let pool: MediaPool
+    /// Set by `cancel()`; checked between frames and audio chunks.
+    var cancelRequested = false
+    private var progressHandler: (@Sendable (Double) -> Void)?
+    private var running = false
 
     public init(scene: SceneModel, audio: AudioScene, pool: MediaPool, settings: ExportSettings, output: URL) {
         self.settings = settings; self.output = output
+        self.scene = scene; self.audioScene = audio; self.pool = pool
     }
 
     /// Fraction done, 0–1, updated while `run()` works.
     public private(set) var progress: Double = 0
 
-    public func run() async throws { throw ExportError.notImplemented }
-    public func cancel() {}
+    /// Calls `handler` (on an arbitrary thread) whenever `progress` changes by ≥ 0.5 % and at the end.
+    public func setProgressHandler(_ handler: (@Sendable (Double) -> Void)?) { progressHandler = handler }
+
+    /// Runs the export. Throws `ExportError.cancelled` after `cancel()` (or task cancellation).
+    public func run() async throws {
+        guard !running else { throw ExportError.failed("export already running") }
+        running = true
+        defer { running = false }
+        report(0)
+        try await perform()
+        report(1, force: true)
+    }
+
+    public func cancel() { cancelRequested = true }
 
     /// Built-in presets (1080p/720p/4K MP4, ProRes, GIF, audio).
-    public static var presets: [ExportPreset] { [] }
+    public static var presets: [ExportPreset] { ExportPresets.all }
+
+    /// Updates `progress` and notifies the handler.
+    func report(_ value: Double, force: Bool = false) {
+        let v = min(max(value, 0), 1)
+        let notify = force || abs(v - progress) >= 0.005 || v == 0
+        progress = v
+        if notify { progressHandler?(v) }
+    }
+
+    /// True once `cancel()` was called or the running task was cancelled.
+    var isCancelled: Bool { cancelRequested || Task.isCancelled }
 }

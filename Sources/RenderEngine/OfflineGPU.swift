@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import MediaEngine
 import Metal
@@ -8,6 +9,8 @@ final class OfflineGPU {
     let device: any MTLDevice
     let queue: any MTLCommandQueue
     let compositor: Compositor
+    /// Wraps caller-owned pixel buffers as render targets (zero-copy).
+    private var targetCache: CVMetalTextureCache?
 
     init() throws {
         guard let d = MTLCreateSystemDefaultDevice(), let q = d.makeCommandQueue() else {
@@ -15,6 +18,29 @@ final class OfflineGPU {
         }
         device = d; queue = q
         compositor = try Compositor(device: d)
+        CVMetalTextureCacheCreate(nil, nil, d, nil, &targetCache)
+    }
+
+    /// Encodes `plan` straight into `pixelBuffer` (32BGRA, IOSurface-backed), commits, and calls
+    /// `done` from the GPU completion handler (nil = success). Returns before the GPU finishes.
+    func submit(_ plan: RenderPlan, frames: [FrameRequest: VideoFrame], into pixelBuffer: CVPixelBuffer,
+                done: @escaping @Sendable ((any Error)?) -> Void) throws {
+        guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA,
+              CVPixelBufferGetIOSurface(pixelBuffer) != nil, let cache = targetCache else {
+            throw RenderError.notImplemented
+        }
+        CVMetalTextureCacheFlush(cache, 0)  // drop wrappers of buffers already released
+        let w = CVPixelBufferGetWidth(pixelBuffer), h = CVPixelBufferGetHeight(pixelBuffer)
+        var cvTexture: CVMetalTexture?
+        CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixelBuffer, nil, .bgra8Unorm, w, h, 0, &cvTexture)
+        guard let cvTexture, let target = CVMetalTextureGetTexture(cvTexture),
+              let cb = queue.makeCommandBuffer() else { throw RenderError.noMetalDevice }
+        try compositor.encode(plan, frames: frames, into: target, commandBuffer: cb)
+        let keep = GPURetainer([cvTexture, pixelBuffer])
+        cb.addCompletedHandler { finished in
+            withExtendedLifetime(keep) { done(finished.error) }
+        }
+        cb.commit()
     }
 
     /// Fetches every distinct request concurrently. Missing or unsupported files are left out.
