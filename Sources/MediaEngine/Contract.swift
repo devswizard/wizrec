@@ -5,6 +5,7 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
+import TSCProjKit
 
 /// What a media file is, decided by probing its contents.
 public enum MediaKind: String, Sendable, Equatable {
@@ -42,12 +43,37 @@ public struct StreamInfo: Sendable, Equatable {
     /// Stream length, measured from its first sample (stream time 0).
     public var duration: CMTime
 
+    // MARK: sourceTracks metadata (M2, docs/specs/media-streams.md §3)
+
+    /// Units per second of `length`: the value a project writes as `sourceTracks[i].editRate`
+    /// (e.g. 44100 for a `.trec`, 60000 / 240000 for camera mp4 video / audio, 600 for images).
+    /// Not a frame rate.
+    public var timescale: Int32
+    /// Presentation length in `timescale` units (edit lists applied, AAC priming removed):
+    /// `sourceTracks[i].range = [0, length]`. 1 for images, `Int64.max` for shaders.
+    public var length: Int64
+    /// Exact frame rate (frames per second) as stored in the container, e.g. 60000/1001;
+    /// the average for VFR streams. Nil for audio, images and when unknown.
+    public var frameRate: Rational?
+    /// `sourceTracks[i].bitDepth` as Camtasia writes it [obs]: 0 for imported files and images,
+    /// 24 (video) / 16 (audio) for `.trec` recordings, 32 for shaders.
+    public var bitDepth: Int
+    /// Decoded sample precision in bits: 8/10/12 per video component, 16/24/32 per PCM audio
+    /// sample; 0 when the codec does not define it (e.g. AAC).
+    public var bitsPerComponent: Int
+    /// `sourceTracks[i].type`: 0 = video, 1 = still image, 2 = audio.
+    public var trackType: Int
+
     public init(index: Int, kind: StreamKind, codec: String, pixelSize: CGSize = .zero,
                 nominalFrameRate: Double = 0, sampleRate: Double = 0, channelCount: Int = 0,
-                duration: CMTime) {
+                duration: CMTime, timescale: Int32 = 0, length: Int64 = 0, frameRate: Rational? = nil,
+                bitDepth: Int = 0, bitsPerComponent: Int = 0, trackType: Int? = nil) {
         self.index = index; self.kind = kind; self.codec = codec; self.pixelSize = pixelSize
         self.nominalFrameRate = nominalFrameRate; self.sampleRate = sampleRate
         self.channelCount = channelCount; self.duration = duration
+        self.timescale = timescale; self.length = length; self.frameRate = frameRate
+        self.bitDepth = bitDepth; self.bitsPerComponent = bitsPerComponent
+        self.trackType = trackType ?? (kind == .audio ? 2 : 0)
     }
 }
 
@@ -185,14 +211,14 @@ public actor MediaPool {
     /// Reads stream metadata without decoding frames.
     public func probe(_ url: URL) async throws -> MediaInfo {
         if let t = sources[url], let s = try? await t.value { return s.info }
-        return try await Task.detached(priority: .userInitiated) { try Prober.probe(url) }.value
+        return try await Task.detached(priority: .userInitiated) { try await Prober.probe(url) }.value
     }
 
     /// Opens (or returns the already open) source for `url`.
     public func source(for url: URL) async throws -> any MediaSource {
         if let t = sources[url] { return try await t.value }
         let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
-            try openSource(try Prober.probeDetailed(url))
+            try openSource(try await Prober.probeDetailed(url))
         }
         sources[url] = t
         do {
