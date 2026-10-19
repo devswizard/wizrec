@@ -23,7 +23,9 @@ public struct Insets: Sendable, Equatable {
     public static let zero = Insets()
 }
 
-/// An effect with its parameters evaluated at the plan time. M1 compositor ignores effects.
+/// An effect with its parameters evaluated at the plan time.
+/// The compositor draws the ones in `Compositor.renderedEffects` (unless bypassed); others pass through.
+/// Effects with a `start`/`duration` window are left out of `Layer.effects` outside it.
 public struct EffectInstance: Sendable, Equatable {
     public var name: String
     public var parameters: [String: Double]
@@ -40,11 +42,36 @@ public enum LayerContent: Sendable, Equatable {
     /// A still image file.
     case image(URL)
     /// A `.tscshadervid` background; parameters from the clip's `sourceEffect`, evaluated.
-    case shader(URL, parameters: [String: Double])
+    /// `time`: shader time in seconds (the clip's inner time / editRate).
+    case shader(URL, parameters: [String: Double], time: Double)
     /// A group's children, bottom to top, in the group's own coordinate space.
     case group([Layer])
+    /// A transition in progress on one track. `from` is the outgoing clip, `to` the incoming one, both in
+    /// the parent's coordinate space; `nil` on one side = a fade in or out at a clip edge.
+    /// The carrying layer has the parent's size and an identity transform.
+    indirect case transition(TransitionInstance, from: Layer?, to: Layer?)
     /// A clip type the engine does not draw yet (e.g. `"Callout"` before M5).
     case unsupported(type: String)
+}
+
+/// A track transition evaluated at the plan time.
+public struct TransitionInstance: Sendable, Equatable {
+    /// Transition name, e.g. `"Fade"`, `"RadialWipe"`.
+    public var name: String
+    /// 0 at the start of the transition window, 1 at its end.
+    public var progress: Double
+    /// Window length, ticks.
+    public var duration: Int64
+    /// The transition's `reverse` flag.
+    public var reverse: Bool
+    /// Numeric transition parameters, evaluated (empty when the entry has none).
+    public var parameters: [String: Double]
+
+    public init(name: String, progress: Double, duration: Int64, reverse: Bool = false,
+                parameters: [String: Double] = [:]) {
+        self.name = name; self.progress = progress; self.duration = duration; self.reverse = reverse
+        self.parameters = parameters
+    }
 }
 
 /// One visible clip at the plan time.
@@ -95,6 +122,7 @@ public struct RenderPlan: Sendable, Equatable {
                 switch l.content {
                 case .video(let r): [r]
                 case .group(let children): walk(children)
+                case .transition(_, let from, let to): walk([from, to].compactMap { $0 })
                 default: []
                 }
             }
@@ -153,7 +181,7 @@ public struct SceneModel: Sendable {
 
     /// The scene at timeline time `ticks`. Pure and deterministic.
     public func evaluate(at ticks: Int64) -> RenderPlan {
-        let layers = SceneEvaluator(editRate: timebase.editRate).layers(tracks, at: Rational(ticks))
+        let layers = SceneEvaluator(editRate: timebase.editRate).layers(tracks, at: Rational(ticks), space: canvasSize)
         return RenderPlan(time: ticks, canvasSize: canvasSize, background: background, layers: layers)
     }
 
@@ -181,6 +209,9 @@ public final class Compositor {
     public let device: any MTLDevice
     private let core: CompositorCore
 
+    /// Effect names drawn on the GPU; any other effect passes through unchanged.
+    public static var renderedEffects: Set<String> { EffectRegistry.names }
+
     /// Compiles the shaders; throws `RenderError.shaderCompile` on failure.
     public init(device: any MTLDevice) throws {
         self.device = device
@@ -193,6 +224,9 @@ public final class Compositor {
                        into target: any MTLTexture, commandBuffer: any MTLCommandBuffer) throws {
         try core.encode(plan, frames: frames, into: target, commandBuffer: commandBuffer)
     }
+
+    /// Offscreen textures idle in the pool (tests, diagnostics).
+    var idleTextureCount: Int { core.fx.pool.idleCount }
 }
 
 /// Headless renderer: evaluate → fetch frames → composite → image. Used by golden tests and export.

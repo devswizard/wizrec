@@ -55,6 +55,42 @@ enum Conventions {
         return CMTime(seconds: m.double / Double(max(editRate, 1)), preferredTimescale: 1_000_000)
     }
 
+    /// Shader time uniform, seconds: the clip's inner time / editRate [inf, time-mapping.md §4].
+    static func shaderTime(media m: Rational, editRate: Int64) -> Double {
+        m.double / Double(max(editRate, 1))
+    }
+
+    /// `.tscshadervid` `_TexCoord` has its origin at the layer's top-left, y down [obs: the demo's
+    /// `ProjectThumbnail` top-left pixel is exactly `Color0`, which the user's shader puts at
+    /// `_TexCoord` (0, 0)]. `true` = y down.
+    static let shaderTexCoordY = true
+
+    /// Effect `start`/`duration` window, on the keyframe axis [inf, time-mapping.md §7]:
+    /// active on `[start, start + duration)`.
+    static func effectWindowContains(start: Double, duration: Double, _ t: Double) -> Bool {
+        t >= start && t < start + duration
+    }
+
+    /// Transition window in parent ticks [inf, pending `docs/specs/transitions.md`]:
+    /// between two clips it is centred on the cut (`d/2` on each side, both clips
+    /// pre/post-roll into their media handles); a one-sided fade-out ends at the clip's
+    /// end, a fade-in starts at the clip's start.
+    static func transitionWindow(leftEnd: Int64?, rightStart: Int64?, duration d: Int64)
+        -> (lo: Rational, hi: Rational) {
+        let dur = Rational(d)
+        switch (leftEnd, rightStart) {
+        case (_, let r?) where leftEnd != nil:
+            let half = Q.div(dur, Rational(2))
+            return (Q.sub(Rational(r), half), Q.add(Rational(r), half))
+        case (let l?, nil):
+            return (Q.sub(Rational(l), dur), Rational(l))
+        case (nil, let r?):
+            return (Rational(r), Q.add(Rational(r), dur))
+        default:
+            return (Q.zero, Q.zero)
+        }
+    }
+
     // MARK: Geometry
 
     /// translate(`translation0`, `translation1`) · rotate(`rotation2`) · scale(`scale0`, `scale1`),

@@ -105,6 +105,19 @@ struct SEffect: Sendable, Equatable {
     var name: String
     var bypassed: Bool
     var parameters: SParams
+    /// `start`/`duration` window on the keyframe axis, ticks; nil = whole clip.
+    var window: (start: Double, duration: Double)? = nil
+
+    static func == (a: SEffect, b: SEffect) -> Bool {
+        a.name == b.name && a.bypassed == b.bypassed && a.parameters == b.parameters
+            && a.window?.start == b.window?.start && a.window?.duration == b.window?.duration
+    }
+
+    /// Whether the effect applies at keyframe time `t` (time-mapping.md §7).
+    func isActive(at t: Double) -> Bool {
+        guard let w = window else { return true }
+        return Conventions.effectWindowContains(start: w.start, duration: w.duration, t)
+    }
 
     func instance(at t: Double) -> EffectInstance {
         EffectInstance(name: name, parameters: parameters.evaluated(at: t), bypassed: bypassed)

@@ -1,0 +1,252 @@
+import CoreGraphics
+import Foundation
+import Metal
+
+// Group-1 visual effects. PROVISIONAL maths until `docs/specs/effects/<Name>.md` is
+// published: every unit and default sits in the effect's `Spec` enum so the spec's answers
+// are one-line changes. Tags: [obs] observed, [inf] inferred, [?] unknown.
+
+extension EffectInstance {
+    func value(_ key: String, _ d: Double) -> Double {
+        let v = parameters[key] ?? d
+        return v.isFinite ? v : d
+    }
+
+    /// `<prefix>-red/green/blue/alpha`, 0–1, straight alpha.
+    func color(_ prefix: String, _ d: RGBA) -> SIMD4<Float> {
+        SIMD4(Float(Conventions.clamp01(value("\(prefix)-red", d.r))), Float(Conventions.clamp01(value("\(prefix)-green", d.g))),
+              Float(Conventions.clamp01(value("\(prefix)-blue", d.b))), Float(Conventions.clamp01(value("\(prefix)-alpha", d.a))))
+    }
+}
+
+// MARK: - RoundCorners
+
+/// Rounds the corners of the layer's visible rect (after geometry effects such as `Mask`).
+struct RoundCornersEffect: EffectRenderer {
+    enum Spec {
+        /// `radius` is in canvas px [inf: the demo camera (scale 0.2887, 1080-px mask) renders as a
+        /// full circle in the ProjectThumbnail with radius 233.8; in layer px it would be a rounded square].
+        static let radiusInCanvasPx = true
+        /// Corner flags `top-left`… default on [inf].
+        static let cornerDefault = 1.0
+    }
+
+    func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
+        var r = max(e.value("radius", 0), 0)
+        if Spec.radiusInCanvasPx { r /= max(ctx.layerScale, 1e-6) }
+        guard r > 0 else { return input }
+        var fx = ctx.fx(input)
+        fx.set(0, SIMD4(Float(r * ctx.scale), 0, 0, 0))
+        fx.set(1, SIMD4(Float(e.value("top-left", Spec.cornerDefault)), Float(e.value("top-right", Spec.cornerDefault)),
+                        Float(e.value("bottom-right", Spec.cornerDefault)), Float(e.value("bottom-left", Spec.cornerDefault))))
+        return try ctx.gpu.pass("roundcorners_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
+    }
+
+    var source: String { """
+    fragment float4 roundcorners_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                                    texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+        float4 c = src.sample(smp, in.uv);
+        float2 px = in.uv * fx.size;
+        float2 lo = fx.rect.xy, hi = fx.rect.zw;
+        float2 centre = (lo + hi) * 0.5, half_ = (hi - lo) * 0.5;
+        float2 p = px - centre;   // y down
+        float4 flags = fx.p[1];   // tl, tr, br, bl
+        float on = p.x < 0.0 ? (p.y < 0.0 ? flags.x : flags.w) : (p.y < 0.0 ? flags.y : flags.z);
+        float r = min(fx.p[0].x, min(half_.x, half_.y)) * step(0.5, on);
+        float d = fx_sd_round_box(p, half_, r);
+        return c * clamp(0.5 - d, 0.0, 1.0);
+    }
+    """ }
+}
+
+// MARK: - Mask
+
+/// Keeps a rectangle or ellipse of the layer; the rest gets `mask-opacity`.
+struct MaskEffect: EffectRenderer {
+    enum Spec {
+        /// `mask-width/height/positionX/Y` in layer source px, origin at the layer centre [obs, transform.md §10];
+        /// +y up like `translation1` [inf].
+        static let positionYUp = true
+        /// `mask-shape`: 0 = rectangle [inf: demo value 0 with a square], 1 = ellipse [?].
+        static let ellipseShape = 1.0
+        /// `mask-opacity` = alpha kept outside the mask [inf: demo 0 hides the outside].
+        /// `mask-blend` = feather [?]; ignored (1-px antialiasing).
+    }
+
+    var isGeometry: Bool { true }
+
+    func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
+        let w = e.value("mask-width", ctx.layerSize.width), h = e.value("mask-height", ctx.layerSize.height)
+        let x = e.value("mask-positionX", 0), y = e.value("mask-positionY", 0) * (Spec.positionYUp ? 1 : -1)
+        let s = ctx.scale
+        let origin = ctx.layerOrigin
+        let cx = origin.x + x * s, cy = origin.y - y * s
+        let outside = Conventions.clamp01(e.value("mask-opacity", 0))
+        let invert = e.value("mask-invert", 0) >= 0.5
+        var fx = ctx.fx(input)
+        fx.set(0, SIMD4(Float(cx), Float(cy), Float(w * s / 2), Float(h * s / 2)))
+        fx.set(1, SIMD4(Float(e.value("mask-rotation", 0)), Float(max(e.value("mask-cornerRadius", 0), 0) * s),
+                        Float(abs(e.value("mask-shape", 0) - Spec.ellipseShape) < 0.5 ? 1 : 0), Float(outside)))
+        fx.set(2, SIMD4(invert ? 1 : 0, 0, 0, 0))
+        let out = try ctx.gpu.pass("mask_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
+        // Later effects (RoundCorners, DropShadow) see the mask's box as the visible rect.
+        if !invert, outside == 0, abs(e.value("mask-rotation", 0)) < 1e-9 {
+            let r = ctx.contentRect
+            ctx.contentRect = SIMD4(max(r.x, Float(cx - w * s / 2)), max(r.y, Float(cy - h * s / 2)),
+                                    min(r.z, Float(cx + w * s / 2)), min(r.w, Float(cy + h * s / 2)))
+        }
+        return out
+    }
+
+    var source: String { """
+    fragment float4 mask_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                            texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+        float4 c = src.sample(smp, in.uv);
+        float2 p = in.uv * fx.size - fx.p[0].xy;          // y down
+        float a = fx.p[1].x;                              // rotation, ccw in y-up space
+        float2 q = float2(cos(a) * p.x - sin(a) * p.y, sin(a) * p.x + cos(a) * p.y);
+        float2 b = fx.p[0].zw;
+        float d;
+        if (fx.p[1].z > 0.5) {
+            float2 n = q / max(b, float2(1e-3));
+            d = (length(n) - 1.0) * min(b.x, b.y);
+        } else {
+            d = fx_sd_round_box(q, b, min(fx.p[1].y, min(b.x, b.y)));
+        }
+        float inside = clamp(0.5 - d, 0.0, 1.0);
+        if (fx.p[2].x > 0.5) inside = 1.0 - inside;
+        return c * mix(fx.p[1].w, 1.0, inside);
+    }
+    """ }
+}
+
+// MARK: - DropShadow
+
+/// A blurred, offset copy of the layer's alpha behind it.
+struct DropShadowEffect: EffectRenderer {
+    enum Spec {
+        /// `offset` and `blur` are canvas px [inf]; `angle` radians, direction of the shadow from the
+        /// layer, counter-clockwise from +x in +y-up canvas space [inf: demo 3π/2 = straight down].
+        static let canvasUnits = true
+        /// Gaussian sigma per unit of `blur` [?].
+        static let sigmaPerBlur = 0.5
+        static let defaultColor = RGBA(0, 0, 0, 1)
+    }
+
+    func margin(_ e: EffectInstance, ctx: MarginContext) -> Margin {
+        guard e.value("enabled", 1) >= 0.5 else { return .zero }
+        let k = Spec.canvasUnits ? 1 / max(ctx.layerScale, 1e-6) : 1
+        let reach = (abs(e.value("offset", 0)) + 3 * Spec.sigmaPerBlur * max(e.value("blur", 0), 0) + 2) * k
+        return .all(reach)
+    }
+
+    func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
+        guard e.value("enabled", 1) >= 0.5, e.value("opacity", 1) > 0 else { return input }
+        let k = (Spec.canvasUnits ? 1 / max(ctx.layerScale, 1e-6) : 1) * ctx.scale   // canvas px → texture px
+        // Canvas-space direction → layer space (undo the layer rotation), then y down.
+        let a = e.value("angle", 0) - (Spec.canvasUnits ? ctx.rotation : 0)
+        let off = e.value("offset", 0) * k
+        let dx = cos(a) * off, dy = -sin(a) * off
+        let sigma = Spec.sigmaPerBlur * max(e.value("blur", 0), 0) * k
+        var fx = ctx.fx(input)
+        let blurred = try GaussianBlur.alpha(input, sigma: sigma, ctx: ctx)
+        fx.set(0, SIMD4(Float(dx), Float(dy), Float(Conventions.clamp01(e.value("opacity", 1))), 0))
+        fx.set(1, e.color("color", Spec.defaultColor))
+        return try ctx.gpu.pass("shadow_composite_fs", textures: [input, blurred], fx: fx,
+                                commandBuffer: ctx.commandBuffer)
+    }
+
+    var source: String { """
+    fragment float4 shadow_composite_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                                        texture2d<float> src [[texture(0)]], texture2d<float> blur [[texture(1)]],
+                                        sampler smp [[sampler(0)]]) {
+        float4 c = src.sample(smp, in.uv);
+        float2 uv = in.uv - fx.p[0].xy / fx.size;
+        float a = fx_sample(blur, smp, uv).a * fx.p[0].z * fx.p[1].a;
+        float4 shadow = float4(fx.p[1].rgb * a, a);
+        return c + shadow * (1.0 - c.a);
+    }
+    """ }
+}
+
+/// Separable Gaussian blur of a texture (or of its alpha only), sigma in texture px.
+enum GaussianBlur {
+    /// Most taps per side per pass; larger sigmas stretch the tap spacing.
+    static let maxTaps = 48
+
+    static func alpha(_ input: any MTLTexture, sigma: Double, ctx: EffectContext) throws -> any MTLTexture {
+        try run(input, sigma: sigma, alphaOnly: true, ctx: ctx)
+    }
+
+    static func run(_ input: any MTLTexture, sigma: Double, alphaOnly: Bool, ctx: EffectContext) throws
+        -> any MTLTexture {
+        var fx = ctx.fx(input)
+        let s = max(sigma, 0)
+        let reach = ceil(3 * s)
+        let taps = Float(min(max(reach, 0), Double(maxTaps)))
+        let step = taps > 0 ? Float(reach) / taps : 1
+        fx.set(0, SIMD4(Float(s), taps, step, alphaOnly ? 1 : 0))
+        fx.set(1, SIMD4(1, 0, 0, 0))
+        let h = try ctx.gpu.pass("blur_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
+        fx.set(1, SIMD4(0, 1, 0, 0))
+        return try ctx.gpu.pass("blur_fs", textures: [h], fx: fx, commandBuffer: ctx.commandBuffer)
+    }
+
+    static let source = """
+    fragment float4 blur_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                            texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+        float sigma = fx.p[0].x;
+        int taps = int(fx.p[0].y);
+        float stepPx = fx.p[0].z;
+        float2 dir = fx.p[1].xy / fx.size;
+        if (sigma <= 0.0 || taps == 0) {
+            float4 c = fx_sample(src, smp, in.uv);
+            return fx.p[0].w > 0.5 ? float4(0, 0, 0, c.a) : c;
+        }
+        float4 acc = float4(0.0);
+        float wsum = 0.0;
+        for (int i = -taps; i <= taps; i++) {
+            float x = float(i) * stepPx;
+            float w = exp(-0.5 * x * x / (sigma * sigma));
+            acc += fx_sample(src, smp, in.uv + dir * x) * w;
+            wsum += w;
+        }
+        float4 c = acc / wsum;
+        return fx.p[0].w > 0.5 ? float4(0, 0, 0, c.a) : c;
+    }
+    """
+}
+
+// MARK: - ColorAdjustment
+
+/// Brightness / contrast / saturation.
+struct ColorAdjustmentEffect: EffectRenderer {
+    enum Spec {
+        /// Neutral at 0 for all three [?]: brightness adds, contrast scales around 0.5 by (1 + c),
+        /// saturation mixes with Rec. 709 luma by (1 + s). Ranges unknown.
+        static let neutral = 0.0
+    }
+
+    func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
+        let b = e.value("brightness", Spec.neutral), c = e.value("contrast", Spec.neutral)
+        let s = e.value("saturation", Spec.neutral)
+        guard b != 0 || c != 0 || s != 0 else { return input }
+        var fx = ctx.fx(input)
+        fx.set(0, SIMD4(Float(b), Float(1 + c), Float(1 + s), 0))
+        return try ctx.gpu.pass("coloradjust_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
+    }
+
+    var source: String { """
+    fragment float4 coloradjust_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                                   texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+        float4 c = src.sample(smp, in.uv);
+        if (c.a <= 0.0) return c;
+        float3 rgb = c.rgb / c.a;
+        rgb += fx.p[0].x;
+        rgb = (rgb - 0.5) * fx.p[0].y + 0.5;
+        float l = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        rgb = mix(float3(l), rgb, fx.p[0].z);
+        return float4(clamp(rgb, 0.0, 1.0) * c.a, c.a);
+    }
+    """ }
+}

@@ -225,7 +225,7 @@ private func solid(_ name: String, _ c: Px, _ w: Int = 16, _ h: Int = 16) -> (Fr
             "Color2-red": 0, "Color2-green": 0, "Color2-blue": 1, "Color2-alpha": 1,
             "Color3-red": 1, "Color3-green": 1, "Color3-blue": 1, "Color3-alpha": 1,
         ]
-        let l = Layer(clipID: 1, content: .shader(URL(fileURLWithPath: "/bg.tscshadervid"), parameters: params),
+        let l = Layer(clipID: 1, content: .shader(URL(fileURLWithPath: "/bg.tscshadervid"), parameters: params, time: 0),
                       size: canvas)
         let img = try GPUTest.render(plan([l]))
         #expect(img.at(0, 0).near(.red, 6) && img.at(191, 0).near(.green, 6))

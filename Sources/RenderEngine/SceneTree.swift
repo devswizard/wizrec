@@ -47,12 +47,37 @@ struct SNode: Sendable {
     }
 }
 
+/// Sendable projection of a `track.transitions[]` entry, resolved against the track's clips.
+struct STransition: Sendable {
+    var name: String
+    var duration: Int64
+    var reverse: Bool
+    var parameters: SParams
+    /// Indices into the track's sorted `clips`; nil = that side is absent (fade in/out).
+    var left: Int?
+    var right: Int?
+    /// Active window `[lo, hi)`, parent ticks.
+    var lo: Rational
+    var hi: Rational
+
+    func contains(_ t: Rational) -> Bool { Q.le(lo, t) && Q.lt(t, hi) }
+    func progress(_ t: Rational) -> Double {
+        let span = Q.sub(hi, lo).double
+        return span > 0 ? Conventions.clamp01(Q.sub(t, lo).double / span) : 1
+    }
+}
+
 /// Sendable projection of a track; clips sorted by `start`.
 struct STrack: Sendable {
     var index: Int64
     var videoHidden: Bool
     var audioMuted: Bool
     var clips: [SNode]
+    /// Non-bypassed transitions whose clips exist, in file order.
+    var transitions: [STransition] = []
+
+    /// The transition active at `t`, if any (first in file order).
+    func transition(at t: Rational) -> STransition? { transitions.first { $0.contains(t) } }
 
     /// The clip visible at `t`, if any (last clip starting at or before `t` that still covers it).
     func clip(at t: Rational) -> SNode? {
@@ -92,10 +117,26 @@ struct SceneBuilder {
         tracks.enumerated().map { i, t in
             let a = i < attributes.count ? attributes[i] : nil
             func flag(_ k: String) -> Bool { a?[k]?.bool ?? t.object[k]?.bool ?? false }
+            let clips = t.clips.map(node).sorted { $0.start < $1.start }
             return STrack(index: t.index, videoHidden: flag("videoHidden"), audioMuted: flag("audioMuted"),
-                          clips: t.clips.map(node).sorted { $0.start < $1.start })
+                          clips: clips, transitions: transitions(t.transitions, clips: clips))
         }
         .sorted { $0.index < $1.index }
+    }
+
+    /// Resolves transitions against `clips`; bypassed ones and ones naming no existing clip are dropped.
+    func transitions(_ list: [Transition], clips: [SNode]) -> [STransition] {
+        list.compactMap { tr in
+            guard !tr.bypassed, tr.duration > 0 else { return nil }
+            let l = tr.leftMediaID.flatMap { id in clips.firstIndex { $0.id == id } }
+            let r = tr.rightMediaID.flatMap { id in clips.firstIndex { $0.id == id } }
+            guard l != nil || r != nil else { return nil }
+            let w = Conventions.transitionWindow(leftEnd: l.map { clips[$0].end }, rightStart: r.map { clips[$0].start },
+                                                 duration: tr.duration)
+            return STransition(name: tr.name, duration: tr.duration, reverse: tr.reversed,
+                               parameters: SParams(tr.object["parameters"]?.object),
+                               left: l, right: r, lo: w.lo, hi: w.hi)
+        }
     }
 
     func node(_ c: Clip) -> SNode {
@@ -104,8 +145,9 @@ struct SceneBuilder {
         let effects = (o["effects"]?.array?.items ?? []).compactMap(\.object).compactMap { e -> SEffect? in
             let name = e["effectName"]?.string ?? ""
             guard name != "dummy", !name.isEmpty else { return nil }
+            let window: (Double, Double)? = e["duration"]?.double.map { (e["start"]?.double ?? 0, $0) }
             return SEffect(name: name, bypassed: e["bypassed"]?.bool ?? false,
-                           parameters: SParams(e["parameters"]?.object))
+                           parameters: SParams(e["parameters"]?.object), window: window)
         }
         return SNode(id: c.id, type: c.kind.typeName, start: c.start, duration: max(c.duration, 0),
                      mediaStart: c.mediaStart, scalar: c.scalar.num == 0 ? Q.one : c.scalar,
@@ -158,15 +200,33 @@ struct SceneBuilder {
 struct SceneEvaluator {
     let editRate: Int64
 
-    func layers(_ tracks: [STrack], at t: Rational) -> [Layer] {
+    /// `space`: size of the parent coordinate space (canvas or group), px.
+    func layers(_ tracks: [STrack], at t: Rational, space: CGSize) -> [Layer] {
         tracks.compactMap { tr in
-            guard !tr.videoHidden, let c = tr.clip(at: t) else { return nil }
+            guard !tr.videoHidden else { return nil }
+            if let tx = tr.transition(at: t) { return transitionLayer(tr, tx, at: t, space: space) }
+            guard let c = tr.clip(at: t) else { return nil }
             return layer(c, at: t)
         }
     }
 
-    func layer(_ n: SNode, at t: Rational) -> Layer? {
-        guard n.contains(t) else { return nil }
+    /// Both sides are evaluated at `t` even outside their own span (pre/post-roll into the
+    /// media handles), per `Conventions.transitionWindow`.
+    private func transitionLayer(_ tr: STrack, _ tx: STransition, at t: Rational, space: CGSize) -> Layer? {
+        let from = tx.left.flatMap { layer(tr.clips[$0], at: t, roll: true) }
+        let to = tx.right.flatMap { layer(tr.clips[$0], at: t, roll: true) }
+        guard from != nil || to != nil else { return nil }
+        let kt = Q.sub(t, tx.lo).double
+        let inst = TransitionInstance(name: tx.name, progress: tx.progress(t), duration: tx.duration,
+                                      reverse: tx.reverse, parameters: tx.parameters.evaluated(at: kt))
+        return Layer(clipID: to?.clipID ?? from?.clipID ?? 0, content: .transition(inst, from: from, to: to),
+                     size: space)
+    }
+
+    /// `roll`: evaluate even when `t` lies outside the clip (transition handles); media
+    /// times then extend the clip's mapping and MediaEngine clamps to the stream.
+    func layer(_ n: SNode, at t: Rational, roll: Bool = false) -> Layer? {
+        guard roll || n.contains(t) else { return nil }
         let kt = n.keyframeTime(t)
         func make(_ content: LayerContent, _ size: CGSize) -> Layer {
             Layer(clipID: n.id, content: content, size: size,
@@ -174,7 +234,7 @@ struct SceneEvaluator {
                   sourceCrop: Conventions.sourceCrop(n.params, at: kt),
                   geometryCrop: Conventions.geometryCrop(n.params, at: kt),
                   opacity: Conventions.opacity(n.params, at: kt),
-                  effects: n.effects.map { $0.instance(at: kt) })
+                  effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt) })
         }
         switch n.body {
         case .video(let url, let stream, let size):
@@ -184,19 +244,21 @@ struct SceneEvaluator {
         case .image(let url, let size):
             return make(.image(url), size)
         case .shader(let url, let p, let size):
-            return make(.shader(url, parameters: p.evaluated(at: kt)), size)
+            let seconds = Conventions.shaderTime(media: n.mediaTime(t), editRate: editRate)
+            return make(.shader(url, parameters: p.evaluated(at: kt), time: seconds), size)
         case .audio:
             return nil
         case .group(let tracks, let size):
-            return make(.group(layers(tracks, at: n.mediaTime(t))), size)
+            return make(.group(layers(tracks, at: n.mediaTime(t), space: size)), size)
         case .unified(let video, _):
             // The halves repeat the parent's start/duration/mediaStart [obs], so they
             // are evaluated at the parent's time. The video half carries the transform.
-            return video.flatMap { layer($0, at: t) }
+            return video.flatMap { layer($0, at: t, roll: roll) }
         case .stitched(let segments):
             let m = n.mediaTime(t)
-            guard let seg = segments.first(where: { $0.contains(m) }),
-                  let inner = layer(seg, at: m) else { return nil }
+            let hit = segments.first(where: { $0.contains(m) })
+                ?? (roll ? (Q.lt(m, Rational(segments.first?.start ?? 0)) ? segments.first : segments.last) : nil)
+            guard let seg = hit, let inner = layer(seg, at: m, roll: roll) else { return nil }
             // Geometry comes from the stitched clip [obs: segments carry only zero crops];
             // a segment's own transform is composed inside it [inf].
             var l = make(inner.content, inner.size)
