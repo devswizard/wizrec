@@ -100,6 +100,7 @@ struct MediaBinView: View {
                 Spacer()
                 Button { actions.importMedia() } label: { Image(systemName: "plus") }
                     .buttonStyle(.borderless).help("Import Media… (⌘I)")
+                    .accessibilityLabel("Import Media")
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             Divider()

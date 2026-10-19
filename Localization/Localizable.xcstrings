@@ -1,0 +1,355 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%arg" : {
+
+    },
+    "About WizRec" : {
+
+    },
+    "Add Marker  (M)" : {
+
+    },
+    "Add Track" : {
+
+    },
+    "Add to Timeline at Playhead" : {
+
+    },
+    "Animated" : {
+
+    },
+    "Animated: edits set a keyframe at the playhead" : {
+
+    },
+    "Applies to projects opened afterwards." : {
+
+    },
+    "Back" : {
+
+    },
+    "Canvas preview" : {
+
+    },
+    "Clear Menu" : {
+
+    },
+    "Clip" : {
+
+    },
+    "Close" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Cut" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete Crash Reports" : {
+
+    },
+    "Deselect All" : {
+
+    },
+    "Done" : {
+
+    },
+    "Drop media files here\nor choose File ▸ Import Media…" : {
+
+    },
+    "Duration" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Enter Full Screen" : {
+
+    },
+    "Every frame (may stutter)" : {
+
+    },
+    "Extend Frame" : {
+
+    },
+    "Fast playback" : {
+
+    },
+    "File" : {
+
+    },
+    "Frame number" : {
+
+    },
+    "Free, open-source screen recorder & editor by Devs Wizard." : {
+
+    },
+    "General" : {
+
+    },
+    "Go to End  (End)" : {
+
+    },
+    "Go to Start  (Home)" : {
+
+    },
+    "Group" : {
+
+    },
+    "Help" : {
+
+    },
+    "Hide Others" : {
+
+    },
+    "Hide WizRec" : {
+
+    },
+    "Import Media" : {
+
+    },
+    "Import Media…" : {
+
+    },
+    "Import Media… (⌘I)" : {
+
+    },
+    "Kept in ~/Library/Logs/WizRec so you can attach one to a bug report. Never sent. Change it any time in Settings." : {
+
+    },
+    "Locate…" : {
+
+    },
+    "Media" : {
+
+    },
+    "Minimize" : {
+
+    },
+    "Missing" : {
+
+    },
+    "New Project" : {
+
+    },
+    "New Recording…" : {
+
+    },
+    "Next Frame  (→)" : {
+
+    },
+    "No matches" : {
+
+    },
+    "Open Project…" : {
+
+    },
+    "Open Recent" : {
+
+    },
+    "Open…" : {
+
+    },
+    "Page %arg of %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Page %1$arg of %2$arg"
+          }
+        }
+      }
+    },
+    "Paste" : {
+
+    },
+    "Permissions" : {
+
+    },
+    "Play audio" : {
+
+    },
+    "Play/Pause  (Space)" : {
+
+    },
+    "Playback" : {
+
+    },
+    "Playhead" : {
+
+    },
+    "Playhead position" : {
+
+    },
+    "Previous Frame  (←)" : {
+
+    },
+    "Privacy" : {
+
+    },
+    "Properties" : {
+
+    },
+    "Quit WizRec" : {
+
+    },
+    "Redo" : {
+
+    },
+    "Relink Missing Media…" : {
+
+    },
+    "Relink…" : {
+
+    },
+    "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
+
+    },
+    "Ripple Delete" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save As…" : {
+
+    },
+    "Save crash reports on this Mac" : {
+
+    },
+    "Search" : {
+
+    },
+    "Search Folder…" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Select clips on the timeline first, or drag the effect onto a clip." : {
+
+    },
+    "Separate Video and Audio" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings…" : {
+
+    },
+    "Show All" : {
+
+    },
+    "Show Crash Reports" : {
+
+    },
+    "Show Performance Overlay" : {
+
+    },
+    "Show Welcome Window" : {
+
+    },
+    "Show in Finder" : {
+
+    },
+    "Show the performance overlay" : {
+
+    },
+    "Show the welcome window at launch" : {
+
+    },
+    "Shows the frame at the playhead. Click a clip to select it, drag to move it." : {
+
+    },
+    "Sidebar" : {
+
+    },
+    "Skip frames to keep time" : {
+
+    },
+    "Skip frames, show nearest while seeking" : {
+
+    },
+    "Snapping" : {
+
+    },
+    "Speed" : {
+
+    },
+    "Split at Playhead  (S)" : {
+
+    },
+    "Stitch Selected Media" : {
+
+    },
+    "Timeline" : {
+
+    },
+    "Undo" : {
+
+    },
+    "Ungroup" : {
+
+    },
+    "Unstitch" : {
+
+    },
+    "View" : {
+
+    },
+    "Welcome to WizRec" : {
+
+    },
+    "Window" : {
+
+    },
+    "WizRec" : {
+
+    },
+    "WizRec has no account, no analytics and sends nothing over the network." : {
+
+    },
+    "WizRec keeps this effect in the project but does not draw it yet." : {
+
+    },
+    "Your privacy" : {
+
+    },
+    "Zoom" : {
+
+    },
+    "Zoom In" : {
+
+    },
+    "Zoom Out" : {
+
+    },
+    "Zoom to Fit" : {
+
+    },
+    "^[%arg report](inflect: true)" : {
+
+    },
+    "macOS asks before WizRec can record. Nothing is requested until you use the feature." : {
+
+    },
+    "not previewed" : {
+
+    },
+    "off" : {
+
+    }
+  },
+  "version" : "1.0"
+}

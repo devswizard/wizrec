@@ -60,7 +60,7 @@ let package = Package(
         .executableTarget(
             name: "WizRecApp",
             dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine",
-                           "TimelineUI", "Recorder", "AudioEngine", "Exporter", "Captions"]
+                           "TimelineUI", "Recorder", "AudioEngine", "Exporter", "Captions", "WizRecAssets"]
         ),
         .testTarget(
             name: "TSCProjKitTests",

@@ -147,6 +147,7 @@ struct InspectorView: View {
             if i.animated.contains(f) {
                 Image(systemName: "diamond.fill").font(.system(size: 8)).foregroundStyle(.orange)
                     .help("Animated: edits set a keyframe at the playhead")
+                    .accessibilityLabel("Animated")
             }
         }
     }

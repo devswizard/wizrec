@@ -27,6 +27,17 @@ for b in "$(dirname "$BIN")"/*.bundle; do
     [ -d "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
 done
 
+# String Catalog → <lang>.lproj/Localizable.strings(dict) for every translated language
+# (refresh the catalog with scripts/update-strings.sh). English is the development language.
+if [ -f Localization/Localizable.xcstrings ]; then
+    xcrun xcstringstool compile Localization/Localizable.xcstrings -o "$APP/Contents/Resources"
+fi
+mkdir -p "$APP/Contents/Resources/en.lproj"
+LOCALIZATIONS=""
+for l in "$APP"/Contents/Resources/*.lproj; do
+    LOCALIZATIONS="$LOCALIZATIONS<string>$(basename "$l" .lproj)</string>"
+done
+
 VERSION=${VERSION:-0.1.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
@@ -39,6 +50,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array>$LOCALIZATIONS</array>
+    <key>NSSpeechRecognitionUsageDescription</key><string>WizRec transcribes your clips' audio to create captions. Audio is processed on this Mac.</string>
     <key>CFBundleExecutable</key><string>WizRec</string>
     <key>CFBundleIdentifier</key><string>com.devswizard.WizRec</string>
     <key>CFBundleName</key><string>WizRec</string>

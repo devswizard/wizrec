@@ -5,6 +5,10 @@ import PlayerKit
 @MainActor
 enum AppEnvironment {
     static var options = LaunchOptions()
+    /// Preferences as loaded at launch (the Settings window edits UserDefaults directly).
+    static var preferences = AppPreferences()
+    /// The welcome window was shown at this launch (no open panel then).
+    static var welcomeShown = false
 }
 
 @MainActor
@@ -26,11 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
+        if AppPreferences.load(from: .standard).showsWelcome(for: options) {
+            AppEnvironment.welcomeShown = true
+            WelcomeWindowController.shared.present()
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        AppEnvironment.options.paths.isEmpty
+        AppEnvironment.options.paths.isEmpty && !AppEnvironment.welcomeShown
+            && !AppPreferences.load(from: .standard).showsWelcome(for: AppEnvironment.options)
     }
 
     /// No untitled documents in a player: offer the open panel instead.
@@ -40,6 +49,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.present() }
+    @objc func showWelcome(_ sender: Any?) { WelcomeWindowController.shared.present() }
+
+    @objc func showCrashReports(_ sender: Any?) {
+        let dir = CrashLog.defaultDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([dir])
+    }
 
     @objc func showAbout(_ sender: Any?) {
         let credits = NSAttributedString(
