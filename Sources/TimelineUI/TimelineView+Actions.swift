@@ -5,6 +5,10 @@ import TimelineEngine
 extension TimelineView: NSMenuItemValidation {
     /// Pasteboard type for media-bin drags: one string per item, the `sourceBin` id.
     public static let sourceIDType = NSPasteboard.PasteboardType("com.devswizard.wizrec.source-id")
+    /// Library drags: string = effect name (`TimelineLibrary.effects`), dropped on a clip.
+    public static let effectType = NSPasteboard.PasteboardType("com.devswizard.wizrec.effect")
+    /// Library drags: string = transition name (`TimelineLibrary.transitions`), dropped on a cut or clip edge.
+    public static let transitionType = NSPasteboard.PasteboardType("com.devswizard.wizrec.transition")
 
     /// Thumbnail and waveform source. Nil draws placeholders.
     public var mediaProvider: (any TimelineMediaProvider)? {

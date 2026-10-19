@@ -383,6 +383,22 @@ extension TimelineCanvas {
             Palette.marqueeStroke.setFill()
             ctx.fill(CGRect(x: x - 1, y: rr.minY, width: 2, height: rr.height))
         }
+        switch libraryTarget {
+        case .effect(_, let id)?:
+            if let (track, c) = snapshot.clip(id), let r = L.clipRect(track: track, start: c.start, duration: c.duration) {
+                ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(3)
+                ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 5, cornerHeight: 5, transform: nil))
+                ctx.strokePath()
+            }
+        case .transition(_, let l, let rgt)?:
+            if let span = editor.transitionSpan(left: l, right: rgt),
+               let r = L.clipRect(track: span.track, start: span.start, duration: span.end - span.start) {
+                Palette.marqueeFill.setFill(); ctx.fill(r)
+                ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(2)
+                ctx.stroke(r.insetBy(dx: 1, dy: 1))
+            }
+        case nil: break
+        }
         if let g = guide {
             let x = L.x(ofTicks: g).rounded() + 0.5
             ctx.setStrokeColor(Palette.snapGuide.cgColor); ctx.setLineWidth(1)
@@ -611,7 +627,13 @@ extension TimelineCanvas {
 
     // MARK: Context menus
 
-    func contextMenu(for hit: TimelineHit) -> NSMenu? {
+    /// Transition on `track` whose window contains view x `x`.
+    func transition(onTrack track: Int, atX x: CGFloat) -> TimelineTransitionItem? {
+        let t = layout.ticks(atX: x)
+        return snapshot.track(track)?.transitions.first { $0.start <= t && t <= $0.end }
+    }
+
+    func contextMenu(for hit: TimelineHit, at p: CGPoint = .zero) -> NSMenu? {
         let menu = NSMenu()
         func item(_ title: String, _ action: Selector, _ tag: Int = 0, enabled: Bool = true) {
             let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -620,7 +642,15 @@ extension TimelineCanvas {
         }
         menu.autoenablesItems = false
         switch hit {
-        case .clip:
+        case .clip(_, let track, _):
+            if let tr = transition(onTrack: track, atX: p.x) {
+                let i = NSMenuItem(title: "Remove Transition", action: #selector(menuRemoveTransition(_:)), keyEquivalent: "")
+                i.target = self
+                i.representedObject = [tr.leftClipID.map { NSNumber(value: $0) } ?? NSNull(),
+                                       tr.rightClipID.map { NSNumber(value: $0) } ?? NSNull()] as NSArray
+                menu.addItem(i)
+                menu.addItem(.separator())
+            }
             item("Split at Playhead", #selector(menuSplit(_:)), enabled: !editor.splitTargets(at: model.playhead).isEmpty)
             menu.addItem(.separator())
             item("Delete", #selector(menuDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
@@ -654,6 +684,11 @@ extension TimelineCanvas {
     @objc func menuAddTrack(_ sender: NSMenuItem) { if !editor.addTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuRemoveTrack(_ sender: NSMenuItem) { if !editor.removeTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuZoomToFit(_ sender: Any?) { zoomToFit() }
+    @objc func menuRemoveTransition(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? NSArray, pair.count == 2 else { return }
+        let l = (pair[0] as? NSNumber)?.int64Value, r = (pair[1] as? NSNumber)?.int64Value
+        if !editor.removeTransition(left: l, right: r) { NSSound.beep() }
+    }
     @objc func menuAddMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
     @objc func menuRenameMarker(_ sender: NSMenuItem) {
         guard let t = (sender.representedObject as? NSNumber)?.int64Value else { return }

@@ -21,6 +21,12 @@ enum TimelineDrag: Equatable {
     case marquee(origin: CGPoint, current: CGPoint, base: Set<Int64>)
 }
 
+/// An effect or transition dropped from the library panel, resolved to its target.
+enum LibraryDrop: Equatable {
+    case effect(name: String, clipID: Int64)
+    case transition(name: String, left: Int64?, right: Int64?)
+}
+
 /// Draws the timeline and turns events into edits. Lives inside `TimelineView`.
 @MainActor
 final class TimelineCanvas: NSView {
@@ -35,6 +41,8 @@ final class TimelineCanvas: NSView {
     var drag: TimelineDrag = .none
     /// Drop target shown while media is dragged over the view.
     var dropTarget: (track: Int, ticks: Int64)?
+    /// Library item (effect/transition) target shown while it is dragged over the view.
+    var libraryTarget: LibraryDrop?
     /// Snap distance, points.
     var snapTolerancePoints: CGFloat = 8
     /// Fit the project once the view first gets a size.
@@ -60,7 +68,7 @@ final class TimelineCanvas: NSView {
         rebuildIfNeeded()
         lastPlayhead = model.playhead
         art.onUpdate = { [weak self] in self?.needsDisplay = true }
-        registerForDraggedTypes([.fileURL, TimelineView.sourceIDType])
+        registerForDraggedTypes([.fileURL, TimelineView.sourceIDType, TimelineView.effectType, TimelineView.transitionType])
         observeModel()
         observePlayhead()
     }
@@ -421,7 +429,7 @@ final class TimelineCanvas: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let p = convert(event.locationInWindow, from: nil)
-        return contextMenu(for: layout.hit(p, in: snapshot))
+        return contextMenu(for: layout.hit(p, in: snapshot), at: p)
     }
 
     // MARK: Scroll / zoom gestures
@@ -508,9 +516,48 @@ final class TimelineCanvas: NSView {
         return (track, max(0, snapshot.quantize(t)))
     }
 
+    /// Effect or transition name on the pasteboard.
+    func libraryItem(_ pb: NSPasteboard) -> (isEffect: Bool, name: String)? {
+        for item in pb.pasteboardItems ?? [] {
+            if let n = item.string(forType: TimelineView.effectType), !n.isEmpty { return (true, n) }
+            if let n = item.string(forType: TimelineView.transitionType), !n.isEmpty { return (false, n) }
+        }
+        return nil
+    }
+
+    /// Where a library item dropped at view point `p` would go.
+    func libraryDrop(_ item: (isEffect: Bool, name: String), at p: CGPoint) -> LibraryDrop? {
+        let L = layout
+        if item.isEffect {
+            guard case .clip(let id, let track, _) = L.hit(p, in: snapshot), snapshot.track(track)?.locked == false
+            else { return nil }
+            return .effect(name: item.name, clipID: id)
+        }
+        guard p.x >= L.clipArea.minX, let row = L.row(atY: p.y),
+              let target = editor.transitionTarget(track: row.trackIndex, at: L.ticks(atX: p.x),
+                                                   tolerance: L.ticks(forWidth: 12)) else { return nil }
+        return .transition(name: item.name, left: target.left, right: target.right)
+    }
+
+    /// Applies a library drop. Returns false (beeps) when the command fails.
+    @discardableResult
+    func perform(_ drop: LibraryDrop) -> Bool {
+        let ok = switch drop {
+        case .effect(let name, let id): editor.addEffect(named: name, to: id)
+        case .transition(let name, let l, let r): editor.addTransition(named: name, left: l, right: r)
+        }
+        if !ok { NSSound.beep() }
+        return ok
+    }
+
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if let item = libraryItem(sender.draggingPasteboard) {
+            libraryTarget = libraryDrop(item, at: convert(sender.draggingLocation, from: nil))
+            needsDisplay = true
+            return libraryTarget == nil ? [] : .copy
+        }
         guard model.onDrop != nil, dropPayload(sender) != nil else { dropTarget = nil; return [] }
         dropTarget = dropLocation(convert(sender.draggingLocation, from: nil))
         needsDisplay = true
@@ -519,11 +566,16 @@ final class TimelineCanvas: NSView {
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
         dropTarget = nil
+        libraryTarget = nil
         needsDisplay = true
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        defer { dropTarget = nil; needsDisplay = true }
+        defer { dropTarget = nil; libraryTarget = nil; needsDisplay = true }
+        if let item = libraryItem(sender.draggingPasteboard) {
+            guard let drop = libraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
+            return perform(drop)
+        }
         guard let payload = dropPayload(sender), let onDrop = model.onDrop else { return false }
         let loc = dropLocation(convert(sender.draggingLocation, from: nil))
         return onDrop(payload, loc.track, loc.ticks)
