@@ -1,5 +1,5 @@
 // M2/M3 public interface of TimelineEngine, frozen by coordination/CONTRACTS.md (M2 section).
-// Stub bodies throw until agent "timeline" implements them.
+// Implementations live in M2Commands.swift.
 // Changing anything here needs an API_CHANGE message and the lead's approval.
 
 import Foundation
@@ -53,8 +53,11 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public let descriptor: SourceDescriptor
     public private(set) var sourceID: Int64?
     public init(_ descriptor: SourceDescriptor) { self.descriptor = descriptor }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    /// `metadata.timeAdded` written by `apply` (fixed at init so redo writes the same bytes).
+    public var addedAt = Date()
+    var swap = ValueSwap()
+    public func apply(to project: Project) throws { sourceID = try M2.addSource(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project); sourceID = nil }
 }
 
 /// Places a source on a track at `start` (ticks) as the clip type its tracks imply
@@ -68,8 +71,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public init(sourceID: Int64, track: Int, start: Int64) {
         self.sourceID = sourceID; self.track = track; self.start = start
     }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = TrackSwap()
+    public func apply(to project: Project) throws { clipID = try M2.insertClip(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project); clipID = nil }
 }
 
 /// Deletes clips; with `ripple`, later clips on the same tracks close the gap.
@@ -80,8 +84,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public init(clipIDs: [Int64], ripple: Bool = false) {
         self.clipIDs = clipIDs; self.ripple = ripple; name = ripple ? "Ripple Delete" : "Delete"
     }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = TrackSwap()
+    public func apply(to project: Project) throws { try M2.deleteClips(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Inserts an empty top-level track at `index` (plus its `trackAttributes` entry).
@@ -89,8 +94,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public let name = "Add Track"
     public let index: Int
     public init(at index: Int) { self.index = index }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = ValueSwap()
+    public func apply(to project: Project) throws { try M2.addTrack(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Removes a top-level track and its clips.
@@ -98,8 +104,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public let name = "Remove Track"
     public let index: Int
     public init(at index: Int) { self.index = index }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = ValueSwap()
+    public func apply(to project: Project) throws { try M2.removeTrack(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Sets a top-level track flag (mute, hide, magnetic, solo, lock).
@@ -111,8 +118,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public init(track index: Int, _ flag: TrackFlag, _ value: Bool) {
         self.index = index; self.flag = flag; self.value = value; name = "Change Track"
     }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = ValueSwap()
+    public func apply(to project: Project) throws { try M2.setTrackFlag(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Sets a clip parameter: constant when `keyframeAt` is nil, else adds/updates a keyframe
@@ -126,8 +134,9 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public init(clipID: Int64, parameter: String, value: Double, keyframeAt: Int64? = nil) {
         self.clipID = clipID; self.parameter = parameter; self.value = value; self.keyframeAt = keyframeAt
     }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = TrackSwap()
+    public func apply(to project: Project) throws { try M2.setParameter(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Points a source at another file (cross-device relink); updates `src`, `lastMod`, `sourceTracks`.
@@ -138,6 +147,7 @@ public enum TrackFlag: String, Sendable, CaseIterable {
     public init(sourceID: Int64, to descriptor: SourceDescriptor) {
         self.sourceID = sourceID; self.descriptor = descriptor
     }
-    public func apply(to project: Project) throws { throw EditError.invalid("not implemented") }
-    public func revert(on project: Project) throws { throw EditError.invalid("not implemented") }
+    var swap = ValueSwap()
+    public func apply(to project: Project) throws { try M2.relinkSource(self, project) }
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
