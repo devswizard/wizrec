@@ -6,7 +6,59 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0a. Session 2 snapshot (2026-10-19) — read this first
+## 0. Session 3 snapshot (2026-10-19) — read this first
+
+- **`main` is green: 783 tests** (18 known issues = golden-harness
+  self-tests). All `agent/*4` branches merged; no WIP. Sections 0a–2 are
+  history.
+- **User inputs at session start:** no Camtasia references; recorder real
+  capture OK; live Apple Speech test OK; whisper.cpp reported installed but
+  **not found on disk** (no formula, no `whisper-cli`, no model); no GitHub
+  remote / Developer ID / Sparkle approval. So no researcher, audio, recorder
+  or ship agent ran.
+- **Landed in session 3:**
+  - TimelineEngine `AddGroupTrack`/`RemoveGroupTrack`/`InsertClipInGroup`
+    (+ `GroupTime`, `GroupTiming`); TimelineUI group-track menu + group drops;
+    app `placeInGroup` (one undo step), Timeline ▸ Remove Track.
+  - Export: `AudioScene.sampleRate` → export at project rate (48k fallback;
+    AAC/MP3 table rates + bitrate caps, AAC ≤ 48k); `cancellationLosesWork`
+    + `cancelAndWait`; MovieExport through `OfflineRenderer.pipeline`
+    (BGRA kept: 420v measured slower). Demo export ≈ 4.4–5.1× real time.
+  - Render: `RenderPipeline` (in-order, byte-identical to sequential, 420v/420f
+    BT.709 output [WizRec]); particle (`vertexCode`) shader backgrounds, GLSL
+    translator out/inout component + swizzle `*=` fixes (13/13 installed
+    particle files draw).
+  - Media: HW (VideoToolbox) and SW (libav) lanes share one YUV→BGRA
+    conversion with stream-level tags → byte-identical frames; seek == forward
+    decode; exports reproducible. Faster 1080p decode/seek.
+  - Captions: `WhisperCppRecognizer` (subprocess, runtime detection, fake-binary
+    tests, live test gated `WIZREC_WHISPER_TESTS=1`); app Settings ▸ Captions
+    engine/model picker, Captions ▸ Speech Engine.
+  - App: confirm before close/quit cancels exports; dynamic caption style in
+    the inspector; scripted runs (`--quit-after`, `--export`, `--snapshot-*`)
+    never block on the relink sheet.
+  - QA: `scripts/golden.sh` (`--status`, `--calibrate`) + docs/testing/
+    golden-rerun.md; integration tests for every feature above; asset audit
+    clean (see NEED_USER for the fixture thumbnail).
+- **Demo run (copy of demo project, built app):** snapshots 0/5/12.5/25 s
+  correct; `--export` 25.67 s 1080p H.264 + AAC 44.1 kHz in 5.9 s under load.
+- **Follow-ups (no owner):**
+  - group-edit rules tagged [inf] (drop past end grows group, maxDurationAttr
+    untouched, add/remove keep timing, drop before mediaStart rejected) —
+    confirm with experiment X5;
+  - particle canvas/blend/`_ToRenderTarget` orientation and `_Scale`/
+    `_StarOpacity` = 0 — confirm with SH2;
+  - HDR→SDR tone mapping in MediaEngine PixelConversion;
+  - BT.709 vs sRGB export tag; golden `psnrMin` (`scripts/golden.sh
+    --calibrate`) — both need references;
+  - audio mix prefetch in export (0.5–2 s per 25 s under load);
+  - vImage for SW-lane staging copy (2.7K/4K 10-bit);
+  - Sparkle, CI, signing — need user inputs;
+  - perf assertions (`WIZREC_PERF=1`) need machine load < ~30.
+- **Next team:** researcher + render + qa when references land; ship when
+  remote/Developer ID/Sparkle arrive; captions to live-test whisper.
+
+## 0a. Session 2 snapshot (2026-10-19) — history
 
 - **`main` is green: 700 tests** (18 known issues, all deliberate golden-harness
   self-tests). Every session-2 branch (`agent/*3`, `agent/media3`) is merged;
@@ -43,7 +95,7 @@ This is for the **lead session** that continues the WizRec build. Read
   terminal with Speech permission, or Captions ▸ Transcribe in the app);
   confirm Camtasia accepts our own `.tscshadervid` backgrounds; Sparkle OK.
 
-## 0. Snapshot (2026-10-19, end of session 1)
+## 0b. Snapshot (2026-10-19, end of session 1)
 
 - The previous session ended when the API usage limit was hit. Every agent
   stopped mid-task.

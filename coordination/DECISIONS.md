@@ -72,3 +72,21 @@ Dated log. Newest last.
   LGPL-2.0+, GPL-3.0 compatible; Homebrew FFmpeg already links it, so no new
   install. M11 bundling ships `libmp3lame.dylib` and its notice. (export,
   approved by lead.)
+- **2026-10-19 · whisper.cpp via subprocess (session 3):** the whisper backend
+  runs the `whisper-cli` executable found at runtime (Settings path, PATH,
+  Homebrew dirs) with a ggml model from `~/Library/Application Support/WizRec/
+  models/`. No link-time or Package.swift dependency; absent binary/model →
+  backend unavailable, UI degrades. (Lead.)
+- **2026-10-19 · Export audio rate:** exports use the project's
+  `audioFormatSampleRate` (48 kHz fallback); AAC/MP3 map to their table rates
+  (AAC ≤ 48 kHz), PCM keeps the exact rate. (export, approved.)
+- **2026-10-19 · Export frames stay BGRA:** RenderPipeline can write 420v/420f
+  (BT.709 [WizRec]) but end-to-end it measured slower; MovieExport keeps BGRA.
+- **2026-10-19 · Deterministic decode:** VideoToolbox and libav lanes share one
+  YUV→BGRA conversion with stream-level tags, so a decoded frame depends only
+  on (source, frame). Exceptions documented in VideoDecoder.swift (12-bit /
+  alpha formats). (media, approved.)
+- **2026-10-19 · Group-edit rules [inf]:** a drop past a group's end grows it
+  (and enclosing groups); `maxDurationAttr` untouched; adding/removing inner
+  tracks keeps group timing; drops before `mediaStart` rejected; a group keeps
+  ≥ 1 track. To confirm with experiment X5. (timeline, approved.)

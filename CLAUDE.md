@@ -64,19 +64,21 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-19, end of build session 2)
+## Current state (2026-10-19, end of build session 3)
 
-- **Resume from `docs/HANDOFF.md`** (session 2 snapshot, follow-ups, user's
-  pending items, team setup).
-- Done and merged: M0–M3 (incl. timeline UI nested groups), M7 recorder,
-  M8 audio, M9 export (engine + sheet), M10 captions (Apple Speech; whisper.cpp
-  pluggable, not added), M11 assets, release scripts, docs, app polish; most of
-  M4–M6 rendering. 700 tests green (18 known issues = golden harness
-  self-tests). No WIP branches.
-- Waiting on the user: recorder permission check, Camtasia sessions 1 and 2
-  (`docs/testing/`) — they unblock render/researcher and the golden gates —,
-  live speech test, optional whisper.cpp, GitHub remote, bundle ID,
-  Developer ID, Sparkle approval.
+- **Resume from `docs/HANDOFF.md` §0** (session 3 snapshot, follow-ups,
+  user's pending items).
+- Done and merged: M0–M3 (incl. inner group tracks + media drops into open
+  groups), M7 recorder (real capture confirmed by user), M8 audio, M9 export
+  (project sample rate, confirm-before-cancel, RenderPipeline ≈5× real time
+  1080p H.264), M10 captions (Apple Speech confirmed live; whisper.cpp backend
+  via `whisper-cli` subprocess, untested live), M11 assets/scripts/docs; most
+  of M4–M6 rendering incl. particle shader backgrounds. Decoder output is now
+  deterministic (HW and SW lanes byte-identical). 783 tests green (18 known
+  issues = golden harness self-tests). No WIP branches.
+- Still blocked on the user: Camtasia sessions 1 and 2 reference exports
+  (golden gates for M1/M4/M5/M6, effect/caption/audio specs), GitHub remote,
+  bundle ID, Developer ID, Sparkle approval.
 
 ### M0 (2026-10-19)
 

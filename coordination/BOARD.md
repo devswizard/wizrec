@@ -181,14 +181,26 @@ Developer ID or Sparkle approval (no ship agent).
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| S3-TL-1 | timeline | claimed | `AddTrack`/`RemoveTrack` inside a group, media drop into an open group: expected-JSON + byte-identical undo tests |
-| S3-TUI-1 | timelineui | claimed | Group-track add/remove + media drops in open groups in the UI, on S3-TL-1 commands |
-| S3-TUI-2 | app | claimed | Dynamic caption style as an inspector section (moved from timelineui: inspector is app-owned) |
-| S3-REN-1 | render | claimed | Parallel `OfflineRenderer`: several frames in flight, deterministic, frame N unchanged; ≥ 4× real time 1080p (perf test gated) |
-| S3-REN-2 | render | claimed | Optional: particle shaders (vertexCode), HDR tone mapping |
-| S3-EXP-1 | export | claimed | Audio export sample rate from `audioFormatSampleRate` (additive AudioScene API) |
-| S3-EXP-2 | export | claimed | Confirm-before-cancel hook for the app; use render's parallel path |
-| S3-APP-1 | app | claimed | Export sheet confirm on window close; wire group/inspector features; make-app.sh + String Catalog current |
-| S3-CAP-1 | captions | claimed | whisper.cpp backend via `whisper-cli` subprocess, runtime-detected, gated live test; fake-binary unit tests |
-| S3-QA-1 | qa | claimed | Integration tests for every new command/feature; flaky watch; golden re-run ready for references |
-| S3-MED-1 | media | claimed | Decoded pixels independent of lane/history: VT and libav lanes identical (or pinned for offline), seek == sequential; qa's SeekDeterminismTests known issue removed |
+| S3-TL-1 | timeline | done | `AddTrack`/`RemoveTrack` inside a group, media drop into an open group: expected-JSON + byte-identical undo tests |
+| S3-TUI-1 | timelineui | done | Group-track add/remove + media drops in open groups in the UI, on S3-TL-1 commands |
+| S3-TUI-2 | app | done | Dynamic caption style as an inspector section (moved from timelineui: inspector is app-owned) |
+| S3-REN-1 | render | done | Parallel `OfflineRenderer`: several frames in flight, deterministic, frame N unchanged; ≥ 4× real time 1080p (perf test gated) |
+| S3-REN-2 | render | done | Optional: particle shaders (vertexCode), HDR tone mapping |
+| S3-EXP-1 | export | done | Audio export sample rate from `audioFormatSampleRate` (additive AudioScene API) |
+| S3-EXP-2 | export | done | Confirm-before-cancel hook for the app; use render's parallel path |
+| S3-APP-1 | app | done | Export sheet confirm on window close; wire group/inspector features; make-app.sh + String Catalog current |
+| S3-CAP-1 | captions | done | whisper.cpp backend via `whisper-cli` subprocess, runtime-detected, gated live test; fake-binary unit tests |
+| S3-QA-1 | qa | done | Integration tests for every new command/feature; flaky watch; golden re-run ready for references |
+| S3-MED-1 | media | done | Decoded pixels independent of lane/history: VT and libav lanes identical (or pinned for offline), seek == sequential; qa's SeekDeterminismTests known issue removed |
+
+## Session 3 merges
+
+- export4: project sample rate (AudioScene.sampleRate), cancelAndWait hooks; AAC/MP3 rate caps (fixes qa's 22.05k bug); MovieExport via RenderPipeline (≈5× RT).
+- timeline4: AddGroupTrack/RemoveGroupTrack/InsertClipInGroup.
+- timelineui4: group-track menu + group drops (onGroupDrop), wired to timeline.
+- captions4: whisper.cpp backend (whisper-cli subprocess).
+- app4: export close/quit confirm, caption style inspector, group drops, speech engine settings, scripted runs skip relink.
+- qa4: golden.sh rerun/calibrate, integration tests, export + pipeline determinism tests, asset audit.
+- render4: RenderPipeline + 420v output; particle shader backgrounds.
+- media4 (spawned for qa's bug): HW/SW decoder lanes byte-identical.
+- **Session 3 complete: all agents DONE, all branches merged.** Follow-ups in docs/HANDOFF.md §0.
