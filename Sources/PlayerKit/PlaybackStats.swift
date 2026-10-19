@@ -21,6 +21,10 @@ public struct PlaybackStats: Sendable, Equatable {
     public var fastFetchRatio = 0.0
     /// Mean fetch latency in the last window, milliseconds.
     public var fetchMs = 0.0
+    /// Times the host clock was re-anchored to the audio clock (> 15 ms apart; cumulative).
+    public var resyncs = 0
+    /// Audio underruns since the document opened (cumulative).
+    public var audioUnderruns = 0
     /// `"audio"` when the audio clock drives playback, else `"host"`.
     public var clock = "host"
 
@@ -31,7 +35,7 @@ public struct PlaybackStats: Sendable, Equatable {
         func f(_ v: Double, _ d: Int = 1) -> String { String(format: "%.\(d)f", v) }
         return "draw=\(f(drawFPS))fps content=\(f(contentFPS))fps cpu=\(f(cpuMs, 2))ms gpu=\(f(gpuMs, 2))ms "
             + "dropped=\(droppedDisplayFrames) skipped=\(skippedFrames) stale=\(staleDraws) "
-            + "fetch=\(fetches) fast=\(f(fastFetchRatio * 100, 0))% fetchAvg=\(f(fetchMs, 2))ms clock=\(clock)"
+            + "fetch=\(fetches) fast=\(f(fastFetchRatio * 100, 0))% fetchAvg=\(f(fetchMs, 2))ms resyncs=\(resyncs) underruns=\(audioUnderruns) clock=\(clock)"
     }
 }
 
@@ -63,6 +67,8 @@ public struct StatsAccumulator: Sendable {
     }
 
     public mutating func skipped(_ n: Int) { cumulative.skippedFrames += n }
+
+    public mutating func resynced() { cumulative.resyncs += 1 }
 
     /// A display-link callback at `timestamp` for a refresh of `period` seconds.
     /// Counts refreshes missed since the previous callback while `counting`.

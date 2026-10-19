@@ -30,6 +30,9 @@ public final class AudioPlayback {
     public private(set) var isPlaying = false
     /// Source reads that failed (missing media, decode errors); those parts play as silence.
     public private(set) var failedReads = 0
+    /// Times the player ran out of scheduled audio (audible gap; cumulative).
+    public private(set) var underruns = 0
+    private var dry = false
 
     /// Nil when no audio output is available.
     public init?(scene: SceneModel, pool: MediaPool, sampleRate: Double,
@@ -99,7 +102,10 @@ public final class AudioPlayback {
 
     private func pump(_ gen: Int) async {
         while !Task.isCancelled, gen == generation {
-            if Double(scheduledFrames - playedFrames) / sampleRate < lookaheadSeconds {
+            let played = playedFrames
+            if played >= scheduledFrames, !dry { underruns += 1 }
+            dry = played >= scheduledFrames
+            if Double(scheduledFrames - played) / sampleRate < lookaheadSeconds {
                 await scheduleNext(gen)
             } else {
                 try? await Task.sleep(nanoseconds: 40_000_000)

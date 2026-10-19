@@ -101,7 +101,7 @@ struct CanvasOverlay: View {
             "cpu \(f(s.cpuMs, 2)) ms   gpu \(f(s.gpuMs, 2)) ms",
             "dropped \(s.droppedDisplayFrames)   skipped \(s.skippedFrames)   stale \(s.staleDraws)",
             "fetch \(s.fetches)/s   cache≈\(f(s.fastFetchRatio * 100, 0))%   avg \(f(s.fetchMs, 2)) ms",
-            "clock \(s.clock)" + (engine.lastError.map { "   error: \($0)" } ?? ""),
+            "clock \(s.clock)   resyncs \(s.resyncs)   audio underruns \(s.audioUnderruns)" + (engine.lastError.map { "   error: \($0)" } ?? ""),
         ]
         return Text(lines.joined(separator: "\n"))
             .font(.system(size: 11, design: .monospaced))
