@@ -1,5 +1,8 @@
-# Build and test on Apple silicon. Golden-frame tests skip (no REFS_DIR on CI)
-# and perf tests skip (no WIZREC_PERF=1).
+# Build and test on Apple silicon. Golden-frame tests skip (no REFS_DIR on CI),
+# perf tests skip (no WIZREC_PERF=1), and the opt-in capture / Apple Speech /
+# whisper.cpp suites stay off (they need TCC permissions or models). Tests that
+# read the user's own projects (~/Documents) or /Applications/Camtasia.app skip
+# when those are absent. The asset audit (AssetAuditTests) runs here.
 name: CI
 
 on:
@@ -48,6 +51,13 @@ jobs:
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Check shell scripts parse
+        run: |
+          set -euo pipefail
+          for f in scripts/*.sh scripts/release/*.sh Design/AppIcon/build-icon.sh; do
+            bash -n "$f"
+          done
+
       - name: Build
         run: swift build
 
@@ -55,4 +65,7 @@ jobs:
         env:
           REFS_DIR: ""
           WIZREC_PERF: ""
+          WIZREC_CAPTURE_TESTS: ""
+          WIZREC_SPEECH_TESTS: ""
+          WIZREC_WHISPER_TESTS: ""
         run: swift test
