@@ -59,18 +59,101 @@ public enum RecorderError: Error, Sendable, Equatable {
     case permissionDenied(String)
     case deviceUnavailable(String)
     case notImplemented
+    /// Writing a file failed (additive, recorder API_CHANGE 2026-10-19).
+    case failed(String)
 }
 
 /// One recording. Drive from the main actor (HUD).
+///
+/// `start` checks permissions, starts every source, counts down (`state` = `.countingDown(n)`,
+/// one second per step) and then sets t = 0 for every file. `pause`/`resume` cut the paused
+/// span out of all files and the cursor log; `stop` closes the files and returns them.
 @MainActor
 public final class RecordingSession {
     public let options: RecordingOptions
-    public private(set) var state: RecorderState = .idle
+    public private(set) var state: RecorderState = .idle {
+        didSet { if state != oldValue { onStateChange?(state) } }
+    }
+    /// Called on every `state` change (additive API).
+    public var onStateChange: (@MainActor (RecorderState) -> Void)?
+    /// Non-fatal problems of the last `stop` (a secondary file missing, dropped frames…) (additive API).
+    public private(set) var warnings: [String] = []
+    private var engine: RecordingEngine?
+    private var cancelled = false
 
     public init(options: RecordingOptions) { self.options = options }
 
-    public func start(countdown: Int = 3) async throws { throw RecorderError.notImplemented }
-    public func pause() {}
-    public func resume() {}
-    public func stop() async throws -> RecordingResult { throw RecorderError.notImplemented }
+    /// Recording time so far, seconds; frozen while paused, 0 before the countdown ends (additive API).
+    public var elapsed: TimeInterval { engine?.elapsed ?? 0 }
+
+    /// Starts recording after `countdown` seconds. Throws `RecorderError.permissionDenied` /
+    /// `.deviceUnavailable`, or `CancellationError` when `cancel()`/`stop()` came during the countdown.
+    public func start(countdown: Int = 3) async throws {
+        guard state == .idle else { return }
+        cancelled = false
+        warnings = []
+        let engine = RecordingEngine(options: options)
+        self.engine = engine
+        state = .countingDown(max(1, countdown))
+        do {
+            try await engine.prepare()
+            var n = max(0, countdown)
+            while n > 0 {
+                try checkCancelled()
+                state = .countingDown(n)
+                let deadline = Date().addingTimeInterval(1)
+                while Date() < deadline {
+                    try checkCancelled()
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                }
+                n -= 1
+            }
+            try checkCancelled()
+            engine.begin()
+            state = .recording
+        } catch {
+            await engine.abort()
+            self.engine = nil
+            state = .idle
+            throw error
+        }
+    }
+
+    private func checkCancelled() throws {
+        if cancelled || Task.isCancelled { throw CancellationError() }
+    }
+
+    /// Cancels a countdown in progress (additive API). No effect once recording.
+    public func cancel() {
+        if case .countingDown = state { cancelled = true }
+    }
+
+    public func pause() {
+        guard state == .recording, let engine else { return }
+        engine.pause()
+        state = .paused
+    }
+
+    public func resume() {
+        guard state == .paused, let engine else { return }
+        engine.resume()
+        state = .recording
+    }
+
+    /// Stops and returns the files. During the countdown it cancels instead and throws
+    /// `CancellationError`.
+    public func stop() async throws -> RecordingResult {
+        if case .countingDown = state { cancel(); throw CancellationError() }
+        guard state == .recording || state == .paused, let engine else { throw RecorderError.deviceUnavailable("not recording") }
+        state = .finishing
+        defer { self.engine = nil; state = .idle }
+        do {
+            let result = try await engine.finish()
+            warnings = engine.warnings
+            return result
+        } catch {
+            warnings = engine.warnings
+            throw error
+        }
+    }
 }
