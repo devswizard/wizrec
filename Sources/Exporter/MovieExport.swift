@@ -141,7 +141,7 @@ extension ExportSession {
 
         var feed: AudioFeed?
         var audio: AVAssetWriterInput?
-        if let mixer = makeMixer() {
+        if let mixer = makeMixer(lossy: !codec.isProRes) {
             let f = AudioFeed(mixer: mixer, editRate: scene.timebase.editRate, range: r.range, format: await mixer.format)
             let settings = codec.isProRes
                 ? AudioFeed.pcmSettings(sampleRate: f.sampleRate, channels: f.channels, bits: 24)
@@ -283,6 +283,8 @@ extension ExportSession {
 
     /// Tags a rendered buffer with the output's BT.709 colour so the encoder converts RGB → YCbCr
     /// with the 709 matrix and applies no transfer-function conversion (values stay as previewed).
+    /// Open: whether Camtasia tags its exports BT.709 or sRGB (gamma differs in some players) is
+    /// unresolved until the user's Camtasia reference exports arrive; do not change before then.
     static func tagBT709(_ pb: CVPixelBuffer) {
         CVBufferSetAttachment(pb, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
         CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)

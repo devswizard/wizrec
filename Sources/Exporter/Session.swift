@@ -124,17 +124,29 @@ extension ExportSession {
     /// Default mix rate when the project declares no valid `audioFormatSampleRate`, Hz.
     static let defaultSampleRate = 48_000.0
 
+    /// Sample rates AAC (Apple encoder) and MP3 (LAME, MPEG-1/2/2.5) can encode, Hz.
+    static let lossyRates: [Double] = [8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000]
+
     /// Output sample rate, Hz: the project's `audioFormatSampleRate`, else `defaultSampleRate`.
     var mixSampleRate: Double { audioScene.sampleRate.map { $0.rounded() } ?? Self.defaultSampleRate }
 
-    /// The project mix (stereo at `mixSampleRate`), or nil when `includeAudio` is off.
-    func makeMixer() -> AudioMixer? {
-        settings.includeAudio ? requireMixer() : nil
+    /// `rate` when AAC/MP3 take it, else the next higher codec rate (48 kHz above that), so lossy
+    /// outputs never go below the project rate except past 48 kHz.
+    static func lossyRate(for rate: Double) -> Double {
+        lossyRates.first { $0 >= rate } ?? 48_000
     }
 
-    /// The project mix for audio-only formats (they ignore `includeAudio`).
-    func requireMixer() -> AudioMixer {
-        AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: mixSampleRate, channels: 2))
+    /// The project mix (stereo), or nil when `includeAudio` is off. `lossy`: the output is
+    /// AAC/MP3, so the rate is mapped with `lossyRate(for:)`.
+    func makeMixer(lossy: Bool) -> AudioMixer? {
+        settings.includeAudio ? requireMixer(lossy: lossy) : nil
+    }
+
+    /// The project mix for audio-only formats (they ignore `includeAudio`), at `mixSampleRate`
+    /// (mapped with `lossyRate(for:)` when `lossy`).
+    func requireMixer(lossy: Bool) -> AudioMixer {
+        let rate = lossy ? Self.lossyRate(for: mixSampleRate) : mixSampleRate
+        return AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: rate, channels: 2))
     }
 
     /// Sleeps briefly while the writer drains (AVAssetWriter has no async readiness API).

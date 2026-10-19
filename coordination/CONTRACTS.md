@@ -237,7 +237,10 @@ Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.s
   needed). Export frame N must equal the preview frame N; A/V sync within 1
   frame. Progress + cancel (partial file removed).
   - Session 3: audio is mixed and written at `AudioScene.sampleRate ?? 48_000`
-    Hz (presets carry no sample rate).
+    Hz (presets carry no sample rate). AAC (m4a, mp4) and MP3 take only the
+    8–48 kHz table rates: other rates map to the next higher table rate (48 kHz
+    above 48 kHz); AAC/MP3 bitrates are capped per rate. WAV and ProRes PCM keep
+    the exact rate.
   - Session 3 (additive): `ExportSession` and `ExportBatch` expose
     `cancellationLosesWork: Bool` (running and not yet cancelled) and
     `cancelAndWait() async` (returns once `run()` stopped and removed its

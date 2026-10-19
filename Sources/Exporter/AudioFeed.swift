@@ -112,13 +112,30 @@ struct AudioFeed {
         return Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
     }
 
-    /// AAC output settings (≈ 96 kbit/s per channel, ≥ 128 kbit/s).
+    /// AAC bitrate, bits/s: ≈ 96 kbit/s per channel (≥ 128 kbit/s), capped at what Apple's AAC-LC
+    /// encoder accepts at `sampleRate` (per channel: 160 k from 44.1 kHz, 96 k at 32 kHz, 64 k at
+    /// 22.05/24 kHz, 48 k at 16 kHz, 32 k at 11.025/12 kHz, 24 k at 8 kHz; measured with
+    /// `kAudioConverterApplicableEncodeBitRates`). Above the cap the writer fails on first append.
+    static func aacBitrate(sampleRate: Int, channels: Int) -> Int {
+        let ch = max(1, channels)
+        let perChannelCap = switch sampleRate {
+        case 44_100...: 160_000
+        case 32_000...: 96_000
+        case 22_050...: 64_000
+        case 16_000...: 48_000
+        case 11_025...: 32_000
+        default: 24_000
+        }
+        return min(max(128_000, 96_000 * ch), perChannelCap * ch)
+    }
+
+    /// AAC output settings (`aacBitrate`). `sampleRate` must be an AAC rate (`lossyRates`).
     static func aacSettings(sampleRate: Int, channels: Int) -> [String: Any] {
         [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: channels,
-            AVEncoderBitRateKey: max(128_000, 96_000 * channels),
+            AVEncoderBitRateKey: aacBitrate(sampleRate: sampleRate, channels: channels),
             AVChannelLayoutKey: channelLayoutData(channels),
         ]
     }
