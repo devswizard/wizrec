@@ -265,8 +265,8 @@ Rich text can also be stored as RTF, in `metadata.default-text`. For the
 
   - A `.trec` has no fourth track. Two TechSmith atoms follow `moov`:
     `TSCR` (recorder name/version/OS) and `TSCM` (`DATA` records: recording
-    environment, captured window/app names; presumably cursor and clicks)
-    [obs]. `TSCM` holds private desktop data: never log or vendor it.
+    environment, captured window/app names, cursor positions, cursor images, clicks)
+    [obs]; layout in `docs/specs/trec.md`. `TSCM` holds private desktop data: never log or vendor it.
   - tscc2 is untagged; it decodes correctly as limited-range BT.601 [obs,
     against Camtasia's thumbnail]. 1-byte tscc2 packets mean "no change"
     and decode to no picture [obs].
@@ -283,7 +283,9 @@ Rich text can also be stored as RTF, in `metadata.default-text`. For the
 ## Open questions
 
 - [?] The exact `eioe` easing curve.
-- [?] The layout of `.trec` `TSCM` records (cursor and click data).
+- ✅ The layout of `.trec` `TSCM` records (cursor positions, cursor images
+  with hotspots, button events, capture region, scale): see
+  `docs/specs/trec.md` [obs, file-level only, 2026-10-19].
 - [~] Transition names: catalogued in `docs/specs/transitions.md`. How a
   project names a shader transition, and the window placement between two
   clips, are still [?].
