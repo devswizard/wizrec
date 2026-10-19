@@ -39,6 +39,11 @@ let perfEnabled = ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"
         try await measure(format, audio: false)
     }
 
+    /// The mix alone (WAV): a movie export cannot finish faster than this.
+    @Test func demoAudioOnly() async throws {
+        try await measure(.audio(container: "wav"), audio: true)
+    }
+
     private func measure(_ format: ExportFormat, audio withAudio: Bool) async throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let (scene, audio) = try await demo(in: dir)
