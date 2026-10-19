@@ -263,7 +263,17 @@ final class CompositorCore {
                 items.append(Item(fill: .texture(tex), quad: q))
             case .shader(let url, let params, let time):
                 guard let q = quad(layer, m: toNDC) else { continue }
-                if let program = shaders.program(url) {
+                if let program = shaders.program(url), program.vertex != nil {
+                    // Particles: drawn onto their own canvas at on-target size, then composited.
+                    let k = space.pxPerUnit * Self.scale(of: m)
+                    let pw = min(max(Int((layer.size.width * k).rounded()), 1), 8192)
+                    let ph = min(max(Int((layer.size.height * k).rounded()), 1), 8192)
+                    let tex = try fx.pool.take(width: pw, height: ph, format: EffectGPU.format,
+                                               commandBuffer: pass.commandBuffer)
+                    try shaders.encodeParticles(program, parameters: params, time: time, into: tex,
+                                                commandBuffer: pass.commandBuffer)
+                    items.append(Item(fill: .texture(tex), quad: q))
+                } else if let program = shaders.program(url) {
                     let k = space.pxPerUnit * Self.scale(of: m)
                     let image = SIMD2(Float(layer.size.width * k), Float(layer.size.height * k))
                     let bytes = ShaderBackgrounds.uniformBytes(program, parameters: params, time: time, imageSize: image)

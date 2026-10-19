@@ -159,6 +159,37 @@ Each entry in the file's `effectDef` has a `name`, a `type`, and either a
 - **Files with no `vertexCode`** (46 of 59): the host draws one full-frame
   quad and supplies `_TexCoord` as in §2 [inf].
 
+### How WizRec draws particle files (S3-REN-2, 2026-10-19)
+
+These are WizRec's own choices, made without Camtasia reference renders.
+SH2 should confirm them. The code is in `GLSLParticles.swift` and
+`ShaderBackgrounds.encodeParticles`.
+
+- **Pixel space** [WizRec]:
+  - `_OutputSize` (and `_ImageSize`) is the file's natural size (1920×1080),
+    not the output size, so particles keep their size relative to the frame
+    at any export resolution.
+  - The pass renders at the layer's on-target size.
+- **`_ToRenderTarget`** [WizRec, from observation]: the matrix maps
+  natural pixels to clip space, with the origin at the top-left and +y down,
+  like `_TexCoord`. It is applied as `vec4(p, 0, 1) * M`.
+  - Evidence: the 9 installed `_ToRenderTarget` files were rendered in
+    place. With this layout their stars and dots fill the frame.
+  - With the column-vector layout (`M * p`) the same files light 0–9 of
+    129,600 sampled pixels.
+- **Vertices** [WizRec]:
+  - `numVertices` are drawn as a triangle list, with a trailing partial
+    triangle dropped.
+  - A missing `numVertices` means 6 vertices, one quad.
+  - Integer varyings are flat.
+- **Target and blending** [WizRec]: the canvas starts transparent (SH2 is
+  still [?]).
+  - `blend: "add"` adds premultiplied colour (ONE, ONE).
+  - Otherwise the blend is premultiplied source-over.
+  - The result is composited like any layer.
+- **Status**: all 13 installed `vertexCode` files translate, compile and
+  draw [obs, 2026-10-19]. Each costs 0.4–1.9 ms of GPU time per 1080p frame.
+
 ## 6. The clip in the project
 
 ```

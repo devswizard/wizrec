@@ -14,8 +14,15 @@ struct ShaderVidFile: Sendable {
     var name: String
     /// Fragment shader body (GLSL).
     var code: String
-    /// Particle shaders carry a vertex stage; WizRec does not draw those yet.
-    var hasVertexCode: Bool
+    /// Vertex stage of a particle background (GLSL), nil for a full-frame fragment shader [§5].
+    var vertexCode: String?
+    var hasVertexCode: Bool { vertexCode != nil }
+    /// Vertices drawn as a triangle list for `vertexCode`; a trailing partial triangle is
+    /// dropped. Missing → 6, one quad [WizRec]. Capped at `maxVertices`.
+    var vertexCount: Int
+    static let maxVertices = 4_000_000
+    /// `blend: "add"`: fragments add onto the background's own canvas; otherwise source-over [§5, inf].
+    var additive: Bool
     var width: Double
     var height: Double
     var defaults: [String: Default]
@@ -31,12 +38,15 @@ struct ShaderVidFile: Sendable {
         guard let code = obj["code"] as? String else { throw LoadError.noCode }
         self.code = code
         name = obj["name"] as? String ?? ""
-        hasVertexCode = (obj["vertexCode"] as? String).map { !$0.isEmpty } ?? false
         func num(_ v: Any?) -> Double? {
             if let n = v as? NSNumber { return n.doubleValue }
             if let s = v as? String { return Double(s) }
             return nil
         }
+        vertexCode = (obj["vertexCode"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let n = num(obj["numVertices"]).map { $0.isFinite ? Int(max(0, min($0, Double(Self.maxVertices)))) : 0 } ?? 6
+        vertexCount = n - n % 3
+        additive = (obj["blend"] as? String)?.lowercased() == "add"
         width = num(obj["width"]) ?? 1920
         height = num(obj["height"]) ?? 1080
         var defaults: [String: Default] = [:]
@@ -97,11 +107,15 @@ final class ShaderBackgrounds {
     struct Program {
         let file: ShaderVidFile
         let uniforms: [GLSLTranslator.Uniform]
+        /// Full-frame fragment function, or the particle fragment function when `vertex` is set.
         let function: any MTLFunction
+        /// Particle vertex function (`vertexCode` files).
+        var vertex: (any MTLFunction)?
     }
 
     private let device: any MTLDevice
     private var programs: [URL: Program] = [:]
+    private var particlePipelines: [String: any MTLRenderPipelineState] = [:]
     private(set) var failures: [URL: String] = [:]
 
     init(device: any MTLDevice) { self.device = device }
@@ -112,7 +126,17 @@ final class ShaderBackgrounds {
         if failures[url] != nil { return nil }
         do {
             let file = try ShaderVidFile(data: Data(contentsOf: url))
-            guard !file.hasVertexCode else { throw RenderError.shaderCompile("vertexCode shaders not supported yet") }
+            if let vertexCode = file.vertexCode {
+                let out = try GLSLTranslator.translateParticles(vertex: vertexCode, fragment: file.code)
+                let lib = try device.makeLibrary(source: out.source, options: nil)
+                guard let v = lib.makeFunction(name: GLSLTranslator.ParticleOutput.vertexName),
+                      let f = lib.makeFunction(name: GLSLTranslator.ParticleOutput.fragmentName) else {
+                    throw RenderError.shaderCompile("no particle entry points")
+                }
+                let p = Program(file: file, uniforms: out.uniforms, function: f, vertex: v)
+                programs[url] = p
+                return p
+            }
             let out = try GLSLTranslator.translate(file.code)
             let lib = try device.makeLibrary(source: out.source, options: nil)
             guard let f = lib.makeFunction(name: GLSLTranslator.Output.fragmentName) else {
@@ -125,6 +149,74 @@ final class ShaderBackgrounds {
             failures[url] = String(describing: error)
             return nil
         }
+    }
+
+    /// Draws a particle program into `target` (cleared to transparent first [WizRec]; SH2 is [?])
+    /// as `file.vertexCount` vertices, additive or source-over, premultiplied.
+    func encodeParticles(_ p: Program, parameters: [String: Double], time: Double, into target: any MTLTexture,
+                         commandBuffer: any MTLCommandBuffer) throws {
+        guard let vertex = p.vertex else { return }
+        let key = "\(ObjectIdentifier(p.function as AnyObject))|\(target.pixelFormat.rawValue)"
+        let pipeline: any MTLRenderPipelineState
+        if let cached = particlePipelines[key] { pipeline = cached } else {
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = vertex
+            d.fragmentFunction = p.function
+            let a = d.colorAttachments[0]!
+            a.pixelFormat = target.pixelFormat
+            a.isBlendingEnabled = true
+            a.rgbBlendOperation = .add; a.alphaBlendOperation = .add
+            a.sourceRGBBlendFactor = .one; a.sourceAlphaBlendFactor = .one
+            a.destinationRGBBlendFactor = p.file.additive ? .one : .oneMinusSourceAlpha
+            a.destinationAlphaBlendFactor = p.file.additive ? .one : .oneMinusSourceAlpha
+            do { pipeline = try device.makeRenderPipelineState(descriptor: d) } catch {
+                throw RenderError.shaderCompile(String(describing: error))
+            }
+            particlePipelines[key] = pipeline
+        }
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = target
+        rp.colorAttachments[0].loadAction = .clear
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        rp.colorAttachments[0].storeAction = .store
+        guard let enc = commandBuffer.makeRenderCommandEncoder(descriptor: rp) else { throw RenderError.noMetalDevice }
+        defer { enc.endEncoding() }
+        guard p.file.vertexCount > 0 else { return }
+        let bytes = Self.particleUniformBytes(p, parameters: parameters, time: time,
+                                              target: SIMD2(Float(target.width), Float(target.height)))
+        let length = bytes.count * MemoryLayout<SIMD4<Float>>.stride
+        enc.setRenderPipelineState(pipeline)
+        if length <= 4096 {
+            var b = bytes
+            enc.setVertexBytes(&b, length: length, index: 1)
+            enc.setFragmentBytes(&b, length: length, index: 1)
+        } else {
+            guard let buf = bytes.withUnsafeBytes({ raw in raw.baseAddress.flatMap { device.makeBuffer(bytes: $0, length: length) } }) else {
+                throw RenderError.noMetalDevice
+            }
+            enc.setVertexBuffer(buf, offset: 0, index: 1)
+            enc.setFragmentBuffer(buf, offset: 0, index: 1)
+        }
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: p.file.vertexCount)
+    }
+
+    /// Particle `GLUniforms`: `sys` (time s, natural w, h), `dst` (target w, h), `toTarget`, then
+    /// one `float4` per uniform. `toTarget` maps natural px (origin top-left, +y down) to clip space
+    /// when applied row-vector style, `vec4(p, 0, 1) * _ToRenderTarget` [WizRec: the installed
+    /// particle files only fill the frame with this layout; with the column-vector layout they
+    /// draw almost nothing].
+    static func particleUniformBytes(_ p: Program, parameters: [String: Double], time: Double,
+                                     target: SIMD2<Float>) -> [SIMD4<Float>] {
+        let w = Float(max(p.file.width, 1)), h = Float(max(p.file.height, 1))
+        var out: [SIMD4<Float>] = [
+            SIMD4(Float(time), w, h, 0),
+            SIMD4(target.x, target.y, 0, 0),
+            // Columns of the matrix as GLSL sees it: clip = vec4(px, py, z, 1) * M (row-vector use).
+            SIMD4(2 / w, 0, 0, -1), SIMD4(0, -2 / h, 0, 1), SIMD4(0, 0, 1, 0), SIMD4(0, 0, 0, 1),
+        ]
+        out += p.uniforms.map { p.file.value(for: $0, parameters: parameters, time: time) }
+        if p.uniforms.isEmpty { out.append(.zero) }
+        return out
     }
 
     /// `GLUniforms` bytes: `sys` = (time s, image w, h, 0) then one `float4` per uniform.
