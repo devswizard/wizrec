@@ -74,6 +74,30 @@ public struct TransitionInstance: Sendable, Equatable {
     }
 }
 
+/// A recorded mouse cursor drawn over a screen-recording layer (WizRec `cursor.json` recordings).
+/// Drawn in the layer's local space on top of its video and before its effects.
+public struct CursorOverlay: Sendable, Equatable {
+    /// Cursor image file (PNG, premultiplied sRGB).
+    public var image: URL
+    /// Image size in source video px (drawn 1:1 with the video at `scale` 1).
+    public var imageSize: CGSize
+    /// Hot spot in image px from its top-left.
+    public var hotspot: CGPoint
+    /// Hot-spot position in source video px, top-left origin, y down.
+    public var position: CGPoint
+    /// Source video size, px (the cursor log's `videoWidth`×`videoHeight`).
+    public var sourceSize: CGSize
+    /// Extra cursor scale (cursor effects; 1 = as recorded).
+    public var scale: Double
+    public var opacity: Double
+
+    public init(image: URL, imageSize: CGSize, hotspot: CGPoint, position: CGPoint, sourceSize: CGSize,
+                scale: Double = 1, opacity: Double = 1) {
+        self.image = image; self.imageSize = imageSize; self.hotspot = hotspot; self.position = position
+        self.sourceSize = sourceSize; self.scale = scale; self.opacity = opacity
+    }
+}
+
 /// One visible clip at the plan time.
 ///
 /// Coordinates: pixels, origin at the parent's centre, +x right, +y up.
@@ -92,12 +116,15 @@ public struct Layer: Sendable, Equatable {
     /// This layer's own opacity, 0–1 (parents' opacity is not folded in).
     public var opacity: Double
     public var effects: [EffectInstance]
+    /// Recorded cursor over this layer's video, if its recording has a cursor log.
+    public var cursor: CursorOverlay?
 
     public init(clipID: Int64, content: LayerContent, size: CGSize, transform: CGAffineTransform = .identity,
                 sourceCrop: Insets = .zero, geometryCrop: Insets = .zero, opacity: Double = 1,
-                effects: [EffectInstance] = []) {
+                effects: [EffectInstance] = [], cursor: CursorOverlay? = nil) {
         self.clipID = clipID; self.content = content; self.size = size; self.transform = transform
         self.sourceCrop = sourceCrop; self.geometryCrop = geometryCrop; self.opacity = opacity; self.effects = effects
+        self.cursor = cursor
     }
 }
 

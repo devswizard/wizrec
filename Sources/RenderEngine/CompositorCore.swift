@@ -198,6 +198,7 @@ final class CompositorCore {
                 guard let frame = frames[req], let tex = texture(for: frame.pixelBuffer, pass: pass),
                       let q = quad(layer, m: toNDC) else { continue }
                 items.append(Item(fill: .texture(tex), quad: q))
+                if let c = layer.cursor, let item = cursorItem(c, layer: layer, m: toNDC) { items.append(item) }
             case .image(let url):
                 guard let tex = image(url), let q = quad(layer, m: toNDC) else { continue }
                 items.append(Item(fill: .texture(tex), quad: q))
@@ -316,6 +317,28 @@ final class CompositorCore {
             uv: SIMD4(Float(region.uv.u0), Float(region.uv.vBottom), Float(region.uv.u1), Float(region.uv.vTop)),
             full: SIMD4(Float(-w / 2), Float(-h / 2), Float(w / 2), Float(h / 2)),
             opacity: Float(layer.opacity))
+    }
+
+    /// The cursor image over `layer`, in its local space, clipped to the layer's visible rect.
+    private func cursorItem(_ c: CursorOverlay, layer: Layer, m: CGAffineTransform) -> Item? {
+        guard c.opacity > 0, c.sourceSize.width > 0, c.sourceSize.height > 0, let tex = image(c.image),
+              let region = Conventions.visibleRegion(size: layer.size, sourceCrop: layer.sourceCrop,
+                                                     geometryCrop: layer.geometryCrop) else { return nil }
+        let kx = layer.size.width / c.sourceSize.width, ky = layer.size.height / c.sourceSize.height
+        let left = c.position.x - c.hotspot.x * c.scale, top = c.position.y - c.hotspot.y * c.scale
+        let w = c.imageSize.width * c.scale, h = c.imageSize.height * c.scale
+        // Source px (top-left, y down) → layer local px (centre, y up).
+        let full = CGRect(x: left * kx - layer.size.width / 2, y: layer.size.height / 2 - (top + h) * ky,
+                          width: w * kx, height: h * ky)
+        let r = full.intersection(region.rect)
+        guard !r.isNull, r.width > 0, r.height > 0, full.width > 0, full.height > 0 else { return nil }
+        let u0 = (r.minX - full.minX) / full.width, u1 = (r.maxX - full.minX) / full.width
+        let vTop = (full.maxY - r.maxY) / full.height, vBottom = (full.maxY - r.minY) / full.height
+        let q = Shaders.Quad(m: Self.matrix(m), rect: SIMD4(Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY)),
+                             uv: SIMD4(Float(u0), Float(vBottom), Float(u1), Float(vTop)),
+                             full: SIMD4(Float(full.minX), Float(full.minY), Float(full.maxX), Float(full.maxY)),
+                             opacity: Float(Conventions.clamp01(c.opacity * layer.opacity)))
+        return Item(fill: .texture(tex), quad: q)
     }
 
     /// A quad showing a whole texture over local `rect`.
