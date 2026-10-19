@@ -38,7 +38,7 @@ import TSCProjKit
     expectRejected(MoveClip(clipID: 10, toTrack: 1, start: 299), on: p, .invalid(""))  // overlaps by 1
     expectRejected(MoveClip(clipID: 10, toTrack: 5, start: 0), on: p, .trackNotFound(5))
     expectRejected(MoveClip(clipID: 10, toTrack: 1, start: -10), on: p, .invalid(""))
-    expectRejected(MoveClip(clipID: 31, toTrack: 1, start: 0), on: p, .invalid(""))    // inside a group
+    expectRejected(MoveClip(clipID: 31, toTrack: 1, start: 0), on: p, .trackNotFound(1))  // group has one inner track
     expectRejected(MoveClip(clipID: 99, toTrack: 1, start: 0), on: p, .clipNotFound(99))
     // Touching edges is not an overlap.
     let touch = MoveClip(clipID: 10, toTrack: 1, start: 100)

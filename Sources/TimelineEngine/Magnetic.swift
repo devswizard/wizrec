@@ -14,6 +14,13 @@ enum Magnetic {
         return attrs.indices.contains(index) && (attrs[index]["magnetic"]?.bool ?? false)
     }
 
+    /// Magnetic flag of any track: `trackAttributes` for top-level tracks,
+    /// the inline `magnetic` key for tracks inside groups [obs: demo group tracks].
+    static func isMagnetic(_ project: Project, path: JSONPath) -> Bool {
+        if path.isTopLevelTrack, case .index(let i)? = path.steps.last { return isMagnetic(project, track: i) }
+        return path.resolve(in: project.root)?.object?["magnetic"]?.bool ?? false
+    }
+
     /// Moves every clip of `track` (an editable copy) left so they touch,
     /// keeping their order by `start`. `UnifiedMedia` halves move with their parent.
     static func pack(_ track: JSONObject) {
@@ -64,8 +71,10 @@ enum Magnetic {
 
 @MainActor
 extension TrackEdits {
-    /// Packs every edited top-level track that is magnetic.
+    /// Packs every edited track that is magnetic: top-level tracks by
+    /// `trackAttributes`, group tracks by their inline flag.
     mutating func packMagnetic() throws {
+        for (path, t) in nested where Magnetic.isMagnetic(project, path: path) { Magnetic.pack(t) }
         for i in editedTopIndices where Magnetic.isMagnetic(project, track: i) {
             Magnetic.pack(try topTrack(i))
         }
