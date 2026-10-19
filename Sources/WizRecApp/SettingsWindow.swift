@@ -1,4 +1,5 @@
 import AppKit
+import Captions
 import PlayerKit
 import SwiftUI
 
@@ -32,6 +33,7 @@ struct SettingsView: View {
         TabView {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             PlaybackSettings().tabItem { Label("Playback", systemImage: "play.rectangle") }
+            CaptionSettings().tabItem { Label("Captions", systemImage: "captions.bubble") }
             PrivacySettings().tabItem { Label("Privacy", systemImage: "hand.raised") }
         }
         .frame(width: 480)
@@ -68,6 +70,91 @@ private struct PlaybackSettings: View {
             Text("Applies to projects opened afterwards.").font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Speech engine for Captions ▸ Transcribe: Apple Speech, or whisper.cpp (`whisper-cli` and a
+/// ggml model the user installs; detected at runtime, never bundled).
+private struct CaptionSettings: View {
+    @AppStorage(WhisperSettings.backendKey) private var backend = AppleSpeechRecognizer().id
+    @AppStorage(WhisperSettings.modelKey) private var model = ""
+    @AppStorage(WhisperSettings.binaryPathKey) private var binaryPath = ""
+    @State private var models: [WhisperModel] = []
+    @State private var found: URL?
+    @State private var status = ""
+    @State private var ready = false
+
+    private static let whisperID = WhisperCppRecognizer().id
+
+    var body: some View {
+        Form {
+            Picker("Speech engine", selection: $backend) {
+                Text("Apple Speech").tag(AppleSpeechRecognizer().id)
+                Text("whisper.cpp").tag(Self.whisperID)
+            }
+            .pickerStyle(.radioGroup)
+            Text("Apple Speech needs no setup. whisper.cpp runs on this Mac too and knows many more languages; install it with `brew install whisper-cpp` and add a model below.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            Section("whisper.cpp") {
+                Picker("Model", selection: $model) {
+                    Text("Automatic").tag("")
+                    ForEach(models, id: \.name) { m in
+                        Text("\(m.name) (\(ByteCountFormatter.string(fromByteCount: m.bytes, countStyle: .file)))").tag(m.name)
+                    }
+                    if !model.isEmpty, !models.contains(where: { $0.name == model }) {
+                        Text("\(model) (missing)").tag(model)
+                    }
+                }
+                HStack {
+                    Button("Show Models Folder") {
+                        let dir = WhisperCppRecognizer.defaultModelsDirectory
+                        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                        NSWorkspace.shared.activateFileViewerSelecting([dir])
+                    }
+                    Button("Refresh") { refresh() }
+                }
+                Text("Put ggml model files (e.g. ggml-small.bin from the whisper.cpp project) in ~/Library/Application Support/WizRec/models.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    TextField("whisper-cli path", text: $binaryPath, prompt: Text("Search automatically"))
+                    Button("Choose…") { chooseBinary() }
+                }
+                if binaryPath.isEmpty {
+                    Text(found.map { String(localized: "Found: \($0.path)") } ?? String(localized: "whisper-cli not found"))
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                Label(status, systemImage: ready ? "checkmark.circle" : "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(ready ? .green : .orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .disabled(backend != Self.whisperID)
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: refresh)
+        .onChange(of: model) { _, _ in refresh() }
+        .onChange(of: binaryPath) { _, _ in refresh() }
+    }
+
+    private func refresh() {
+        models = WhisperCppRecognizer.installedModels()
+        let w = WhisperCppRecognizer.fromDefaults()
+        found = w.resolvedBinary()
+        Task { @MainActor in
+            let s = await w.status(language: nil)
+            ready = s == .ready
+            status = EditorWindowController.describe(s, backend: Self.whisperID)
+        }
+    }
+
+    private func chooseBinary() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/opt/homebrew/bin")
+        panel.message = String(localized: "Choose the whisper-cli executable")
+        if panel.runModal() == .OK, let url = panel.url { binaryPath = url.path }
     }
 }
 

@@ -10,6 +10,19 @@
     "%arg %%" : {
 
     },
+    "%arg (%arg)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$arg (%2$arg)"
+          }
+        }
+      }
+    },
+    "%arg (missing)" : {
+
+    },
     "%arg exports are still running. Close anyway?" : {
 
     },
@@ -70,6 +83,12 @@
     "Animated: edits set a keyframe at the playhead" : {
 
     },
+    "Apple Speech" : {
+
+    },
+    "Apple Speech needs no setup. whisper.cpp runs on this Mac too and knows many more languages; install it with `brew install whisper-cpp` and add a model below." : {
+
+    },
     "Applies to projects opened afterwards." : {
 
     },
@@ -77,6 +96,9 @@
 
     },
     "As preset" : {
+
+    },
+    "Automatic" : {
 
     },
     "Back" : {
@@ -154,6 +176,9 @@
     "Canvas preview" : {
 
     },
+    "Caption Settings…" : {
+
+    },
     "Captions" : {
 
     },
@@ -167,6 +192,9 @@
 
     },
     "Choose one or more; each becomes its own file." : {
+
+    },
+    "Choose the whisper-cli executable" : {
 
     },
     "Choose…" : {
@@ -280,6 +308,9 @@
     "Formats" : {
 
     },
+    "Found: %arg" : {
+
+    },
     "Frame number" : {
 
     },
@@ -371,6 +402,9 @@
     "Missing" : {
 
     },
+    "Model" : {
+
+    },
     "New Project" : {
 
     },
@@ -441,6 +475,9 @@
     "Properties" : {
 
     },
+    "Put ggml model files (e.g. ggml-small.bin from the whisper.cpp project) in ~/Library/Application Support/WizRec/models." : {
+
+    },
     "Quit WizRec" : {
 
     },
@@ -451,6 +488,9 @@
 
     },
     "Redo" : {
+
+    },
+    "Refresh" : {
 
     },
     "Relink Missing Media…" : {
@@ -498,6 +538,9 @@
     "Search Folder…" : {
 
     },
+    "Search automatically" : {
+
+    },
     "Select All" : {
 
     },
@@ -534,6 +577,9 @@
     "Show Crash Reports" : {
 
     },
+    "Show Models Folder" : {
+
+    },
     "Show Performance Overlay" : {
 
     },
@@ -567,6 +613,12 @@
     "Snapping" : {
 
     },
+    "Speech Engine" : {
+
+    },
+    "Speech engine" : {
+
+    },
     "Speech recognition does not support %arg." : {
 
     },
@@ -592,6 +644,9 @@
 
     },
     "Text color" : {
+
+    },
+    "The selected whisper.cpp model is English-only and cannot transcribe %arg." : {
 
     },
     "Timeline" : {
@@ -699,6 +754,24 @@
 
     },
     "off" : {
+
+    },
+    "whisper-cli not found" : {
+
+    },
+    "whisper-cli path" : {
+
+    },
+    "whisper.cpp" : {
+
+    },
+    "whisper.cpp is ready." : {
+
+    },
+    "whisper.cpp is unavailable: %arg" : {
+
+    },
+    "whisper.cpp needs a model: %arg. Settings ▸ Captions shows the models folder." : {
 
     }
   },

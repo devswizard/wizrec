@@ -1,4 +1,5 @@
 import AppKit
+import Captions
 import PlayerKit
 
 /// Process-wide settings from the command line.
@@ -12,7 +13,7 @@ enum AppEnvironment {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let options = AppEnvironment.options
         for path in options.paths {
@@ -69,6 +70,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.present() }
     @objc func showWelcome(_ sender: Any?) { WelcomeWindowController.shared.present() }
+
+    /// Captions ▸ Speech Engine ▸ <engine>: stores the choice (`WhisperSettings.backendKey`).
+    /// whisper.cpp without its executable or a model opens Settings ▸ Captions to set it up.
+    @objc func chooseSpeechEngine(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(id, forKey: WhisperSettings.backendKey)
+        if id == WhisperCppRecognizer().id, !WhisperCppRecognizer.fromDefaults().isAvailable {
+            SettingsWindowController.shared.present()
+        }
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(chooseSpeechEngine(_:)) {
+            let current = TranscriptionBackends.preferred().id
+            item.state = (item.representedObject as? String) == current ? .on : .off
+        }
+        return true
+    }
 
     @objc func showCrashReports(_ sender: Any?) {
         let dir = CrashLog.defaultDirectory

@@ -28,9 +28,9 @@ extension EditorWindowController {
 
     private func transcribe(_ targets: [CaptionTarget]) async {
         defer { transcription = nil; ui.activity = nil }
-        let backend = AppleSpeechRecognizer()
+        let backend = TranscriptionBackends.preferred()
         var status = await backend.status(language: nil)
-        if status == .needsPermission {
+        if status == .needsPermission, backend.id == AppleSpeechRecognizer().id {
             // Without the usage string the system kills the process on request (bare `swift run`).
             guard Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") != nil else {
                 ui.show(String(localized: "Transcription needs the WizRec app bundle (scripts/make-app.sh)."), seconds: 10)
@@ -39,7 +39,7 @@ extension EditorWindowController {
             status = await backend.requestAccess()
         }
         guard status == .ready else {
-            ui.show(Self.describe(status), seconds: 12)
+            ui.show(Self.describe(status, backend: backend.id), seconds: 12)
             return
         }
         let transcriber = Transcriber(backend: backend)
@@ -73,6 +73,20 @@ extension EditorWindowController {
             ui.show(String(localized: "Transcription cancelled."))
         } else if done > 0 {
             ui.show(String(localized: "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas."), seconds: 8)
+        }
+    }
+
+    /// The status as a message; whisper.cpp's own texts already say what is missing.
+    static func describe(_ status: BackendStatus, backend: String) -> String {
+        guard backend == WhisperCppRecognizer().id else { return describe(status) }
+        switch status {
+        case .ready: return String(localized: "whisper.cpp is ready.")
+        case .modelMissing(let m):
+            return String(localized: "whisper.cpp needs a model: \(m). Settings ▸ Captions shows the models folder.")
+        case .languageUnsupported(let l):
+            return String(localized: "The selected whisper.cpp model is English-only and cannot transcribe \(l).")
+        case .unavailable(let m): return String(localized: "whisper.cpp is unavailable: \(m)")
+        case .needsPermission, .permissionDenied: return describe(status)
         }
     }
 
