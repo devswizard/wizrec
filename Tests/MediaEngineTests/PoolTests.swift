@@ -213,3 +213,36 @@ struct DecodePerfTests {
         }
     }
 }
+
+@Suite struct FramePolicyTests {
+    private func t(_ frame: Int) -> CMTime { CMTime(value: Int64(frame) * 20 + 10, timescale: 600) } // mid-frame at 30 fps
+
+    @Test func nearestDecodedReturnsStaleOnlyWhileDecoding() async throws {
+        let dir = try Synth.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("p.mp4")
+        try await Synth.writeMovie(to: url, times: (0..<300).map { Double($0) / 30 }, width: 320, height: 180, keyInterval: 300)
+        let pool = MediaPool()
+        let lag = CMTime(value: 1, timescale: 1)
+        // Idle decoder: exact, even with the policy.
+        let f10 = try await pool.frame(FrameRequest(url: url, stream: 0, time: t(10)), policy: .nearestDecoded(maxLag: lag))
+        #expect(Synth.index(of: f10.pixelBuffer) == 10)
+        // A long decode in flight (frame 290, same GOP): nearby requests get the stale frame at once.
+        let far = Task { try await pool.frame(FrameRequest(url: url, stream: 0, time: t(290))) }
+        var waited = 0
+        while await pool.inFlight.isEmpty, waited < 1000 { try await Task.sleep(nanoseconds: 1_000_000); waited += 1 }
+        let stale = try await pool.frame(FrameRequest(url: url, stream: 0, time: t(14)), policy: .nearestDecoded(maxLag: lag))
+        let inFlightDuring = await !pool.inFlight.isEmpty
+        print("policy test: decode in flight during stale request: \(inFlightDuring)")
+        if inFlightDuring { #expect(Synth.index(of: stale.pixelBuffer) == 10) }
+        // Beyond maxLag: waits for the exact frame.
+        let exact = try await pool.frame(FrameRequest(url: url, stream: 0, time: t(100)),
+                                         policy: .nearestDecoded(maxLag: CMTime(value: 1, timescale: 10)))
+        #expect(Synth.index(of: exact.pixelBuffer) == 100)
+        #expect(Synth.index(of: try await far.value.pixelBuffer) == 290)
+        // Idle again: exact.
+        let f14 = try await pool.frame(FrameRequest(url: url, stream: 0, time: t(14)), policy: .nearestDecoded(maxLag: lag))
+        #expect(Synth.index(of: f14.pixelBuffer) == 14)
+        #expect(await pool.decodeRate(url: url, stream: 0) ?? 0 > 0)
+    }
+}

@@ -56,7 +56,7 @@ let package = Package(
             dependencies: ["TSCProjKit"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "MediaEngineTests", dependencies: ["MediaEngine"]),
+        .testTarget(name: "MediaEngineTests", dependencies: ["MediaEngine", "TSCProjKit"]),
         .testTarget(
             name: "RenderEngineTests",
             dependencies: ["RenderEngine", "TSCProjKit", "MediaEngine"],

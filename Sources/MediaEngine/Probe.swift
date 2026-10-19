@@ -5,6 +5,7 @@ import CFFmpeg
 import CoreGraphics
 import CoreMedia
 import Foundation
+import TSCProjKit
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -30,14 +31,24 @@ enum Prober {
     /// AAC encoder delay (samples) of Apple/FFmpeg/most AAC encoders.
     static let aacPriming: Int64 = 2112
 
-    static func probe(_ url: URL) throws -> MediaInfo { try probeDetailed(url).info }
+    static func probe(_ url: URL) async throws -> MediaInfo { try await probeDetailed(url).info }
 
-    static func probeDetailed(_ url: URL) throws -> ProbeResult {
+    /// libav probe, then the `sourceTracks` timing (`timescale`/`length`) from AVFoundation where it
+    /// can read the file — the presentation length Camtasia records [obs, media-streams.md §3].
+    static func probeDetailed(_ url: URL) async throws -> ProbeResult {
+        var r = try probeDetailedSync(url)
+        if r.info.kind == .movie || r.info.kind == .recording {
+            await TrackTiming.apply(to: &r.info)
+        }
+        return r
+    }
+
+    static func probeDetailedSync(_ url: URL) throws -> ProbeResult {
         guard FileManager.default.fileExists(atPath: url.path) else { throw MediaError.fileNotFound(url) }
         let ext = url.pathExtension.lowercased()
         func plain(_ info: MediaInfo) -> ProbeResult { ProbeResult(info: info, map: StreamMap(containerIndex: [0])) }
         if ext == shaderExtension {
-            return ProbeResult(info: MediaInfo(url: url, kind: .shader, streams: [], duration: .zero), map: StreamMap())
+            return ProbeResult(info: probeShader(url), map: StreamMap())
         }
         if ext == "pdf", let info = probePDF(url) { return plain(info) }
         if isImageExtension(ext), let info = probeImage(url) { return plain(info) }
@@ -66,15 +77,18 @@ enum Prober {
         if let o = (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue, (5...8).contains(o) { swap(&w, &h) }
         guard w > 0, h > 0 else { return nil }
         let codec = UTType(typeID)?.preferredFilenameExtension ?? typeID
+        let depth = (props[kCGImagePropertyDepth] as? NSNumber)?.intValue ?? 8
         let stream = StreamInfo(index: 0, kind: .video, codec: codec == "jpg" ? "jpeg" : codec,
-                                pixelSize: CGSize(width: w, height: h), duration: .zero)
+                                pixelSize: CGSize(width: w, height: h), duration: .zero,
+                                timescale: 600, length: 1, bitsPerComponent: depth, trackType: 1)
         return MediaInfo(url: url, kind: .image, streams: [stream], duration: .zero)
     }
 
     /// PDF page 1 as a still; pixel size = page size in points (crop box, rotation applied).
     static func probePDF(_ url: URL) -> MediaInfo? {
         guard let size = pdfPixelSize(url) else { return nil }
-        let stream = StreamInfo(index: 0, kind: .video, codec: "pdf", pixelSize: size, duration: .zero)
+        let stream = StreamInfo(index: 0, kind: .video, codec: "pdf", pixelSize: size, duration: .zero,
+                                timescale: 600, length: 1, bitsPerComponent: 8, trackType: 1)
         return MediaInfo(url: url, kind: .image, streams: [stream], duration: .zero)
     }
 
@@ -108,22 +122,29 @@ enum Prober {
         let gapless = gaplessInfo(fc)
         let skipSeen = firstPacketHasSkipSamples(fc, streams: Set(map.containerIndex))
 
+        var hasTSCC2 = url.pathExtension.lowercased() == recordingExtension
+        for ci in map.containerIndex where fc.stream(ci)?.pointee.codecpar?.pointee.codec_id == AV_CODEC_ID_TSCC2 {
+            hasTSCC2 = true
+        }
+        let isRecording = hasTSCC2
         var streams: [StreamInfo] = []
-        var hasTSCC2 = false
         for (index, ci) in map.containerIndex.enumerated() {
             guard let st = fc.stream(ci), let par = st.pointee.codecpar else { continue }
             let codec = codecName(par.pointee.codec_id)
             if par.pointee.codec_type == AVMEDIA_TYPE_VIDEO {
-                if par.pointee.codec_id == AV_CODEC_ID_TSCC2 { hasTSCC2 = true }
-                let afr = st.pointee.avg_frame_rate
-                var fps = afr.den > 0 && afr.num > 0 ? Double(afr.num) / Double(afr.den) : 0
-                if fps == 0 {
-                    let r = st.pointee.r_frame_rate
-                    fps = r.den > 0 && r.num > 0 ? Double(r.num) / Double(r.den) : 0
-                }
+                var rate = st.pointee.avg_frame_rate
+                if rate.den <= 0 || rate.num <= 0 { rate = st.pointee.r_frame_rate }
+                let exact: Rational? = rate.den > 0 && rate.num > 0 ? Rational(Int64(rate.num), Int64(rate.den)) : nil
+                let fps = exact.map { Double($0.num) / Double($0.den) } ?? 0
+                let duration = streamDuration(fc, st)
+                let (ts, len) = libavLength(st, duration: duration)
+                let bpc = av_pix_fmt_desc_get(AVPixelFormat(par.pointee.format)).map { Int($0.pointee.comp.0.depth) } ?? 0
                 streams.append(StreamInfo(index: index, kind: .video, codec: codec,
                                           pixelSize: CGSize(width: Int(par.pointee.width), height: Int(par.pointee.height)),
-                                          nominalFrameRate: fps, duration: streamDuration(fc, st)))
+                                          nominalFrameRate: fps, duration: duration,
+                                          timescale: ts, length: len, frameRate: exact,
+                                          bitDepth: isRecording ? recordingVideoBitDepth : 0,
+                                          bitsPerComponent: bpc, trackType: 0))
             } else {
                 let rate = Int64(max(1, par.pointee.sample_rate))
                 var duration = streamDuration(fc, st)
@@ -147,15 +168,57 @@ enum Prober {
                         }
                     }
                 }
+                let samples = map.audioLength[index]
+                    ?? (duration.isNumeric ? Int64((duration.seconds * Double(rate)).rounded()) : 0)
                 streams.append(StreamInfo(index: index, kind: .audio, codec: codec,
                                           sampleRate: Double(par.pointee.sample_rate),
                                           channelCount: Int(par.pointee.ch_layout.nb_channels),
-                                          duration: duration))
+                                          duration: duration,
+                                          timescale: Int32(clamping: rate), length: max(0, samples),
+                                          bitDepth: isRecording ? recordingAudioBitDepth : 0,
+                                          bitsPerComponent: audioBits(par), trackType: 2))
             }
         }
-        let kind: MediaKind = (url.pathExtension.lowercased() == recordingExtension || hasTSCC2) ? .recording : .movie
+        let kind: MediaKind = isRecording ? .recording : .movie
         let longest = streams.map(\.duration).filter(\.isNumeric).max() ?? .zero
         return ProbeResult(info: MediaInfo(url: url, kind: kind, streams: streams, duration: longest), map: map)
+    }
+
+    /// `sourceTracks.bitDepth` of `.trec` tracks [obs: demo recording; older recordings write 0 for video].
+    static let recordingVideoBitDepth = 24
+    static let recordingAudioBitDepth = 16
+
+    /// Fallback `timescale`/`length` from libav when AVFoundation cannot read the file:
+    /// the stream time base when it is 1/n, else the duration's own timescale.
+    static func libavLength(_ st: UnsafeMutablePointer<AVStream>, duration: CMTime) -> (Int32, Int64) {
+        let tb = st.pointee.time_base
+        let d = st.pointee.duration
+        if tb.num == 1, tb.den > 0, d != avNoPTS, d > 0 { return (tb.den, d) }
+        guard duration.isNumeric, duration.timescale > 0, duration.value >= 0 else { return (0, 0) }
+        return (duration.timescale, duration.value)
+    }
+
+    /// Bits per PCM sample (0 for lossy codecs that define none).
+    static func audioBits(_ par: UnsafeMutablePointer<AVCodecParameters>) -> Int {
+        let raw = Int(par.pointee.bits_per_raw_sample)
+        if raw > 0 { return raw }
+        let name = codecName(par.pointee.codec_id)
+        return name.hasPrefix("pcm_") ? Int(par.pointee.bits_per_coded_sample) : 0
+    }
+
+    /// `.tscshadervid`: one endless video track (type 0, editRate 30, bitDepth 32) whose size is the
+    /// JSON's `width`/`height` [obs, media-streams.md §7]. No decodable frames.
+    static func probeShader(_ url: URL) -> MediaInfo {
+        var size = CGSize.zero
+        if let data = try? Data(contentsOf: url),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let w = (obj["width"] as? NSNumber)?.doubleValue ?? 0, h = (obj["height"] as? NSNumber)?.doubleValue ?? 0
+            if w > 0, h > 0 { size = CGSize(width: w.rounded(), height: h.rounded()) }
+        }
+        let stream = StreamInfo(index: 0, kind: .video, codec: "tscshadervid", pixelSize: size, nominalFrameRate: 30,
+                                duration: .positiveInfinity, timescale: 30, length: Int64.max,
+                                frameRate: Rational(30), bitDepth: 32, bitsPerComponent: 8, trackType: 0)
+        return MediaInfo(url: url, kind: .shader, streams: [stream], duration: .zero)
     }
 
     /// Length on the presentation timeline (edit lists applied; stream time 0 = movie time 0).

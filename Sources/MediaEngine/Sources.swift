@@ -21,7 +21,7 @@ func openSource(_ probe: ProbeResult) throws -> any MediaSource {
 /// A movie or `.trec` recording decoded with libav. One decoder actor per stream, created on first use.
 actor FFMediaSource: MediaSource {
     nonisolated let info: MediaInfo
-    private let map: StreamMap
+    nonisolated let map: StreamMap
     private var video: [Int: VideoStreamDecoder] = [:]
     private var audioDecoders: [Int: AudioDecoder] = [:]
 
@@ -62,6 +62,15 @@ actor FFMediaSource: MediaSource {
     func thumbnail(stream: Int, at time: CMTime, maxPixelSize: Int) async throws -> CGImage {
         let f = try await frame(stream: stream, at: time)
         return try downscaledImage(f.pixelBuffer, maxPixelSize: maxPixelSize)
+    }
+
+    /// Number of video streams with open playback decoders (tests: thumbnails must not open any).
+    var openVideoDecoders: Int { video.count }
+
+    /// Measured decode rate of `stream` (pictures per busy second); nil when not decoded yet.
+    func decodeRate(stream: Int) async -> Double? {
+        guard let d = video[stream] else { return nil }
+        return await d.decodeRate
     }
 
     /// True when `stream` decodes on VideoToolbox (opens the decoder if needed).

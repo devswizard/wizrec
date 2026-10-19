@@ -5,6 +5,7 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
+import TSCProjKit
 
 /// What a media file is, decided by probing its contents.
 public enum MediaKind: String, Sendable, Equatable {
@@ -42,12 +43,37 @@ public struct StreamInfo: Sendable, Equatable {
     /// Stream length, measured from its first sample (stream time 0).
     public var duration: CMTime
 
+    // MARK: sourceTracks metadata (M2, docs/specs/media-streams.md §3)
+
+    /// Units per second of `length`: the value a project writes as `sourceTracks[i].editRate`
+    /// (e.g. 44100 for a `.trec`, 60000 / 240000 for camera mp4 video / audio, 600 for images).
+    /// Not a frame rate.
+    public var timescale: Int32
+    /// Presentation length in `timescale` units (edit lists applied, AAC priming removed):
+    /// `sourceTracks[i].range = [0, length]`. 1 for images, `Int64.max` for shaders.
+    public var length: Int64
+    /// Exact frame rate (frames per second) as stored in the container, e.g. 60000/1001;
+    /// the average for VFR streams. Nil for audio, images and when unknown.
+    public var frameRate: Rational?
+    /// `sourceTracks[i].bitDepth` as Camtasia writes it [obs]: 0 for imported files and images,
+    /// 24 (video) / 16 (audio) for `.trec` recordings, 32 for shaders.
+    public var bitDepth: Int
+    /// Decoded sample precision in bits: 8/10/12 per video component, 16/24/32 per PCM audio
+    /// sample; 0 when the codec does not define it (e.g. AAC).
+    public var bitsPerComponent: Int
+    /// `sourceTracks[i].type`: 0 = video, 1 = still image, 2 = audio.
+    public var trackType: Int
+
     public init(index: Int, kind: StreamKind, codec: String, pixelSize: CGSize = .zero,
                 nominalFrameRate: Double = 0, sampleRate: Double = 0, channelCount: Int = 0,
-                duration: CMTime) {
+                duration: CMTime, timescale: Int32 = 0, length: Int64 = 0, frameRate: Rational? = nil,
+                bitDepth: Int = 0, bitsPerComponent: Int = 0, trackType: Int? = nil) {
         self.index = index; self.kind = kind; self.codec = codec; self.pixelSize = pixelSize
         self.nominalFrameRate = nominalFrameRate; self.sampleRate = sampleRate
         self.channelCount = channelCount; self.duration = duration
+        self.timescale = timescale; self.length = length; self.frameRate = frameRate
+        self.bitDepth = bitDepth; self.bitsPerComponent = bitsPerComponent
+        self.trackType = trackType ?? (kind == .audio ? 2 : 0)
     }
 }
 
@@ -165,34 +191,58 @@ public struct CacheStats: Sendable, Equatable {
 public actor MediaPool {
     public let cacheLimitBytes: Int
 
-    private var sources: [URL: Task<any MediaSource, Error>] = [:]
-    private var cache: FrameCache
+    var sources: [URL: Task<any MediaSource, Error>] = [:]
+    var cache: FrameCache
 
     /// One pre-roll lane per stream: pending requests (in order) and the task draining them.
-    private struct LaneKey: Hashable { let url: URL; let stream: Int }
+    struct LaneKey: Hashable { let url: URL; let stream: Int }
     private var prefetchQueue: [LaneKey: [FrameRequest]] = [:]
     private var prefetchWorkers: [LaneKey: Task<Void, Never>] = [:]
 
-    private(set) var cacheHits = 0
-    private(set) var cacheMisses = 0
+    var cacheHits = 0
+    var cacheMisses = 0
 
-    /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU).
-    public init(cacheLimitBytes: Int = 512 << 20) {
+    // M2 state (Pool+M2.swift).
+    /// Directory of the on-disk waveform-peak cache; nil = memory only. Created on first write.
+    public nonisolated let diskCacheDirectory: URL?
+    struct PeakKey: Hashable { let url: URL; let stream: Int }
+    var peakMemory: [PeakKey: (peaks: BasePeaks, lastUse: UInt64)] = [:]
+    var peakTasks: [PeakKey: Task<BasePeaks, Error>] = [:]
+    var peakClock: UInt64 = 0
+    /// Memory budget for cached waveform envelopes (base resolution).
+    let peakLimitBytes = 64 << 20
+    /// Filmstrip decoders + cache, separate from playback decoders.
+    let thumbnails = ThumbnailService(limitBytes: 64 << 20)
+    /// `.nearestDecoded` catch-up decode per stream: the running task, the newest target asked
+    /// for while it runs, and the last target started (targets only move forward).
+    var catchUpTasks: [LaneKey: Task<Void, Never>] = [:]
+    var catchUpWanted: [LaneKey: FrameRequest] = [:]
+    var catchUpLast: [LaneKey: CMTime] = [:]
+    /// Stream times of decodes in flight per stream (any caller), for `.nearestDecoded`.
+    var inFlight: [LaneKey: [CMTime]] = [:]
+
+    /// `~/Library/Caches/WizRec/peaks`, the default `diskCacheDirectory`.
+    public static let defaultDiskCacheDirectory: URL? = PeakDiskCache.defaultDirectory
+
+    /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU). `diskCacheDirectory`: where
+    /// waveform peaks persist between launches (nil = memory only; never inside a project bundle).
+    public init(cacheLimitBytes: Int = 512 << 20, diskCacheDirectory: URL? = MediaPool.defaultDiskCacheDirectory) {
         self.cacheLimitBytes = cacheLimitBytes
         self.cache = FrameCache(limitBytes: cacheLimitBytes)
+        self.diskCacheDirectory = diskCacheDirectory
     }
 
     /// Reads stream metadata without decoding frames.
     public func probe(_ url: URL) async throws -> MediaInfo {
         if let t = sources[url], let s = try? await t.value { return s.info }
-        return try await Task.detached(priority: .userInitiated) { try Prober.probe(url) }.value
+        return try await Task.detached(priority: .userInitiated) { try await Prober.probe(url) }.value
     }
 
     /// Opens (or returns the already open) source for `url`.
     public func source(for url: URL) async throws -> any MediaSource {
         if let t = sources[url] { return try await t.value }
         let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
-            try openSource(try Prober.probeDetailed(url))
+            try openSource(try await Prober.probeDetailed(url))
         }
         sources[url] = t
         do {
@@ -204,7 +254,7 @@ public actor MediaPool {
     }
 
     /// Stream time used for cache lookups: clamped to ≥ 0.
-    private static func lookupTime(_ t: CMTime) -> CMTime {
+    static func lookupTime(_ t: CMTime) -> CMTime {
         t.isNumeric ? max(.zero, t) : (t == .positiveInfinity ? .positiveInfinity : .zero)
     }
 
@@ -218,7 +268,15 @@ public actor MediaPool {
         return try await decode(request)
     }
 
-    private func decode(_ request: FrameRequest) async throws -> VideoFrame {
+    func decode(_ request: FrameRequest) async throws -> VideoFrame {
+        let key = LaneKey(url: request.url, stream: request.stream)
+        inFlight[key, default: []].append(request.time)
+        defer {
+            if var a = inFlight[key], let i = a.firstIndex(of: request.time) {
+                a.remove(at: i)
+                inFlight[key] = a.isEmpty ? nil : a
+            }
+        }
         let src = try await source(for: request.url)
         let f = try await src.frame(stream: request.stream, at: request.time)
         cache.insert(url: request.url, stream: request.stream, frame: f)
@@ -263,6 +321,12 @@ public actor MediaPool {
         sources.removeAll()
         cacheHits = 0
         cacheMisses = 0
+        for t in catchUpTasks.values { t.cancel() }
+        catchUpTasks.removeAll(); catchUpWanted.removeAll(); catchUpLast.removeAll()
+        for t in peakTasks.values { t.cancel() }
+        peakTasks.removeAll(); peakMemory.removeAll()
+        let thumbs = thumbnails
+        Task { await thumbs.purge() }
     }
 
     /// Frame-cache counters since creation or the last `purge()`.

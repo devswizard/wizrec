@@ -49,7 +49,7 @@ final class BGRAPool {
 final class FrameConverter {
     private var pool: BGRAPool?
     private var sws: UnsafeMutablePointer<SwsContext>?
-    private var swsKey: (Int32, Int32, Int32, Int32, Int32) = (0, 0, -1, -1, -1)
+    private var swsKey: [Int32] = []
     private var transfer: VTPixelTransferSession?
     /// Codec of the stream; picks the default matrix for untagged frames.
     private let codecID: AVCodecID
@@ -77,11 +77,32 @@ final class FrameConverter {
             let src = Unmanaged<CVPixelBuffer>.fromOpaque(UnsafeRawPointer(raw)).takeUnretainedValue()
             return try transferVT(src)
         }
-        return try convertSoftware(frame, width: w, height: h)
+        return try convertSoftware(frame, width: w, height: h, outWidth: w, outHeight: h)
     }
 
-    /// GPU colour conversion of a decoder surface (NV12/P010/…) to BGRA.
-    func transferVT(_ src: CVPixelBuffer) throws -> CVPixelBuffer {
+    /// Output size whose longer side is at most `maxPixelSize` (never upscaled), aspect kept.
+    static func scaledSize(width w: Int, height h: Int, maxPixelSize: Int) -> (Int, Int) {
+        let longer = max(w, h), limit = max(1, maxPixelSize)
+        guard longer > limit else { return (w, h) }
+        let scale = Double(limit) / Double(longer)
+        return (max(1, Int((Double(w) * scale).rounded())), max(1, Int((Double(h) * scale).rounded())))
+    }
+
+    /// Like `convert`, scaled in the same pass so the longer side is ≤ `maxPixelSize` (thumbnails).
+    func convertScaled(_ frame: UnsafeMutablePointer<AVFrame>, maxPixelSize: Int) throws -> CVPixelBuffer {
+        let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
+        guard w > 0, h > 0 else { throw MediaError.decodeFailed("empty frame") }
+        let (ow, oh) = Self.scaledSize(width: w, height: h, maxPixelSize: maxPixelSize)
+        if frame.pointee.format == AV_PIX_FMT_VIDEOTOOLBOX.rawValue {
+            guard let raw = frame.pointee.data.3 else { throw MediaError.decodeFailed("VideoToolbox frame without buffer") }
+            let src = Unmanaged<CVPixelBuffer>.fromOpaque(UnsafeRawPointer(raw)).takeUnretainedValue()
+            return try transferVT(src, width: ow, height: oh)
+        }
+        return try convertSoftware(frame, width: w, height: h, outWidth: ow, outHeight: oh)
+    }
+
+    /// GPU colour conversion (and scaling) of a decoder surface (NV12/P010/…) to BGRA.
+    func transferVT(_ src: CVPixelBuffer, width: Int? = nil, height: Int? = nil) throws -> CVPixelBuffer {
         if transfer == nil {
             var t: VTPixelTransferSession?
             let rc = VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &t)
@@ -89,20 +110,24 @@ final class FrameConverter {
             transfer = t
         }
         guard let transfer else { throw MediaError.decodeFailed("no transfer session") }
-        let dst = try buffer(width: CVPixelBufferGetWidth(src), height: CVPixelBufferGetHeight(src))
+        let dst = try buffer(width: width ?? CVPixelBufferGetWidth(src), height: height ?? CVPixelBufferGetHeight(src))
         let rc = VTPixelTransferSessionTransferImage(transfer, from: src, to: dst)
         guard rc == noErr else { throw MediaError.decodeFailed("VTPixelTransferSessionTransferImage \(rc)") }
         return dst
     }
 
-    private func convertSoftware(_ frame: UnsafeMutablePointer<AVFrame>, width w: Int, height h: Int) throws -> CVPixelBuffer {
+    private func convertSoftware(_ frame: UnsafeMutablePointer<AVFrame>, width w: Int, height h: Int,
+                                 outWidth ow: Int, outHeight oh: Int) throws -> CVPixelBuffer {
         let fmt = frame.pointee.format
         let colorspace = frame.pointee.colorspace
         let range = frame.pointee.color_range
-        let key = (Int32(w), Int32(h), fmt, Int32(bitPattern: colorspace.rawValue), Int32(bitPattern: range.rawValue))
+        let key: [Int32] = [Int32(w), Int32(h), fmt, Int32(bitPattern: colorspace.rawValue), Int32(bitPattern: range.rawValue),
+                   Int32(ow), Int32(oh)]
         if sws == nil || key != swsKey {
-            sws = sws_getCachedContext(sws, Int32(w), Int32(h), AVPixelFormat(fmt), Int32(w), Int32(h), AV_PIX_FMT_BGRA,
-                                       Int32(SWS_BILINEAR.rawValue | SWS_ACCURATE_RND.rawValue | SWS_FULL_CHR_H_INT.rawValue),
+            let flags = (ow == w && oh == h ? SWS_BILINEAR.rawValue : SWS_AREA.rawValue)
+                | SWS_ACCURATE_RND.rawValue | SWS_FULL_CHR_H_INT.rawValue
+            sws = sws_getCachedContext(sws, Int32(w), Int32(h), AVPixelFormat(fmt), Int32(ow), Int32(oh), AV_PIX_FMT_BGRA,
+                                       Int32(flags),
                                        nil, nil, nil)
             guard let s = sws else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(fmt)") }
             swsKey = key
@@ -118,7 +143,7 @@ final class FrameConverter {
             }
         }
         guard let s = sws else { throw MediaError.decodeFailed("no swscale context") }
-        let dst = try buffer(width: w, height: h)
+        let dst = try buffer(width: ow, height: oh)
         CVPixelBufferLockBaseAddress(dst, [])
         defer { CVPixelBufferUnlockBaseAddress(dst, []) }
         guard let base = CVPixelBufferGetBaseAddress(dst) else { throw MediaError.decodeFailed("pixel buffer has no memory") }
