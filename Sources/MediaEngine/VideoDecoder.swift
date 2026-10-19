@@ -325,8 +325,10 @@ final class VideoDecodeCore {
         ctx.pointee.pkt_timebase = timeBase
 
         var hw = false
-        let hwCodecs: Set<AVCodecID> = [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_PRORES, AV_CODEC_ID_MPEG4,
-                                         AV_CODEC_ID_MPEG2VIDEO, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1]
+        // Only codecs whose decoding is bit-exact by specification, so both lanes see the same
+        // samples. ProRes, MPEG-4 Part 2 and MPEG-2 are not (IDCT within a tolerance): VideoToolbox
+        // and libav reconstruct different ProRes samples (±1, observed), so they decode in software.
+        let hwCodecs: Set<AVCodecID> = [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1]
         if allowHardware, hwCodecs.contains(id), ProcessInfo.processInfo.environment["WIZREC_NO_HWDEC"] == nil {
             var dev: UnsafeMutablePointer<AVBufferRef>? = nil
             if av_hwdevice_ctx_create(&dev, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nil, nil, 0) >= 0, let dev {
