@@ -221,6 +221,7 @@ click-through not done.
 | S4-EXP-1 | export | done | Audio prefetch/mix in parallel with video; A/V ≤ 1 frame + determinism tests green; gated perf numbers |
 | S4-QA-1 | qa | done | Integration tests for S4 features; perf tests report (not fail) when load avg > 30; flaky watch; golden re-run ready |
 | S4-SHIP-1 | ship | done | Strip `ProjectThumbnail` from all `Tests/*/Fixtures/demo.tscproj`; tests needing it read the user's project in place or skip; asset audit clean; CI workflow current |
+| S4-QA-2 | qa | claimed | Shared test-only target `WizRecTestSupport` (LoadGate); remove 6 copies; Captions WhisperCpp cancel bound via LoadGate |
 
 ## Session 4 merges
 
