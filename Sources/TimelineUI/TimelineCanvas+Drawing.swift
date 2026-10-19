@@ -101,7 +101,8 @@ extension TimelineCanvas {
         let path = CGPath(roundedRect: body, cornerWidth: radius, cornerHeight: radius, transform: nil)
         ctx.saveGState()
         ctx.addPath(path); ctx.clip()
-        base.blended(withFraction: 0.45, of: Palette.background)?.setFill()
+        let colors = clipColors(c.style)
+        ctx.setFillColor(colors.body)
         ctx.fill(body)
         guard body.width >= 3 else { ctx.restoreGState(); return }
 
@@ -153,7 +154,7 @@ extension TimelineCanvas {
         if selected {
             ctx.setStrokeColor(Palette.selection.cgColor); ctx.setLineWidth(2)
         } else {
-            ctx.setStrokeColor(base.shadow(withLevel: 0.35)?.cgColor ?? base.cgColor); ctx.setLineWidth(1)
+            ctx.setStrokeColor(colors.outline); ctx.setLineWidth(1)
         }
         ctx.strokePath()
     }
@@ -358,7 +359,8 @@ extension TimelineCanvas {
                     drawClip(ctx, t, rect: r, layout: L, visible: L.clipArea, selected: true, muted: false)
                 }
             }
-        case .marquee(let o, let p, _):
+        case .marquee(let oc, let pc, _):
+            let o = viewPoint(oc), p = viewPoint(pc)
             let r = CGRect(x: min(o.x, p.x), y: min(o.y, p.y), width: abs(p.x - o.x), height: abs(p.y - o.y))
             Palette.marqueeFill.setFill(); ctx.fill(r)
             ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(1)
@@ -463,15 +465,58 @@ extension TimelineCanvas {
         drawSymbol(on ? onSymbol : symbol, in: rect.insetBy(dx: 3, dy: 3), color: color)
     }
 
+    var isDark: Bool { NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
+
+    /// Body fill and outline of a clip style for the current appearance.
+    func clipColors(_ style: TimelineClipStyle) -> (body: CGColor, outline: CGColor) {
+        let key = "\(style.rawValue)|\(isDark)"
+        if let c = clipColorCache[key] { return c }
+        let base = Palette.clip(style)
+        let bg = Palette.background.usingColorSpace(.sRGB) ?? Palette.background
+        let c = (body: (base.blended(withFraction: 0.45, of: bg) ?? base).cgColor,
+                 outline: (base.shadow(withLevel: 0.35) ?? base).cgColor)
+        clipColorCache[key] = c
+        return c
+    }
+
+    /// Draws an SF Symbol fitted in `rect`, tinted `color`; rasterised once per size, colour and appearance.
     func drawSymbol(_ name: String, in rect: CGRect, color: NSColor) {
-        guard let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: rect.height * 0.8, weight: .medium)
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let resolved = color.usingColorSpace(.sRGB) ?? color
+        let key = String(format: "%@|%.0fx%.0f|%.3f,%.3f,%.3f,%.3f", name, rect.width, rect.height,
+                         resolved.redComponent, resolved.greenComponent, resolved.blueComponent, resolved.alphaComponent)
+        let img: CGImage
+        if let cached = symbolCache[key] { img = cached } else {
+            guard let made = rasterizeSymbol(name, size: rect.size, color: resolved) else { return }
+            symbolCache[key] = made
+            img = made
+        }
+        let w = CGFloat(img.width) / 2, h = CGFloat(img.height) / 2
+        let dst = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: dst.minY + dst.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: dst)
+        ctx.restoreGState()
+    }
+
+    private func rasterizeSymbol(_ name: String, size: CGSize, color: NSColor) -> CGImage? {
+        guard let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
+        let config = NSImage.SymbolConfiguration(pointSize: size.height * 0.8, weight: .medium)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
         let sized = img.withSymbolConfiguration(config) ?? img
         let s = sized.size
-        let k = min(rect.width / max(s.width, 1), rect.height / max(s.height, 1), 1)
-        let dst = CGRect(x: rect.midX - s.width * k / 2, y: rect.midY - s.height * k / 2, width: s.width * k, height: s.height * k)
-        sized.draw(in: dst, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        let k = min(size.width / max(s.width, 1), size.height / max(s.height, 1), 1)
+        let w = max(1, Int((s.width * k * 2).rounded(.up))), h = max(1, Int((s.height * k * 2).rounded(.up)))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let g = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = g
+        sized.draw(in: CGRect(x: 0, y: 0, width: w, height: h), from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
     }
 
     func drawCorner(_ ctx: CGContext, _ L: TimelineLayout) {

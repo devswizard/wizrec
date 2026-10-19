@@ -4,6 +4,7 @@ import TimelineEngine
 import TSCProjKit
 
 /// Gesture in progress. Previews are view-only; the command is pushed on mouse-up.
+/// Origins are content points (view point + scroll), so autoscroll during a drag keeps them.
 enum TimelineDrag: Equatable {
     case none
     /// Scrubbing the playhead (ruler or playhead handle).
@@ -33,6 +34,11 @@ final class TimelineCanvas: NSView {
     var snapTolerancePoints: CGFloat = 8
     /// Fit the project once the view first gets a size.
     var fitsOnFirstLayout = true
+    /// Set while `TimelineView` forwards a key event here (prevents a responder-chain loop).
+    var forwardingKey = false
+    /// Rasterised SF Symbols and resolved clip colours, keyed by appearance (drawing is hot).
+    var symbolCache: [String: CGImage] = [:]
+    var clipColorCache: [String: (body: CGColor, outline: CGColor)] = [:]
 
     private var builtChangeCount = -1
     private var lastPlayhead: Int64 = 0
@@ -155,6 +161,7 @@ final class TimelineCanvas: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        symbolCache = [:]; clipColorCache = [:]
         needsDisplay = true
     }
 
@@ -251,21 +258,25 @@ final class TimelineCanvas: NSView {
                 model.selection = additive ? model.selection.union([id]) : [id]
                 let edge: TrimEdge = zone == .leadingEdge ? .start : .end
                 if let plan = editor.planTrim(id: id, edge: edge, rawDelta: 0, tolerance: 0) {
-                    drag = .trim(origin: p, plan: plan)
+                    drag = .trim(origin: contentPoint(p), plan: plan)
                 }
             case .body:
-                drag = .press(clipID: id, origin: p, wasSelected: wasSelected && !flags.contains(.shift))
+                drag = .press(clipID: id, origin: contentPoint(p), wasSelected: wasSelected && !flags.contains(.shift))
             }
         case .track, .empty:
             let base = additive ? model.selection : []
             if !additive { model.selection = [] }
-            drag = .marquee(origin: p, current: p, base: base)
+            drag = .marquee(origin: contentPoint(p), current: contentPoint(p), base: base)
         }
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
+        switch drag {
+        case .move, .trim, .marquee: autoscroll(toward: p)
+        default: break
+        }
         let L = layout
         switch drag {
         case .none: return
@@ -273,20 +284,21 @@ final class TimelineCanvas: NSView {
             seek(to: L.ticks(atX: max(p.x, L.clipArea.minX)))
             autoscroll(with: event)
         case .press(let id, let origin, _):
-            guard hypot(p.x - origin.x, p.y - origin.y) >= 3 else { return }
+            let o = viewPoint(origin)
+            guard hypot(p.x - o.x, p.y - o.y) >= 3 else { return }
             let ids = model.selection.contains(id) ? Array(model.selection) : [id]
             drag = .move(origin: origin, plan: planMove(ids: ids, origin: origin, to: p, layout: L))
         case .move(let origin, let plan):
             drag = .move(origin: origin, plan: planMove(ids: plan.ids, origin: origin, to: p, layout: L))
         case .trim(let origin, let plan):
-            let raw = L.ticks(forWidth: p.x - origin.x)
+            let raw = L.ticks(forWidth: p.x - viewPoint(origin).x)
             if let np = editor.planTrim(id: plan.id, edge: plan.edge, rawDelta: raw, tolerance: snapTolerance) {
                 drag = .trim(origin: origin, plan: np)
             }
         case .marquee(let origin, _, let base):
-            drag = .marquee(origin: origin, current: p, base: base)
-            let r = CGRect(x: min(origin.x, p.x), y: min(origin.y, p.y), width: abs(p.x - origin.x),
-                           height: abs(p.y - origin.y))
+            drag = .marquee(origin: origin, current: contentPoint(p), base: base)
+            let o = viewPoint(origin)
+            let r = CGRect(x: min(o.x, p.x), y: min(o.y, p.y), width: abs(p.x - o.x), height: abs(p.y - o.y))
             model.selection = base.union(L.clips(in: r, snapshot: snapshot))
         }
         needsDisplay = true
@@ -308,7 +320,8 @@ final class TimelineCanvas: NSView {
         needsDisplay = true
     }
 
-    private func planMove(ids: [Int64], origin: CGPoint, to p: CGPoint, layout L: TimelineLayout) -> MovePlan {
+    private func planMove(ids: [Int64], origin content: CGPoint, to p: CGPoint, layout L: TimelineLayout) -> MovePlan {
+        let origin = viewPoint(content)
         let raw = L.ticks(forWidth: p.x - origin.x)
         var offset = 0
         if let from = L.nearestTrack(atY: origin.y), let to = L.nearestTrack(atY: p.y),
@@ -317,6 +330,22 @@ final class TimelineCanvas: NSView {
             offset = fr - tr  // rows run top → bottom = highest track first
         }
         return editor.planMove(ids: ids, rawDelta: raw, trackOffset: offset, tolerance: snapTolerance)
+    }
+
+    func contentPoint(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + scrollX, y: p.y + scrollY) }
+    func viewPoint(_ c: CGPoint) -> CGPoint { CGPoint(x: c.x - scrollX, y: c.y - scrollY) }
+
+    /// Scrolls when a drag nears the clip area's edges (speed grows with the overshoot).
+    func autoscroll(toward p: CGPoint) {
+        let area = layout.clipArea, margin: CGFloat = 24
+        var dx: CGFloat = 0, dy: CGFloat = 0
+        if p.x > area.maxX - margin { dx = min(40, p.x - (area.maxX - margin)) }
+        if p.x < area.minX + margin { dx = -min(40, area.minX + margin - p.x) }
+        if p.y > area.maxY - margin { dy = min(20, p.y - (area.maxY - margin)) }
+        if p.y < area.minY + margin { dy = -min(20, area.minY + margin - p.y) }
+        guard dx != 0 || dy != 0 else { return }
+        scrollX += dx; scrollY += dy
+        clampScroll()
     }
 
     private func beginScrub(at p: CGPoint) {

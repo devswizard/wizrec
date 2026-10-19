@@ -32,8 +32,13 @@ extension TimelineView: NSMenuItemValidation {
 
     override public var acceptsFirstResponder: Bool { true }
 
-    override public func becomeFirstResponder() -> Bool {
-        window?.makeFirstResponder(canvas) ?? false
+    /// Keys reach the canvas whether the app focuses the view or the canvas
+    /// (unhandled canvas keys come back here through the responder chain).
+    override public func keyDown(with event: NSEvent) {
+        guard window?.firstResponder === self, !canvas.forwardingKey else { return super.keyDown(with: event) }
+        canvas.forwardingKey = true
+        defer { canvas.forwardingKey = false }
+        canvas.keyDown(with: event)
     }
 
     var editor: TimelineEditor { canvas.rebuildIfNeeded(); return canvas.editor }
