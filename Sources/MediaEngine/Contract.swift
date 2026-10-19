@@ -149,29 +149,84 @@ public protocol MediaSource: AnyObject, Sendable {
 public actor MediaPool {
     public let cacheLimitBytes: Int
 
+    private var sources: [URL: Task<any MediaSource, Error>] = [:]
+    private var cache: FrameCache
+    private var prefetchTasks: [UUID: Task<Void, Never>] = [:]
+
     /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU).
     public init(cacheLimitBytes: Int = 512 << 20) {
         self.cacheLimitBytes = cacheLimitBytes
+        self.cache = FrameCache(limitBytes: cacheLimitBytes)
     }
 
     /// Reads stream metadata without decoding frames.
     public func probe(_ url: URL) async throws -> MediaInfo {
-        throw MediaError.notImplemented
+        if let t = sources[url], let s = try? await t.value { return s.info }
+        return try await Task.detached(priority: .userInitiated) { try Prober.probe(url) }.value
     }
 
     /// Opens (or returns the already open) source for `url`.
     public func source(for url: URL) async throws -> any MediaSource {
-        throw MediaError.notImplemented
+        if let t = sources[url] { return try await t.value }
+        let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
+            try openSource(try Prober.probe(url))
+        }
+        sources[url] = t
+        do {
+            return try await t.value
+        } catch {
+            if sources[url] == t { sources[url] = nil } // allow a retry (e.g. media relinked)
+            throw error
+        }
     }
 
     /// Cached frame lookup; decodes on a miss.
     public func frame(_ request: FrameRequest) async throws -> VideoFrame {
-        throw MediaError.notImplemented
+        let t = request.time.isNumeric ? max(0, request.time.seconds) : (request.time == .positiveInfinity ? .infinity : 0)
+        if let f = cache.lookup(url: request.url, stream: request.stream, seconds: t) { return f }
+        let src = try await source(for: request.url)
+        let f = try await src.frame(stream: request.stream, at: request.time)
+        cache.insert(url: request.url, stream: request.stream, frame: f)
+        return f
     }
 
     /// Starts decoding `requests` ahead of need (playback pre-roll). Returns immediately.
-    public func prefetch(_ requests: [FrameRequest]) {}
+    ///
+    /// Requests for the same stream are decoded in the given order (so sequential pre-roll
+    /// never makes the decoder seek backwards); different streams decode in parallel.
+    public func prefetch(_ requests: [FrameRequest]) {
+        var groups: [String: [FrameRequest]] = [:]
+        var order: [String] = []
+        for r in requests {
+            let k = "\(r.stream)|\(r.url.absoluteString)"
+            if groups[k] == nil { order.append(k) }
+            groups[k, default: []].append(r)
+        }
+        for k in order {
+            guard let group = groups[k] else { continue }
+            let id = UUID()
+            prefetchTasks[id] = Task { [weak self] in
+                for r in group {
+                    if Task.isCancelled { break }
+                    _ = try? await self?.frame(r)
+                }
+                await self?.prefetchFinished(id)
+            }
+        }
+    }
+
+    private func prefetchFinished(_ id: UUID) { prefetchTasks[id] = nil }
 
     /// Drops all cached frames and closes sources.
-    public func purge() {}
+    public func purge() {
+        for t in prefetchTasks.values { t.cancel() }
+        prefetchTasks.removeAll()
+        cache.removeAll()
+        sources.removeAll()
+    }
+
+    /// Bytes currently held by the frame cache.
+    var cachedBytes: Int { cache.totalBytes }
+    /// Number of cached frames.
+    var cachedFrameCount: Int { cache.count }
 }
