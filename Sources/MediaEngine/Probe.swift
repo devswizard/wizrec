@@ -52,7 +52,12 @@ enum Prober {
         }
         if ext == "pdf", let info = probePDF(url) { return plain(info) }
         if isImageExtension(ext), let info = probeImage(url) { return plain(info) }
-        if let r = try? probeFFmpeg(url) { return r }
+        do {
+            return try probeFFmpeg(url)
+        } catch {
+            // Audio/video extension: the libav error is the real answer; don't let ImageIO/PDF mask it.
+            if isAudioVisualExtension(ext) { throw error }
+        }
         if let info = probeImage(url) { return plain(info) }
         if let info = probePDF(url) { return plain(info) }
         return ProbeResult(info: MediaInfo(url: url, kind: .unknown, streams: [], duration: .zero), map: StreamMap())
@@ -61,6 +66,13 @@ enum Prober {
     static func isImageExtension(_ ext: String) -> Bool {
         guard !ext.isEmpty, let t = UTType(filenameExtension: ext) else { return false }
         return t.conforms(to: .image)
+    }
+
+    /// Extension names an audio/video container (`.wav`, `.mp4`, `.mov`, `.trec`, …).
+    static func isAudioVisualExtension(_ ext: String) -> Bool {
+        if ext == recordingExtension { return true }
+        guard !ext.isEmpty, let t = UTType(filenameExtension: ext) else { return false }
+        return t.conforms(to: .audiovisualContent)
     }
 
     /// Single still frame; stream duration `.zero`.
