@@ -12,11 +12,13 @@ continue here.
   - Tagline: *"WizRec — free, open-source screen recorder & editor by Devs
     Wizard. Opens your Camtasia projects."*
   - App target and product: `WizRec`. Swift package: `WizRec`.
-  - `~/Movies/WizRec/` already holds earlier recording sessions (`screen.mov`,
-    `camera.mov`, `audio.wav`, `events.json`, `zoom-plan.json`,
-    `styled.mp4`), possibly from an earlier WizRec prototype. Ask the user
-    before writing into that folder, and consider importing those sessions
-    (cursor `events.json`, `zoom-plan.json`) in M6/M7.
+  - On 2026-10-19 the user retired the earlier prototypes, the old WizRec
+    recorder and Wiz Remove, and moved them to the Trash (source,
+    `~/Movies/WizRec` recordings and preferences). This project replaces
+    them. Reuse nothing from them; start clean.
+  - The old bundle ID `com.devswizard.wizrec` was used by the retired
+    prototype. Stale Screen Recording permission entries may remain in System
+    Settings.
   - Module names stay descriptive (`TSCProjKit`, `MediaEngine`,
     `RenderEngine`, …).
 - **Never put "Camtasia" in a product, module or bundle name.** It is a
