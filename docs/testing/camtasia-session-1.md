@@ -110,6 +110,14 @@ and the video.
        Cube transition.
     3. Save as `x7-move.cmproj`.
 
+- **X8, markers:**
+  1. New project, any video on track 1.
+  2. Add one **timeline marker** at 2 s (Marker track / press M), name it
+     `T1`.
+  3. Add one **clip marker** on the video at 4 s (Shift+M or right-click ▸
+     Add Clip Marker), name it `C1`.
+  4. Save as `x8-markers.cmproj`.
+
 The old experiment X4 (keyframes on a sped-up clip) is covered by the
 `keyframes-speed` case in Part A.
 
