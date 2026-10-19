@@ -21,7 +21,26 @@ public final class TimelineModel {
     /// Called when the user moves the playhead (scrub, click on ruler). Ticks.
     public var onSeek: ((Int64) -> Void)?
 
+    // Additive (API_CHANGE TimelineUI, approved 2026-10-19).
+
+    /// Snap drags to clip edges, the playhead and tick 0.
+    public var snappingEnabled = true
+    /// Last edit that failed (command name and error), for a status line. Nil after success.
+    public var lastError: String?
+    /// Called when media is dropped on the timeline: payload, scene track index
+    /// (0 = bottom; always an existing track, or 0 when there are none) and start ticks
+    /// (snapped like moves). Return true when the drop was handled.
+    public var onDrop: ((DropPayload, _ track: Int, _ ticks: Int64) -> Bool)?
+
     public init(undo: UndoStack) { self.undo = undo }
+}
+
+/// What was dropped on the timeline.
+public enum DropPayload: Sendable, Equatable {
+    /// Files from Finder (not yet imported).
+    case files([URL])
+    /// `sourceBin` ids dragged from the media bin (pasteboard type `TimelineView.sourceIDType`).
+    case sources([Int64])
 }
 
 /// Multi-track timeline view: ruler, track headers (mute/hide/lock), clips with
@@ -29,10 +48,16 @@ public final class TimelineModel {
 @MainActor
 public final class TimelineView: NSView {
     public let model: TimelineModel
+    /// Drawing and event handling; fills the view.
+    let canvas: TimelineCanvas
 
     public init(model: TimelineModel) {
         self.model = model
+        canvas = TimelineCanvas(model: model)
         super.init(frame: .zero)
+        canvas.frame = bounds
+        canvas.autoresizingMask = [.width, .height]
+        addSubview(canvas)
     }
 
     @available(*, unavailable)
