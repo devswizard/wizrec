@@ -121,14 +121,20 @@ extension ExportSession {
         }
     }
 
-    /// The project mix (48 kHz stereo), or nil when `includeAudio` is off.
+    /// Default mix rate when the project declares no valid `audioFormatSampleRate`, Hz.
+    static let defaultSampleRate = 48_000.0
+
+    /// Output sample rate, Hz: the project's `audioFormatSampleRate`, else `defaultSampleRate`.
+    var mixSampleRate: Double { audioScene.sampleRate.map { $0.rounded() } ?? Self.defaultSampleRate }
+
+    /// The project mix (stereo at `mixSampleRate`), or nil when `includeAudio` is off.
     func makeMixer() -> AudioMixer? {
         settings.includeAudio ? requireMixer() : nil
     }
 
     /// The project mix for audio-only formats (they ignore `includeAudio`).
     func requireMixer() -> AudioMixer {
-        AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: 48_000, channels: 2))
+        AudioMixer(scene: audioScene, pool: pool, format: MixFormat(sampleRate: mixSampleRate, channels: 2))
     }
 
     /// Sleeps briefly while the writer drains (AVAssetWriter has no async readiness API).
