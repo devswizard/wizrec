@@ -48,16 +48,19 @@ final class ToneMapper: Sendable {
     let transfer: HDRTransfer
     /// Luma coefficients of the YCbCr matrix.
     let kr: Float, kb: Float
-    /// Linear source-primaries → BT.709 matrix, row-major.
-    let gamut: [Float]
+    /// Linear source-primaries → BT.709 matrix, by rows.
+    let gamut: (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)
     /// Samples are full range.
     let fullRange: Bool
     /// Non-linear signal [0, 1] → linear (PQ: relative to 203 cd/m²; HLG: scene light [0, 1]),
-    /// `eotfSize + 1` entries, linearly interpolated.
+    /// `eotfSize + 1` entries, nearest entry (16-bit signal resolution, finer than any source).
     private let eotf: [Float]
+    /// HLG OOTF gain Lw · Ys^(γ−1) ÷ 203 over Ys ∈ [0, 1], `ootfSize + 1` entries, interpolated.
+    private let ootf: [Float]
+    private static let ootfSize = 4096
     /// Linear [0, 1] → 8-bit BT.709 OETF code, `encodeSize` entries.
     private let encode: [UInt8]
-    private static let eotfSize = 16384
+    private static let eotfSize = 65536
     private static let encodeSize = 65536
 
     /// SDR reference white in cd/m² (BT.2408): linear 1.0.
@@ -76,11 +79,14 @@ final class ToneMapper: Sendable {
         default: (kr, kb) = (0.2627, 0.0593) // BT.2020 (tagged or assumed for HDR)
         }
         switch primaries {
-        case AVCOL_PRI_BT709: gamut = [1, 0, 0, 0, 1, 0, 0, 0, 1]
-        case AVCOL_PRI_SMPTE432: gamut = [1.224940, -0.224940, 0, -0.042057, 1.042057, 0, -0.019638, -0.078636, 1.098274]
-        default: gamut = [1.660491, -0.587641, -0.072850, -0.124551, 1.132900, -0.008349, -0.018151, -0.100579, 1.118730]
+        case AVCOL_PRI_BT709: gamut = ([1, 0, 0], [0, 1, 0], [0, 0, 1])
+        case AVCOL_PRI_SMPTE432:
+            gamut = ([1.224940, -0.224940, 0], [-0.042057, 1.042057, 0], [-0.019638, -0.078636, 1.098274])
+        default:
+            gamut = ([1.660491, -0.587641, -0.072850], [-0.124551, 1.132900, -0.008349], [-0.018151, -0.100579, 1.118730])
         }
         eotf = (0...Self.eotfSize).map { Self.linearise(Float($0) / Float(Self.eotfSize), transfer) }
+        ootf = (0...Self.ootfSize).map { Self.hlgGain(Float($0) / Float(Self.ootfSize)) }
         encode = (0..<Self.encodeSize).map { Self.oetf709(Float($0) / Float(Self.encodeSize - 1)) }
     }
 
@@ -108,6 +114,11 @@ final class ToneMapper: Sendable {
         }
     }
 
+    /// HLG OOTF gain for scene luminance `ys` [0, 1]: Lw · Ys^(γ−1) ÷ 203, γ = 1.2, Lw = 1000.
+    static func hlgGain(_ ys: Float) -> Float {
+        ys > 0 ? hlgPeak * powf(ys, 0.2) / referenceWhite : 0
+    }
+
     /// The tone curve f(m) on linear light relative to reference white; result in [0, 1).
     static func curve(_ m: Float) -> Float {
         guard m > knee else { return m }
@@ -124,28 +135,28 @@ final class ToneMapper: Sendable {
 
     /// Tone-maps one pixel given normalised Y' [0, 1] and Cb/Cr [−0.5, 0.5]; returns (r, g, b).
     @inline(__always)
-    func map(y: Float, cb: Float, cr: Float, eotf e: UnsafePointer<Float>, encode enc: UnsafePointer<UInt8>) -> (UInt8, UInt8, UInt8) {
+    func map(y: Float, cb: Float, cr: Float, eotf e: UnsafePointer<Float>, ootf o: UnsafePointer<Float>,
+             encode enc: UnsafePointer<UInt8>) -> (UInt8, UInt8, UInt8) {
         let kg = 1 - kr - kb
         let r1 = y + 2 * (1 - kr) * cr
         let b1 = y + 2 * (1 - kb) * cb
         let g1 = (y - kr * r1 - kb * b1) / kg
         @inline(__always) func lin(_ v: Float) -> Float {
-            let x = min(max(v, 0), 1) * Float(Self.eotfSize)
-            let i = min(Int(x), Self.eotfSize - 1)
-            let f = x - Float(i)
-            return e[i] + (e[i + 1] - e[i]) * f
+            e[Int(min(max(v, 0), 1) * Float(Self.eotfSize) + 0.5)]
         }
         var r = lin(r1), g = lin(g1), b = lin(b1)
         if transfer == .hlg {
             // OOTF on source (BT.2020) luminance: Fd = Lw · Ys^(γ−1) · E, γ = 1.2.
             let ys = 0.2627 * r + 0.6780 * g + 0.0593 * b
-            let s = ys > 0 ? Self.hlgPeak * powf(ys, 0.2) / Self.referenceWhite : 0
+            let x = min(max(ys, 0), 1) * Float(Self.ootfSize)
+            let i = min(Int(x), Self.ootfSize - 1)
+            let s = o[i] + (o[i + 1] - o[i]) * (x - Float(i))
             r *= s; g *= s; b *= s
         }
-        let m = gamut
-        var R = max(m[0] * r + m[1] * g + m[2] * b, 0)
-        var G = max(m[3] * r + m[4] * g + m[5] * b, 0)
-        var B = max(m[6] * r + m[7] * g + m[8] * b, 0)
+        let (m0, m1, m2) = gamut
+        var R = max(m0.x * r + m0.y * g + m0.z * b, 0)
+        var G = max(m1.x * r + m1.y * g + m1.z * b, 0)
+        var B = max(m2.x * r + m2.y * g + m2.z * b, 0)
         let peak = max(R, max(G, B))
         if peak > Self.knee {
             let s = Self.curve(peak) / peak
@@ -173,8 +184,9 @@ final class ToneMapper: Sendable {
     }
 
     /// Tone-maps a bi-planar YCbCr buffer (8-bit, or 10-bit in the 16-bit MSBs) into a BGRA
-    /// buffer of the same size. Rows are processed in parallel; output does not depend on it.
-    func convert(_ src: CVPixelBuffer, into dst: CVPixelBuffer) throws {
+    /// buffer of the same size. Rows are processed in `bands` parallel bands (default: 2 per
+    /// core); the output does not depend on it.
+    func convert(_ src: CVPixelBuffer, into dst: CVPixelBuffer, bands: Int? = nil) throws {
         guard let lay = Self.layout(CVPixelBufferGetPixelFormatType(src)) else {
             throw MediaError.decodeFailed("tone mapping: unsupported pixel format")
         }
@@ -204,11 +216,11 @@ final class ToneMapper: Sendable {
         let cOff: Float = 128 * unit, cScale: Float = fullRange ? 1 / maxCode : 1 / (224 * unit)
         let yb = UInt(bitPattern: yBase), cb = UInt(bitPattern: cBase), ob = UInt(bitPattern: oBase)
 
-        let bands = min(h, max(1, ProcessInfo.processInfo.activeProcessorCount * 2))
+        let bands = max(1, min(h, bands ?? ProcessInfo.processInfo.activeProcessorCount * 2))
         DispatchQueue.concurrentPerform(iterations: bands) { band in
-            eotf.withUnsafeBufferPointer { e in
+            eotf.withUnsafeBufferPointer { e in ootf.withUnsafeBufferPointer { o in
                 encode.withUnsafeBufferPointer { enc in
-                    guard let ep = e.baseAddress, let encp = enc.baseAddress else { return }
+                    guard let ep = e.baseAddress, let op0 = o.baseAddress, let encp = enc.baseAddress else { return }
                     let y0 = band * h / bands, y1 = (band + 1) * h / bands
                     var cbRow = [Float](repeating: 0, count: cwid), crRow = [Float](repeating: 0, count: cwid)
                     for y in y0..<y1 {
@@ -253,12 +265,12 @@ final class ToneMapper: Sendable {
                                 let i = min(x, cwid - 1)
                                 u = cbRow[i]; v = crRow[i]
                             }
-                            let (r, g, b) = map(y: yn, cb: u, cr: v, eotf: ep, encode: encp)
+                            let (r, g, b) = map(y: yn, cb: u, cr: v, eotf: ep, ootf: op0, encode: encp)
                             op[4 * x] = b; op[4 * x + 1] = g; op[4 * x + 2] = r; op[4 * x + 3] = 255
                         }
                     }
                 }
-            }
+            } }
         }
     }
 }

@@ -150,3 +150,40 @@ struct HDRDecodeTests {
         #expect(abs(Int(t.r) - Int(p.r)) <= 1 && abs(Int(t.g) - Int(p.g)) <= 1 && abs(Int(t.b) - Int(p.b)) <= 1)
     }
 }
+
+/// Tone-mapping throughput on a 4K / 2.7K P010 picture (`WIZREC_PERF=1`; numbers only).
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1", "set WIZREC_PERF=1"), .serialized)
+struct ToneMapPerfTests {
+    @Test(arguments: [(2704, 1520), (3840, 2160)])
+    func p010Throughput(_ size: (Int, Int)) throws {
+        let (w, h) = size
+        var src: CVPixelBuffer?
+        let attrs: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any]() as CFDictionary]
+        CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, attrs as CFDictionary, &src)
+        let s = try #require(src)
+        CVPixelBufferLockBaseAddress(s, [])
+        for plane in 0..<2 {
+            guard let base = CVPixelBufferGetBaseAddressOfPlane(s, plane) else { continue }
+            let rb = CVPixelBufferGetBytesPerRowOfPlane(s, plane), ph = CVPixelBufferGetHeightOfPlane(s, plane)
+            for y in 0..<ph {
+                let row = (base + y * rb).assumingMemoryBound(to: UInt16.self)
+                for x in 0..<(rb / 2) { row[x] = UInt16(64 + (x * 7 + y * 3) % 876) << 6 }
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(s, [])
+        let pool = try BGRAPool(width: w, height: h)
+        let dst = try pool.make()
+        for t in [HDRTransfer.pq, .hlg] {
+            let tm = ToneMapper(transfer: t, colorSpace: AVCOL_SPC_BT2020_NCL, primaries: AVCOL_PRI_BT2020, fullRange: false)
+            try tm.convert(s, into: dst) // warm
+            let n = 5, t0 = DispatchTime.now().uptimeNanoseconds
+            for _ in 0..<n { try tm.convert(s, into: dst) }
+            let ms = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6 / Double(n)
+            // One band on this thread: CPU time per pixel, independent of machine load.
+            let c0 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            try tm.convert(s, into: dst, bands: 1)
+            let ns = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - c0) / Double(w * h)
+            print("PERF tone map \(t) \(w)x\(h): \(String(format: "%.2f", ms)) ms/frame wall (all cores), \(String(format: "%.1f", ns)) ns/px CPU single-thread")
+        }
+    }
+}
