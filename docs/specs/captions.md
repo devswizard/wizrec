@@ -18,7 +18,7 @@ Tags: **[obs]** observed in files, **[inf]** inferred, **[?]** unknown.
   The seven `def`s are identical; only the words and durations differ [obs].
   Languages: de-DE, en-US, es-ES, fr-FR, ja-JP, pt-BR, zh-CN.
 - **CP2: `timeline.captionAttributes` in all 24 projects** [obs].
-- No project in the corpus has classic (non-dynamic) caption text [obs].
+- CP3: the user's vlog has one audio clip with a `captions` parameter (classic captions, empty texts) [obs].
 
 ## 1. Classic caption style: `timeline.captionAttributes`
 
@@ -38,7 +38,34 @@ Tags: **[obs]** observed in files, **[inf]** inferred, **[?]** unknown.
 | `alignment` | 0 | Text alignment enum: 0 = centre [inf] |
 | `lang` | "en" (23), "bn" (1, the user's vlog) | Caption language (ISO 639-1) |
 
-**Where classic caption text lives is [?].** Experiment CA1.
+### Classic caption text: `parameters.captions` on an audio clip
+
+There is **one instance**, in the user's vlog [obs]: `AMFile` 234, at
+timeline 0–25.7 s with `mediaStart` 1.117 s. Only the structure is recorded
+here, as the content is personal.
+
+```
+"parameters": {
+  "captions": {
+    "type": "caption",
+    "keyframes": [
+      { "time": t, "endTime": t, "duration": 0,
+        "value": { "text": "<caption text>", "textAttributes": null | <run list> } },
+      …
+    ]
+  }
+}
+```
+
+| Claim | Tag |
+|---|---|
+| Captions are a parameter of the **audio clip** they belong to, with one keyframe per caption | [obs] |
+| A caption runs from its `time` to the next keyframe's `time`. The vlog has 7 keyframes at 0, 4, 8, …, 24 s: Camtasia's default 4-s segments, all with empty text | [obs] |
+| `value.text` is plain text. `value.textAttributes` is null here; when present it uses the run format of `callouts.md` §5 | [obs null; inf format] |
+| Time axis: the keyframes start at 0 while the clip's `mediaStart` is 1.117 s, so the axis is **clip-local** (or the segments were made before a trim) | [?] Experiment CA1, which adds a left trim |
+| `captionAttributes` (above) styles every classic caption | [inf] |
+
+Experiment CA1 confirms the time axis and the non-empty form.
 
 ## 2. Transcription (the words)
 
@@ -140,10 +167,11 @@ Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/captions/`.
 
 - **CA1: classic captions.**
   1. New project. Add any 10-s video with speech.
-  2. Add three captions by hand (*Captions ▸ Add Caption*), with different
-     text and durations.
-  3. Change the caption font size once.
-  4. Save as `ca1-captions.cmproj`.
+  2. Trim 1 s off its start.
+  3. Add three captions by hand (*Captions ▸ Add Caption*), with different
+     text and durations, and make one word bold.
+  4. Change the caption font size once.
+  5. Save as `ca1-captions.cmproj`.
 - **CA2: dynamic captions.**
   1. Same video. Run *Generate dynamic captions* (or apply a
      dynamic-caption style to the transcript).
