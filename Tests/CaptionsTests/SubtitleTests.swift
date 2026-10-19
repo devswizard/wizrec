@@ -30,7 +30,7 @@ import Testing
         #expect(try SubtitleFile.parseSRT(out).map(\.text) == ["A", "B\nC -> D"])
     }
 
-    @Test func rejectsGarbage() {
+    @Test func rejectsGarbage() throws {
         #expect(throws: CaptionsError.self) { try SubtitleFile.parseSRT("not a subtitle file") }
         #expect(try SubtitleFile.parseSRT("\n\n").isEmpty)
     }

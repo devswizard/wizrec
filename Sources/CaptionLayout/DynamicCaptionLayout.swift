@@ -114,6 +114,16 @@ public enum DynamicCaptionLayout {
         return out
     }
 
+    /// A block's text: words joined by spaces (none at CJK/Thai boundaries), lines by `"\n"`.
+    public static func text(of block: CaptionBlock, words: [TranscriptWord]) -> String {
+        block.lines.map { line in
+            line.reduce(into: "") { acc, i in
+                if i > line.lowerBound { acc += separator(words[i - 1].text, words[i].text) }
+                acc += words[i].text
+            }
+        }.joined(separator: "\n")
+    }
+
     static func endsSentence(_ s: String) -> Bool {
         let t = s.trimmingCharacters(in: CharacterSet(charactersIn: "\"'”’)]»"))
         return t.last.map { ".!?…。！？".contains($0) } ?? false

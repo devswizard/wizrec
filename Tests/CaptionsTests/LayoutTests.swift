@@ -40,7 +40,7 @@ private func words(_ s: String, step: Double = 0.5) -> [TranscriptWord] {
     @Test func frameStatesAndRanges() throws {
         let tl = DynamicCaptionTimeline(words: words("The quick brown fox"), rules: CaptionBlockRules(maxCharsPerLine: 9), style: DynamicCaptionStyle())
         #expect(tl.frame(at: -0.1) == nil)
-        let f = try #require(tl.frame(at: 0.6))
+        let f = try #require(tl.frame(at: 0.75))
         #expect(f.text == "The quick\nbrown fox")
         #expect(f.words.map(\.range) == [0..<3, 4..<9, 10..<15, 16..<19])
         #expect(f.words.map(\.state) == [.past, .current, .future, .future])
@@ -50,15 +50,15 @@ private func words(_ s: String, step: Double = 0.5) -> [TranscriptWord] {
         #expect(after.currentWord == nil && after.words.allSatisfy { $0.state == .past })
         #expect(tl.frame(at: 3.01) == nil)
         // Pure state: same word, different time → equal frames.
-        #expect(tl.frame(at: 0.55) == tl.frame(at: 0.95))
+        #expect(tl.frame(at: 0.7) == tl.frame(at: 0.95))
     }
 
     @Test func easingAndBlockTransition() throws {
         var style = DynamicCaptionStyle()
         style.wordEasingDuration = 0.2; style.blockTransitionName = "Fade"; style.blockTransitionDuration = 0.5
         let tl = DynamicCaptionTimeline(words: words("a b"), rules: CaptionBlockRules(), style: style)
-        let f = try #require(tl.frame(at: 0.6))
-        #expect(abs(f.highlightProgress - 0.5) < 1e-9)
+        let f = try #require(tl.frame(at: 0.65))
+        #expect(abs(f.highlightProgress - 0.75) < 1e-9)
         #expect(f.previousWord == 0 && f.rectangleProgress == 1 && f.blockProgress == 1)
         #expect(abs((tl.frame(at: 0.25)?.blockProgress ?? 0) - 0.5) < 1e-9)
     }
@@ -75,7 +75,7 @@ private func words(_ s: String, step: Double = 0.5) -> [TranscriptWord] {
         #expect(!s.currentWordEnabled && s.newParagraphForEachSentence)
         #expect(s.wordRectangleColor == CaptionColor(0, 0.4, 0.98, 0) && s.backgroundCornerRadius == 19.2)
         let names = s.numericEntries.map(\.0)
-        #expect(names == names.sorted() && names.count == 28)
+        #expect(names == names.sorted() && names.count == 30)
     }
 
     @Test func decodesTranscriptKeyframes() throws {
