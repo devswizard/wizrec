@@ -1,11 +1,12 @@
-// WizRec's own audio effect DSP (AUD-3): spectral noise reduction, leveling, pitch shift.
+// WizRec's own audio effect DSP (AUD-3): spectral noise reduction and leveling. (Pitch is a
+// placement step: resample + WSOLA in Mixer.swift.)
 //
 // Every processor has finite memory (`AudioProcessor`, Processing.swift): its output at sample i
 // depends only on input samples [i − history, i + lookahead], and analysis frames sit on a grid
 // anchored at absolute sample 0. Blocks are therefore deterministic, and neighbouring blocks agree
 // on every shared frame, so the effect has no seams. No recursive (IIR) state anywhere.
 // Written from textbook methods (spectral subtraction with minimum-statistics noise tracking,
-// windowed-RMS gain riding, granular overlap-add pitch shifting); no third-party code.
+// windowed-RMS gain riding); no third-party code.
 
 import Accelerate
 import Foundation
@@ -21,8 +22,8 @@ final class RealFFT {
     private let inv: vDSP_DFT_Setup
     /// Gain of forward + inverse (vDSP leaves both unnormalised).
     private(set) var roundTripScale: Float = 1
-    private var even: [Float]
-    private var odd: [Float]
+    private let even: UnsafeMutablePointer<Float>
+    private let odd: UnsafeMutablePointer<Float>
 
     init?(n: Int) {
         guard n >= 32, n % 2 == 0,
@@ -32,9 +33,10 @@ final class RealFFT {
             return nil
         }
         self.n = n; fwd = f; inv = i
-        even = [Float](repeating: 0, count: n / 2); odd = even
+        even = .allocate(capacity: n / 2); even.initialize(repeating: 0, count: n / 2)
+        odd = .allocate(capacity: n / 2); odd.initialize(repeating: 0, count: n / 2)
         var x = [Float](repeating: 0, count: n); x[0] = 1
-        var re = even, im = even
+        var re = [Float](repeating: 0, count: n / 2), im = re
         forward(x, &re, &im)
         inverse(re, im, &x)
         roundTripScale = x[0] == 0 ? 1 : x[0]
@@ -43,24 +45,67 @@ final class RealFFT {
     deinit {
         vDSP_DFT_DestroySetup(fwd)
         vDSP_DFT_DestroySetup(inv)
+        even.deallocate()
+        odd.deallocate()
     }
 
     /// Spectrum of `x` (n samples) into `re`/`im` (n/2 each, packed).
-    func forward(_ x: [Float], _ re: inout [Float], _ im: inout [Float]) {
+    func forward(_ x: UnsafePointer<Float>, _ re: UnsafeMutablePointer<Float>, _ im: UnsafeMutablePointer<Float>) {
         for j in 0..<(n / 2) { even[j] = x[2 * j]; odd[j] = x[2 * j + 1] }
-        vDSP_DFT_Execute(fwd, even, odd, &re, &im)
+        vDSP_DFT_Execute(fwd, even, odd, re, im)
     }
 
     /// Time signal (n samples, × `roundTripScale`) of a packed spectrum.
-    func inverse(_ re: [Float], _ im: [Float], _ out: inout [Float]) {
-        vDSP_DFT_Execute(inv, re, im, &even, &odd)
+    func inverse(_ re: UnsafePointer<Float>, _ im: UnsafePointer<Float>, _ out: UnsafeMutablePointer<Float>) {
+        vDSP_DFT_Execute(inv, re, im, even, odd)
         for j in 0..<(n / 2) { out[2 * j] = even[j]; out[2 * j + 1] = odd[j] }
+    }
+
+    func forward(_ x: [Float], _ re: inout [Float], _ im: inout [Float]) {
+        x.withUnsafeBufferPointer { xp in
+            re.withUnsafeMutableBufferPointer { rp in
+                im.withUnsafeMutableBufferPointer { ip in
+                    guard let xb = xp.baseAddress, let rb = rp.baseAddress, let ib = ip.baseAddress else { return }
+                    forward(xb, rb, ib)
+                }
+            }
+        }
+    }
+
+    func inverse(_ re: [Float], _ im: [Float], _ out: inout [Float]) {
+        re.withUnsafeBufferPointer { rp in
+            im.withUnsafeBufferPointer { ip in
+                out.withUnsafeMutableBufferPointer { op in
+                    guard let rb = rp.baseAddress, let ib = ip.baseAddress, let ob = op.baseAddress else { return }
+                    inverse(rb, ib, ob)
+                }
+            }
+        }
     }
 }
 
-/// Periodic Hann window: copies at a hop of n/4 sum to 2, and squared copies sum to 1.5.
+/// Periodic Hann window: squared copies at a hop of n/4 sum to 1.5.
 func periodicHann(_ n: Int) -> [Float] {
     (0..<n).map { Float(0.5 - 0.5 * cos(2 * Double.pi * Double($0) / Double(n))) }
+}
+
+/// A scratch matrix of Float rows (row stride padded to 4 floats so every row has the same
+/// alignment). Lives for one `process` call.
+final class Rows {
+    let count: Int
+    let stride: Int
+    let base: UnsafeMutablePointer<Float>
+
+    init(_ count: Int, width: Int, fill: Float = 0) {
+        self.count = count
+        stride = (width + 3) & ~3
+        base = .allocate(capacity: max(1, count * stride))
+        base.initialize(repeating: fill, count: max(1, count * stride))
+    }
+
+    deinit { base.deallocate() }
+
+    subscript(_ i: Int) -> UnsafeMutablePointer<Float> { base + i * stride }
 }
 
 // MARK: Noise reduction
@@ -69,9 +114,10 @@ func periodicHann(_ n: Int) -> [Float] {
 ///
 /// STFT (Hann, 75 % overlap) on the absolute sample grid. The noise spectrum of frame f is the
 /// per-bin minimum of the 3-frame-smoothed power over the previous ~1.5 s (minimum statistics,
-/// × 1.5 bias), from the channel average; frames of digital silence are ignored. Gain per bin =
-/// max(floor, 1 − 2·noise/power), averaged over 3 frames × 3 bins against musical noise, and
-/// applied to every channel (stereo image kept).
+/// × `bias` ≈ mean noise power), from the channel average; frames of digital silence or before
+/// the media start are ignored. Gain per bin = max(floor, 1 − 2·noise/local power), local power
+/// = mean over 3 frames × 3 bins (centred); gains are again averaged over 3 frames × 3 bins
+/// against musical noise and applied to every channel (stereo image kept).
 struct NoiseReducer: AudioProcessor {
     let n: Int
     let hop: Int
@@ -82,8 +128,10 @@ struct NoiseReducer: AudioProcessor {
     let noiseFrames: Int
     let smoothFrames = 3
     let gainFrames = 3
-    let overSubtraction: Float = 2
-    let bias: Float = 1.5
+    var overSubtraction: Float = 2
+    /// Noise power / minimum of the smoothed power over the window (tuned on white noise:
+    /// stationary noise drops ≈ 12 dB at Amount 0.8).
+    var bias: Float = 10
 
     init(sampleRate: Double, amount: Double) {
         n = sampleRate > 50_000 ? 2048 : 1024
@@ -95,7 +143,7 @@ struct NoiseReducer: AudioProcessor {
 
     var bins: Int { n / 2 + 1 }
     var history: Int { (noiseFrames + smoothFrames + gainFrames + 2) * hop + n }
-    var lookahead: Int { n }
+    var lookahead: Int { n + hop }
 
     func process(_ input: Signal, outputStart os: Int64, count: Int) -> Signal {
         let H = Int64(hop), inStart = os - Int64(history)
@@ -104,115 +152,131 @@ struct NoiseReducer: AudioProcessor {
         let gLo = fLo - Int64(gainFrames - 1)
         let pLo = gLo - Int64(noiseFrames - 1) - Int64(smoothFrames - 1)
         let F = Int(fHi - pLo + 1), B = bins, half = n / 2
-        var frame = [Float](repeating: 0, count: n)
-        var re = [Float](repeating: 0, count: half), im = re
+        let M = noiseFrames, s0 = smoothFrames - 1
+        let firstGain = Int(gLo - pLo)          // = s0 + M − 1
+        let a0 = firstGain - M + 1              // first smoothed row inside a noise window (= s0)
+        let L = F - a0, G = F - firstGain
+        let vB = vDSP_Length(B)
 
-        func load(_ src: [Float], _ f: Int64) {
-            let base = Int(f * H - inStart)
-            for j in 0..<n {
-                let k = base + j
-                frame[j] = k >= 0 && k < src.count ? src[k] * window[j] : 0
+        let frame = Rows(1, width: n), re = Rows(1, width: half), im = Rows(1, width: half), y = Rows(1, width: n)
+        let win = Rows(1, width: n)
+        for j in 0..<n { win[0][j] = window[j] }
+
+        /// Windowed frame f of `src` (absolute sample f·H; zeros outside the input) into `frame`.
+        func load(_ src: UnsafeBufferPointer<Float>, _ f: Int64) {
+            let b = Int(f * H - inStart), dst = frame[0]
+            if b >= 0, b + n <= src.count, let s = src.baseAddress {
+                vDSP_vmul(s + b, 1, win[0], 1, dst, 1, vDSP_Length(n))
+            } else {
+                for j in 0..<n { let k = b + j; dst[j] = k >= 0 && k < src.count ? src[k] * win[0][j] : 0 }
             }
         }
 
-        // 1. Power of the channel average, every frame from pLo.
+        // 1. Power of the channel average for frames pLo … fHi + 1 (one extra for the centred
+        //    local power). Digital silence or a frame reaching before the content's sample 0
+        //    (media start) would drag the minimum down: neither counts as noise.
+        let power = Rows(F + 1, width: B)
+        var silent = [Bool](repeating: false, count: F + 1)
         let mono = input.monoMix().channels[0]
-        var power = [Float](repeating: 0, count: F * B)
-        var silent = [Bool](repeating: false, count: F)
-        for i in 0..<F {
-            load(mono, pLo + Int64(i))
-            fft.forward(frame, &re, &im)
-            let r = i * B
-            power[r] = re[0] * re[0]
-            power[r + half] = im[0] * im[0]
-            var sum = power[r] + power[r + half]
-            for k in 1..<half {
-                let p = re[k] * re[k] + im[k] * im[k]
-                power[r + k] = p
-                sum += p
+        mono.withUnsafeBufferPointer { m in
+            for i in 0...F {
+                load(m, pLo + Int64(i))
+                fft.forward(frame[0], re[0], im[0])
+                let p = power[i]
+                var split = DSPSplitComplex(realp: re[0], imagp: im[0])
+                vDSP_zvmags(&split, 1, p, 1, vDSP_Length(half))
+                p[0] = re[0][0] * re[0][0]
+                p[half] = im[0][0] * im[0][0]
+                var sum: Float = 0
+                vDSP_sve(p, 1, &sum, vB)
+                silent[i] = sum == 0 || (pLo + Int64(i)) * H < 0
             }
-            silent[i] = sum == 0
         }
 
-        // 2. Smoothed power (mean of the last `smoothFrames` non-silent frames; +inf if none).
-        let s0 = smoothFrames - 1
-        var smooth = [Float](repeating: .infinity, count: F * B)
+        // 2. Smoothed power: mean of the last `smoothFrames` non-silent frames (+inf if none).
+        let smooth = Rows(F, width: B, fill: .infinity)
         for i in s0..<F {
-            var used = 0
-            var acc = [Float](repeating: 0, count: B)
-            for j in (i - s0)...i where !silent[j] {
-                used += 1
-                for k in 0..<B { acc[k] += power[j * B + k] }
-            }
-            guard used > 0 else { continue }
-            let inv = 1 / Float(used)
-            for k in 0..<B { smooth[i * B + k] = acc[k] * inv }
+            let used = ((i - s0)...i).filter { !silent[$0] }
+            guard let first = used.first else { continue }
+            let d = smooth[i]
+            for k in 0..<B { d[k] = power[first][k] }
+            for j in used.dropFirst() { vDSP_vadd(d, 1, power[j], 1, d, 1, vB) }
+            var inv = 1 / Float(used.count)
+            vDSP_vsmul(d, 1, &inv, d, 1, vB)
         }
 
-        // 3. Noise = sliding per-bin minimum of `smooth` over `noiseFrames` (van Herk / Gil–Werman,
-        //    exact), for the frames that need raw gains.
-        let M = noiseFrames
-        let firstGain = Int(gLo - pLo)              // = s0 + M − 1
-        let a0 = firstGain - M + 1                   // first smoothed row inside a window
-        let L = F - a0
-        var pre = [Float](repeating: 0, count: L * B), suf = pre
+        // 3. Noise = sliding per-bin minimum of `smooth` over M rows (van Herk / Gil–Werman; exact).
+        let pre = Rows(L, width: B), suf = Rows(L, width: B)
         for t in 0..<L {
-            let src = (a0 + t) * B
-            if t % M == 0 {
-                for k in 0..<B { pre[t * B + k] = smooth[src + k] }
-            } else {
-                for k in 0..<B { pre[t * B + k] = min(pre[(t - 1) * B + k], smooth[src + k]) }
-            }
+            if t % M == 0 { for k in 0..<B { pre[t][k] = smooth[a0 + t][k] } }
+            else { vDSP_vmin(pre[t - 1], 1, smooth[a0 + t], 1, pre[t], 1, vB) }
         }
-        for t in stride(from: L - 1, through: 0, by: -1) {
-            let src = (a0 + t) * B
-            if t == L - 1 || (t + 1) % M == 0 {
-                for k in 0..<B { suf[t * B + k] = smooth[src + k] }
-            } else {
-                for k in 0..<B { suf[t * B + k] = min(suf[(t + 1) * B + k], smooth[src + k]) }
-            }
+        for t in Swift.stride(from: L - 1, through: 0, by: -1) {
+            if t == L - 1 || (t + 1) % M == 0 { for k in 0..<B { suf[t][k] = smooth[a0 + t][k] } }
+            else { vDSP_vmin(suf[t + 1], 1, smooth[a0 + t], 1, suf[t], 1, vB) }
         }
 
-        // 4. Raw gains for frames gLo…fHi.
-        let G = F - firstGain
-        var gain = [Float](repeating: 1, count: G * B)
+        // 3×3 box sum along frequency of `src` into `dst` (edge bins sum 2).
+        func freqSum(_ src: UnsafeMutablePointer<Float>, _ dst: UnsafeMutablePointer<Float>) {
+            dst[0] = src[0] + src[1]
+            for k in 1..<(B - 1) { dst[k] = src[k - 1] + src[k] + src[k + 1] }
+            dst[B - 1] = src[B - 2] + src[B - 1]
+        }
+        // 1 / (3 · bins summed) per bin.
+        let boxNorm = Rows(1, width: B, fill: 1 / 9)
+        boxNorm[0][0] = 1 / 6; boxNorm[0][B - 1] = 1 / 6
+
+        // 4. Raw gains for frames gLo … fHi from the centred 3×3 local power.
+        let fp = Rows(F + 1, width: B)
+        for i in (firstGain - 1)...F { freqSum(power[i], fp[i]) }
+        let gain = Rows(G, width: B, fill: 1)
+        let local = Rows(1, width: B)
+        let k2 = overSubtraction * bias
         for g in 0..<G {
-            let i = firstGain + g, t = i - M + 1 - a0   // window [t, t + M − 1] in pre/suf rows
+            let i = firstGain + g, t = g
+            vDSP_vadd(fp[i - 1], 1, fp[i], 1, local[0], 1, vB)
+            vDSP_vadd(local[0], 1, fp[i + 1], 1, local[0], 1, vB)
+            vDSP_vmul(local[0], 1, boxNorm[0], 1, local[0], 1, vB)
+            let lo = suf[t], hi = pre[t + M - 1], out = gain[g], p = local[0]
             for k in 0..<B {
-                let noise = min(suf[t * B + k], pre[(t + M - 1) * B + k])
-                let p = power[i * B + k]
+                let noise = min(lo[k], hi[k])
                 guard noise.isFinite else { continue }
-                let v = p > 1e-30 ? 1 - overSubtraction * bias * noise / p : 0
-                gain[g * B + k] = max(floorGain, min(1, v))
+                let v = p[k] > 1e-30 ? 1 - k2 * noise / p[k] : 0
+                out[k] = max(floorGain, min(1, v))
             }
         }
 
         // 5. Smooth gains (3 frames × 3 bins), filter each channel, overlap-add.
+        let gf = Rows(G, width: B)
+        for g in 0..<G { freqSum(gain[g], gf[g]) }
+        let gs = Rows(1, width: B)
+        let wn = Rows(1, width: n)
+        var norm = 1 / (1.5 * fft.roundTripScale)
+        vDSP_vsmul(win[0], 1, &norm, wn[0], 1, vDSP_Length(n))
         var out = Signal.zeros(channels: input.channelCount, count: count)
-        let norm = 1 / (1.5 * fft.roundTripScale)
-        var g = [Float](repeating: 1, count: B)
-        var y = [Float](repeating: 0, count: n)
         for f in fLo...fHi {
             let gi = Int(f - gLo)
-            for k in 0..<B {
-                var acc: Float = 0, used: Float = 0
-                for d in 0..<gainFrames {
-                    let row = (gi - d) * B
-                    for kk in max(0, k - 1)...min(B - 1, k + 1) { acc += gain[row + kk]; used += 1 }
-                }
-                g[k] = acc / used
-            }
+            vDSP_vadd(gf[gi], 1, gf[gi - 1], 1, gs[0], 1, vB)
+            vDSP_vadd(gs[0], 1, gf[gi - 2], 1, gs[0], 1, vB)
+            vDSP_vmul(gs[0], 1, boxNorm[0], 1, gs[0], 1, vB)
             let dst = Int(f * H - os)
             let lo = max(0, -dst), hi = min(n, count - dst)
             guard lo < hi else { continue }
+            let g = gs[0]
             for c in 0..<input.channelCount {
-                load(input.channels[c], f)
-                fft.forward(frame, &re, &im)
-                re[0] *= g[0]
-                im[0] *= g[half]
-                for k in 1..<half { re[k] *= g[k]; im[k] *= g[k] }
-                fft.inverse(re, im, &y)
-                for j in lo..<hi { out.channels[c][dst + j] += y[j] * window[j] * norm }
+                input.channels[c].withUnsafeBufferPointer { load($0, f) }
+                fft.forward(frame[0], re[0], im[0])
+                let r = re[0], m = im[0]
+                r[0] *= g[0]
+                m[0] *= g[half]
+                vDSP_vmul(r + 1, 1, g + 1, 1, r + 1, 1, vDSP_Length(half - 1))
+                vDSP_vmul(m + 1, 1, g + 1, 1, m + 1, 1, vDSP_Length(half - 1))
+                fft.inverse(r, m, y[0])
+                out.channels[c].withUnsafeMutableBufferPointer { o in
+                    guard let ob = o.baseAddress else { return }
+                    let d = ob + dst + lo
+                    vDSP_vma(y[0] + lo, 1, wn[0] + lo, 1, d, 1, d, 1, vDSP_Length(hi - lo))
+                }
             }
         }
         return out
@@ -265,58 +329,6 @@ struct Leveler: AudioProcessor {
             let a = max(gLo, i - sh), b = min(gHi, i + sh)
             let g = b > a ? Float((gsum[b - gLo] - gsum[a - gLo]) / Double(b - a)) : 1
             for c in 0..<input.channelCount { out.channels[c][j] = input.channels[c][i] * g }
-        }
-        return out
-    }
-}
-
-// MARK: Pitch
-
-/// Pitch shift by `semitones` with the duration unchanged: 40 ms Hann grains every 10 ms on the
-/// absolute output grid, each resampled by 2^(semitones/12) around its own centre (linear
-/// interpolation) and overlap-added. Simple and seam-free; some grain roughness on tonal material.
-struct PitchShifter: AudioProcessor {
-    let ratio: Double
-    let n: Int
-    let hop: Int
-    let window: [Float]
-
-    init(sampleRate: Double, semitones: Double) {
-        ratio = pow(2, semitones / 12)
-        n = max(64, 4 * Int((0.04 * sampleRate / 4).rounded()))
-        hop = n / 4
-        window = periodicHann(n)
-    }
-
-    private var reach: Int { Int((Double(n) / 2 * ratio).rounded(.up)) + 2 }
-    var history: Int { n / 2 + hop + reach }
-    var lookahead: Int { n / 2 + hop + reach }
-
-    func process(_ input: Signal, outputStart os: Int64, count: Int) -> Signal {
-        let H = Int64(hop), half = n / 2, inStart = os - Int64(history)
-        var out = Signal.zeros(channels: input.channelCount, count: count)
-        let fLo = floorDiv(os - Int64(half), H), fHi = floorDiv(os + Int64(count) + Int64(half), H)
-        guard count > 0, fLo <= fHi else { return out }
-        for f in fLo...fHi {
-            let c = f * H
-            let dst = Int(c - Int64(half) - os)
-            let lo = max(0, -dst), hi = min(n, count - dst)
-            guard lo < hi else { continue }
-            let centre = Double(c - inStart)
-            for ch in 0..<input.channelCount {
-                input.channels[ch].withUnsafeBufferPointer { s in
-                    out.channels[ch].withUnsafeMutableBufferPointer { d in
-                        for u in lo..<hi {
-                            let pos = centre + Double(u - half) * ratio
-                            let i0 = Int(pos.rounded(.down))
-                            guard i0 >= 0, i0 + 1 < s.count else { continue }
-                            let fr = Float(pos - Double(i0))
-                            let x = s[i0] + (s[i0 + 1] - s[i0]) * fr
-                            d[dst + u] += x * window[u] * 0.5
-                        }
-                    }
-                }
-            }
         }
         return out
     }

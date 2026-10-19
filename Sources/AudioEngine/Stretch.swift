@@ -86,3 +86,81 @@ struct Stretcher: Sendable {
         }
     }
 }
+
+/// Band-limited fractional resampler (Blackman-windowed sinc, unity DC gain) for pitch shifts.
+/// Output sample k reads the input at k · ratio; a pure function of k, so chunk-seamless.
+enum Resampler {
+    /// Taps on each side of the read position, in input samples (wider as the cutoff drops).
+    static func halfWidth(pitch p: Double) -> Int { Int((8 * max(1, p)).rounded(.up)) }
+
+    /// Samples `[from, from + count)` of x(k · ratio); `input[0]` is input sample `inputStart`
+    /// (zeros outside `input`). Low-passed at min(1, 1/ratio) of the input Nyquist.
+    static func resample(_ input: Signal, inputStart: Int64, ratio p: Double, from: Int64, count: Int) -> Signal {
+        let w = halfWidth(pitch: p), T = 2 * w
+        let table = Self.table(ratio: p)
+        var out = Signal.zeros(channels: input.channelCount, count: count)
+        guard count > 0 else { return out }
+        // Per output sample: normalised taps and the input index of the first tap.
+        let taps = UnsafeMutablePointer<Float>.allocate(capacity: count * T)
+        defer { taps.deallocate() }
+        var bases = [Int](repeating: 0, count: count)
+        table.withUnsafeBufferPointer { tp in
+            guard let tab = tp.baseAddress else { return }
+            for k in 0..<count {
+                let x = Double(from + Int64(k)) * p
+                let i0 = Int64(x.rounded(.down))
+                // Taps at fraction (x − i0): linear between the two nearest tabulated rows.
+                let f = (x - Double(i0)) * Double(phases)
+                let r = min(phases - 1, Int(f)), u = Float(f - Double(r))
+                let r0 = tab + r * T, r1 = r0 + T, d = taps + k * T
+                var sum: Float = 0
+                for t in 0..<T { let v = r0[t] + (r1[t] - r0[t]) * u; d[t] = v; sum += v }
+                let norm: Float = sum != 0 ? 1 / sum : 1
+                for t in 0..<T { d[t] *= norm }
+                bases[k] = Int(i0 - Int64(w - 1) - inputStart)
+            }
+        }
+        for c in 0..<input.channelCount {
+            input.channels[c].withUnsafeBufferPointer { src in
+                out.channels[c].withUnsafeMutableBufferPointer { dst in
+                    guard let sb = src.baseAddress, let db = dst.baseAddress else { return }
+                    let n = src.count
+                    for k in 0..<count {
+                        let base = bases[k], tk = taps + k * T
+                        var y: Float = 0
+                        if base >= 0 && base + T <= n {
+                            let s = sb + base
+                            for t in 0..<T { y += tk[t] * s[t] }
+                        } else {
+                            for t in 0..<T where base + t >= 0 && base + t < n { y += tk[t] * sb[base + t] }
+                        }
+                        db[k] = y
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /// Fraction steps tabulated per tap set.
+    static let phases = 256
+
+    /// Rows 0…phases of 2·halfWidth taps: row r holds the windowed-sinc weights of inputs
+    /// i0 − w + 1 … i0 + w for a read position at fraction r/phases past i0.
+    static func table(ratio p: Double) -> [Float] {
+        let fc = min(1, 1 / p), w = halfWidth(pitch: p), T = 2 * w
+        var tab = [Float](repeating: 0, count: (phases + 1) * T)
+        for r in 0...phases {
+            let frac = Double(r) / Double(phases)
+            for t in 0..<T {
+                let d = Double(t - w + 1) - frac
+                guard abs(d) < Double(w) else { continue }
+                let a = Double.pi * d * fc
+                let s = d == 0 ? 1 : sin(a) / a
+                let win = 0.42 + 0.5 * cos(Double.pi * d / Double(w)) + 0.08 * cos(2 * Double.pi * d / Double(w))
+                tab[r * T + t] = Float(s * win)
+            }
+        }
+        return tab
+    }
+}

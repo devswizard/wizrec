@@ -58,8 +58,8 @@ extension AEffect {
 }
 
 enum EffectRegistry {
-    /// The processor for an effect, or nil to pass the signal through unchanged (also for
-    /// `emphasize`, which acts on the mix rather than on the clip's own signal).
+    /// The processor for an effect, or nil to pass the signal through unchanged. `emphasize` acts
+    /// on the mix (Mixer.mixTracks) and `pitch` on placement (resample + WSOLA, Mixer.stretched).
     static func processor(for e: AEffect, sampleRate: Double) -> (any AudioProcessor)? {
         switch e.kind {
         case .noiseRemoval:
@@ -67,10 +67,7 @@ enum EffectRegistry {
             return a > 0 ? NoiseReducer(sampleRate: sampleRate, amount: a) : nil
         case .leveling:
             return Leveler(sampleRate: sampleRate)
-        case .pitch:
-            let s = min(max(e.semitones, -24), 24)
-            return abs(s) < 1e-6 ? nil : PitchShifter(sampleRate: sampleRate, semitones: s)
-        case .emphasize, .passThrough:
+        case .pitch, .emphasize, .passThrough:
             return nil
         }
     }
