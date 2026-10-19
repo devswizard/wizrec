@@ -46,7 +46,7 @@ struct SidebarView: View {
                             hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
             case .transitions:
                 LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
-                            hint: "Drag a transition onto the cut between two clips, or onto a clip's start or end.")
+                            hint: "Drag a transition onto the cut between two clips or a clip's start or end, or double-click to add it at the playhead cut or to the selected clips.")
             }
         }
     }
@@ -144,7 +144,8 @@ struct LibraryList: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.title)
         .accessibilityValue(item.note ?? "")
-        .accessibilityHint(kind == .effect ? "Double-click to add to the selected clips" : "Double-click to add to the selected clip")
+        .accessibilityHint(kind == .effect ? "Double-click to add to the selected clips"
+                           : "Double-click to add at the cut under the playhead or to the selected clips")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { _ = apply(kind, item.name) }
     }
