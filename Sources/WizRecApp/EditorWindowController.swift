@@ -178,6 +178,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             (root.arrangedSubviews.first as? EditorSplitView)?.applyDefaultsIfNeeded()
         }
         timelineView.zoomToFit(nil)
+        // Keep keyboard shortcuts (Space, S, M) live: the library search field must not grab focus.
+        window.makeFirstResponder(timelineView)
         startDisplayLink()
         installKeys()
         print("WizRec: opened \(model.bundle.directory.lastPathComponent) window=\(window.windowNumber) "
