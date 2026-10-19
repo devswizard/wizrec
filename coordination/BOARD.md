@@ -118,3 +118,12 @@ All M1 tasks done and merged. Demo plays at 30 fps (audio clock), vlog at
 | M10-CAP-2 | captions | claimed | CAP-1 | dynamic captions (render via callouts), whisper.cpp backend (after lead OK) |
 | M3-TUI-1 | timelineui | claimed | TL M3 | ⌥-drag ripple move/trim with preview, trim preview honours media limits, double-click group → nested editing, marker drag/rename, transitions/effects add-remove UI (drag from a library panel), clip-speed badge |
 | M2-APP-4 | app | claimed | REC-4, EXP | File ▸ New Recording (HUD → recordings/<ts>/ → insert), copy/paste via ClipboardPayload, group/stitch/detach/speed menus, export sheet when export lands, effects/transitions panels with timelineui |
+
+# Wave C — M11 polish & ship
+
+| id | owner | status | depends-on | acceptance |
+|---|---|---|---|---|
+| M11-SHIP-1 | ship | claimed | — | `Sources/WizRecAssets`: our own original library — backgrounds (Metal/GLSL we write), transitions (Fade/Dissolve/wipes/slide/cube… our shaders), callout presets, cursor art (arrow/hand/I-beam), click-effect art, OFL fonts (upstream copies + licence files); catalog API; no TechSmith content |
+| M11-SHIP-2 | ship | claimed | — | Release engineering: `scripts/make-app.sh` release build with bundled FFmpeg dylibs (rpath fix, licence notices), codesign/notarize script taking identity from env (no secrets in repo), DMG, Sparkle (MIT) integration plan behind a flag, CI update |
+| M11-SHIP-3 | ship | claimed | — | Docs: README refresh, CONTRIBUTING.md (clean-room rules), user guide (`docs/user-guide/`), keyboard shortcut map, third-party notices |
+| M11-APP-1 | app | todo | M2-APP-4 | Preferences, onboarding, accessibility pass, localisation scaffolding (String Catalog), Open Recent, crash reporting opt-in (local only) |
