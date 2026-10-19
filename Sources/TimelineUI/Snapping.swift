@@ -7,9 +7,8 @@ public struct TimelineSnap: Sendable, Equatable {
     public init(delta: Int64, guide: Int64) { self.delta = delta; self.guide = guide }
 }
 
-/// Snap rule used by the timeline view while dragging. Times in ticks.
-/// The local `EdgeSnapper` is a placeholder until TimelineEngine's `Snapping` helper lands;
-/// an adapter to it will conform to this protocol.
+/// Custom snap rule for the timeline view. Times in ticks. Optional: by default the view
+/// uses TimelineEngine's `Snapping` (clip edges, playhead, markers, tick 0).
 public protocol TimelineSnapping: Sendable {
     /// The snap that moves one of `edges` onto the closest target within `tolerance`
     /// ticks, or nil. Clips in `excluding` (the ones being dragged) are not targets.
@@ -17,7 +16,7 @@ public protocol TimelineSnapping: Sendable {
               excluding: Set<Int64>) -> TimelineSnap?
 }
 
-/// Snaps to top-level clip starts and ends, transition edges, the playhead and tick 0.
+/// Simple rule on a snapshot: top-level clip starts and ends, the playhead and tick 0 (no markers).
 public struct EdgeSnapper: TimelineSnapping {
     public init() {}
 

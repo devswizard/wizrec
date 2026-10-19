@@ -12,8 +12,8 @@ extension TimelineView: NSMenuItemValidation {
         set { canvas.art.provider = newValue; canvas.needsDisplay = true }
     }
 
-    /// Snap rule for drags (defaults to `EdgeSnapper`).
-    public var snapper: any TimelineSnapping {
+    /// Custom snap rule for drags; nil (default) uses TimelineEngine's `Snapping`.
+    public var snapper: (any TimelineSnapping)? {
         get { canvas.snapper }
         set { canvas.snapper = newValue }
     }
@@ -62,6 +62,8 @@ extension TimelineView: NSMenuItemValidation {
         if !editor.addTrack(at: canvas.snapshot.tracks.count) { NSSound.beep() }
     }
     @objc public func toggleSnapping(_ sender: Any?) { model.snappingEnabled.toggle() }
+    /// Adds a marker at the playhead. Key: M.
+    @objc public func addMarker(_ sender: Any?) { if !editor.addMarker(at: model.playhead) { NSSound.beep() } }
     override public func selectAll(_ sender: Any?) { model.selection = Set(canvas.snapshot.allClips.map(\.id)) }
     @objc public func deselectAll(_ sender: Any?) { model.selection = [] }
 

@@ -300,6 +300,25 @@ struct ViewTests {
         view.keyDown(with: other)
     }
 
+    @Test func markerKeyAddsAndRulerDrawsMarker() async throws {
+        let (model, view) = try makeView()
+        let w = window(for: view)
+        defer { w.close() }
+        model.playhead = 100
+        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                   windowNumber: w.windowNumber, context: nil, characters: "m",
+                                   charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46)!
+        view.canvas.keyDown(with: key)
+        #expect(model.undo.undoName == "Add Marker")
+        #expect(view.snapshot.markers.map(\.time) == [100])
+        model.playhead = 0
+        let rep = render(view)
+        savePNG(rep, "marker")
+        let L = view.currentLayout
+        let pin = pixel(rep, CGPoint(x: L.x(ofTicks: 100), y: L.metrics.rulerHeight - 7))
+        #expect(close(pin, rgb(Palette.marker.resolved(.darkAqua)), tol: 30))
+    }
+
     @Test func headerButtonTogglesFlag() throws {
         let (model, view) = try makeView()
         let w = window(for: view)

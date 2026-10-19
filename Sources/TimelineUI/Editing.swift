@@ -56,10 +56,23 @@ public struct TrimPlan: Sendable, Equatable {
 public struct TimelineEditor {
     public let model: TimelineModel
     public var snapshot: TimelineSnapshot
-    public var snapper: any TimelineSnapping
+    /// Custom snap rule; nil uses TimelineEngine's `Snapping` (clip edges, playhead, markers, 0).
+    public var snapper: (any TimelineSnapping)?
 
-    public init(model: TimelineModel, snapshot: TimelineSnapshot, snapper: any TimelineSnapping = EdgeSnapper()) {
+    public init(model: TimelineModel, snapshot: TimelineSnapshot, snapper: (any TimelineSnapping)? = nil) {
         self.model = model; self.snapshot = snapshot; self.snapper = snapper
+    }
+
+    /// Snap of `edges` (ticks) within `tolerance`, ignoring clips in `excluding`; nil when
+    /// snapping is off or nothing is in range. Frame rounding is done by the caller.
+    public func snap(edges: [Int64], tolerance: Int64, excluding: Set<Int64>) -> TimelineSnap? {
+        guard model.snappingEnabled, tolerance > 0 else { return nil }
+        if let snapper {
+            return snapper.snap(edges: edges, tolerance: tolerance, snapshot: snapshot, playhead: model.playhead,
+                                excluding: excluding)
+        }
+        let s = Snapping(project: model.project, playhead: model.playhead, excluding: excluding, frameSnap: false)
+        return s.snap(edges: edges, tolerance: tolerance).map { TimelineSnap(delta: $0.delta, guide: $0.guide.tick) }
     }
 
     // MARK: Planning
@@ -74,12 +87,9 @@ public struct TimelineEditor {
         let minStart = moving.map(\.clip.start).min() ?? 0
         var delta = max(rawDelta, -minStart)
         var guide: Int64?
-        if model.snappingEnabled {
-            let edges = moving.flatMap { [$0.clip.start + delta, $0.clip.end + delta] }
-            if let s = snapper.snap(edges: edges, tolerance: tolerance, snapshot: snapshot,
-                                    playhead: model.playhead, excluding: Set(ids)) {
-                delta += s.delta; guide = s.guide
-            }
+        let edges = moving.flatMap { [$0.clip.start + delta, $0.clip.end + delta] }
+        if let s = snap(edges: edges, tolerance: tolerance, excluding: Set(ids)) {
+            delta += s.delta; guide = s.guide
         }
         let q = snapshot.quantize(anchor.clip.start + delta) - anchor.clip.start
         if guide != nil, q != delta { guide = nil }
@@ -99,6 +109,8 @@ public struct TimelineEditor {
             let dest = t + trackOffset
             guard let src = snapshot.track(t), let dst = snapshot.track(dest), !src.locked, !dst.locked,
                   c.start + delta >= 0 else { return false }
+            // Magnetic tracks make room instead of refusing an overlap (MoveClip packs them).
+            if dst.magnetic { continue }
             let s = c.start + delta, e = c.end + delta
             for o in dst.clips where !ids.contains(o.id) && o.start < e && s < o.end { return false }
         }
@@ -113,9 +125,7 @@ public struct TimelineEditor {
         let original = edge == .start ? clip.start : clip.end
         var target = original + rawDelta
         var guide: Int64?
-        if model.snappingEnabled,
-           let s = snapper.snap(edges: [target], tolerance: tolerance, snapshot: snapshot,
-                                playhead: model.playhead, excluding: [id]) {
+        if let s = snap(edges: [target], tolerance: tolerance, excluding: [id]) {
             target += s.delta; guide = s.guide
         }
         let q = snapshot.quantize(target)
@@ -124,11 +134,12 @@ public struct TimelineEditor {
         let frame = snapshot.frameTicks
         let prevEnd = t.clips.filter { $0.id != id && $0.end <= clip.start }.map(\.end).max() ?? 0
         let nextStart = t.clips.filter { $0.id != id && $0.start >= clip.end }.map(\.start).min()
+        // On a magnetic track TrimClip ripples the neighbours, so only 0 and one frame limit it.
         switch edge {
-        case .start: target = min(max(target, prevEnd), clip.end - frame)
+        case .start: target = min(max(target, t.magnetic ? 0 : prevEnd), clip.end - frame)
         case .end:
             target = max(target, clip.start + frame)
-            if let n = nextStart { target = min(target, n) }
+            if let n = nextStart, !t.magnetic { target = min(target, n) }
         }
         return TrimPlan(id: id, track: track, edge: edge, target: target, guide: guide)
     }
@@ -212,6 +223,23 @@ public struct TimelineEditor {
         case .magnetic: (.magnetic, t.magnetic)
         }
         return perform(SetTrackFlag(track: index, flag, !current))
+    }
+
+    /// Adds a timeline marker at `t` (frame-rounded by the command); an existing marker there is renamed.
+    @discardableResult
+    public func addMarker(at t: Int64, name: String = "") -> Bool {
+        perform(AddMarker(at: max(0, t), name: name))
+    }
+
+    /// The marker nearest `t` within `tolerance` ticks.
+    public func marker(near t: Int64, tolerance: Int64) -> Marker? {
+        snapshot.markers.filter { abs($0.time - t) <= tolerance }.min { abs($0.time - t) < abs($1.time - t) }
+    }
+
+    @discardableResult
+    public func removeMarker(near t: Int64, tolerance: Int64) -> Bool {
+        guard let m = marker(near: t, tolerance: tolerance) else { return false }
+        return perform(RemoveMarker(at: m.time))
     }
 
     @discardableResult

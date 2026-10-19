@@ -23,7 +23,8 @@ final class TimelineCanvas: NSView {
     let model: TimelineModel
     private(set) var snapshot: TimelineSnapshot = .empty
     var metrics = TimelineMetrics()
-    var snapper: any TimelineSnapping = EdgeSnapper()
+    /// Custom snap rule; nil = TimelineEngine `Snapping`.
+    var snapper: (any TimelineSnapping)?
     let art = MediaArtCache()
     var scrollX: CGFloat = 0
     var scrollY: CGFloat = 0
@@ -429,6 +430,8 @@ final class TimelineCanvas: NSView {
             seek(to: 0)
         case (119, _):  // end
             seek(to: snapshot.duration)
+        case (_, "m") where plain, (_, "M") where plain:
+            if !editor.addMarker(at: model.playhead) { NSSound.beep() }
         case (53, _):  // escape
             model.selection = []
         case (_, "a") where flags == .command:
@@ -454,11 +457,7 @@ final class TimelineCanvas: NSView {
         let L = layout
         let track = L.nearestTrack(atY: p.y) ?? 0
         var t = max(0, L.ticks(atX: max(p.x, L.clipArea.minX)))
-        if model.snappingEnabled,
-           let s = snapper.snap(edges: [t], tolerance: snapTolerance, snapshot: snapshot, playhead: model.playhead,
-                                excluding: []) {
-            t += s.delta
-        }
+        if let s = editor.snap(edges: [t], tolerance: snapTolerance, excluding: []) { t += s.delta }
         return (track, max(0, snapshot.quantize(t)))
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import TimelineEngine
 import TSCProjKit
 
 /// Visual category of a clip on the timeline (decides colour and contents).
@@ -101,6 +102,8 @@ public struct TimelineSnapshot: Sendable, Equatable {
     public var tracks: [TimelineTrackItem]
     /// Latest clip end.
     public var duration: Int64
+    /// Timeline markers, sorted by time (ticks).
+    public var markers: [Marker] = []
 
     public static let empty = TimelineSnapshot(editRate: 705_600_000, frameRate: Rational(30), tracks: [], duration: 0)
 
@@ -127,6 +130,7 @@ public struct TimelineSnapshot: Sendable, Equatable {
 
 extension TimelineSnapshot {
     /// Projects `project`'s top-level timeline. Never mutates the project.
+    @MainActor
     public init(project: Project) {
         let rate = project.timebase.editRate > 0 ? project.timebase.editRate : 30
         var sources: [Int64: SourceMedia] = [:]
@@ -139,7 +143,8 @@ extension TimelineSnapshot {
             tracks.append(builder.track(t, index: i, attributes: a))
         }
         self.init(editRate: rate, frameRate: project.frameRate, tracks: tracks,
-                  duration: tracks.flatMap(\.clips).map(\.end).max() ?? 0)
+                  duration: tracks.flatMap(\.clips).map(\.end).max() ?? 0,
+                  markers: Markers.timeline(project))
     }
 }
 
