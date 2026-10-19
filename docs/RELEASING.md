@@ -6,6 +6,19 @@ How a WizRec release is built, signed, notarized and packed. The scripts live in
 WizRec is GPL-3.0-or-later. It is distributed as a notarized direct download (DMG), not
 through the Mac App Store, whose terms conflict with the GPL.
 
+## Status (2026-10-19)
+
+Releases are ad-hoc signed only. Still waiting on the user: the GitHub remote, a Developer ID
+certificate and notary credentials, the final bundle ID, and approval for Sparkle. The
+scripts and workflows below already work without them and pick them up from the environment
+(or repository secrets/variables) once they exist; nothing needs editing.
+
+## Prerequisites
+
+```sh
+brew install ffmpeg pkg-config librsvg   # librsvg: rsvg-convert for the app icon
+```
+
 ## Quick start
 
 ```sh
@@ -22,6 +35,20 @@ scripts/release.sh
 ```
 
 Add `DRY_RUN=1` to print the `codesign`/`notarytool` commands without running them.
+
+## Environment
+
+Every input is optional; with none set the result is an ad-hoc signed DMG.
+
+| Variable | Used by | Meaning |
+|---|---|---|
+| `VERSION` | `release.sh`, `make-app.sh` | Marketing version (default `0.1.0`) |
+| `WIZREC_BUNDLE_ID` | `make-app.sh` | `CFBundleIdentifier`; default is the placeholder `com.devswizard.WizRec` until the bundle ID is decided |
+| `WIZREC_SIGN_IDENTITY` | `sign.sh` | Codesign identity in the keychain; unset → ad-hoc (`-`) |
+| `NOTARIZE=1` | `release.sh` | Notarize and staple app and DMG. Without `WIZREC_SIGN_IDENTITY` it is skipped with a warning (ad-hoc builds cannot be notarized) |
+| `WIZREC_NOTARY_PROFILE` | `notarize.sh` | `notarytool` keychain profile name; required when notarizing |
+| `SPARKLE=1`, `SPARKLE_BIN` | `appcast.sh` | Appcast generation (planned, see below) |
+| `DRY_RUN=1` | `sign.sh`, `notarize.sh` | Print commands only |
 
 ## Steps
 
@@ -99,9 +126,14 @@ Plan:
 
 ## CI
 
-- `.github/workflows/ci.yml` (owned by qa): build and test on every push.
+- `.github/workflows/ci.yml`: build and test on every push to `main` and on pull requests
+  (macOS arm64, Homebrew `ffmpeg` + `pkg-config`, newest stable Xcode). It also checks that
+  the shell scripts parse. Golden, perf, capture, speech and whisper suites stay off; tests
+  needing the user's projects or Camtasia skip. The asset audit runs as part of `swift test`.
+  Nothing runs until the repository has a GitHub remote.
 - `.github/workflows/release.yml`: on a `v*` tag or by hand. Builds an ad-hoc signed DMG and
   uploads it as a workflow artifact. When the repository has the secrets
   `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY` (and, for notarization,
   `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_PASSWORD`), it signs with a temporary keychain
-  and notarizes. Without them it never fails for lack of credentials.
+  and notarizes. Without them it never fails for lack of credentials. The repository
+  variable (not secret) `WIZREC_BUNDLE_ID`, when set, overrides the placeholder bundle ID.
