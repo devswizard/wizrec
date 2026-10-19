@@ -53,6 +53,10 @@ public final class PlaybackEngine {
     @ObservationIgnored private var failedURLs: Set<URL> = []
     @ObservationIgnored private var seq = 0
     @ObservationIgnored private var prefetchedThrough: Int64 = -1
+    @ObservationIgnored private var warmedThrough: Int64 = -1
+    /// Seconds ahead at which upcoming clips' first frames are decoded, hiding cold
+    /// source opens and seeks at clip boundaries.
+    @ObservationIgnored public var warmupSeconds = 5.0
     @ObservationIgnored private var dirty = true
     @ObservationIgnored private var acc: StatsAccumulator
 
@@ -79,6 +83,7 @@ public final class PlaybackEngine {
         playToken += 1
         let token = playToken
         prefetchedThrough = currentFrame
+        warmedThrough = currentFrame
         acc.resetDisplay()
         let start = currentTicks
         prefetchAhead()
@@ -148,7 +153,7 @@ public final class PlaybackEngine {
         acc.display(timestamp: timestamp ?? host, period: period, counting: isPlaying)
         if isPlaying, clock.isRunning {
             if usingAudio, let a = audio?.timelineTicks(atHost: host) {
-                clock.resync(toTicks: a, atHost: host, tolerance: 0.015)
+                if clock.resync(toTicks: a, atHost: host, tolerance: 0.015) { acc.resynced() }
             }
             let t = clock.ticks(atHost: host)
             if t >= grid.duration {
@@ -160,7 +165,8 @@ public final class PlaybackEngine {
                 prefetchAhead()
             }
         }
-        if let s = acc.flush(now: CACurrentMediaTime(), clock: usingAudio ? "audio" : "host") {
+        if var s = acc.flush(now: CACurrentMediaTime(), clock: usingAudio ? "audio" : "host") {
+            s.audioUnderruns = audio?.underruns ?? 0
             stats = s
             onStats?(s)
         }
@@ -350,5 +356,50 @@ public final class PlaybackEngine {
         }
         prefetchedThrough = horizon
         for k in touched { runLane(k) }
+        warmUpcomingClips()
+    }
+
+    /// Finds streams that come on screen within `warmupSeconds` and queues their
+    /// first frame (located exactly by bisection) on their idle lanes.
+    private func warmUpcomingClips() {
+        let step = max(1, Int64((0.25 / grid.frameSeconds).rounded()))
+        let target = min(grid.lastFrame, currentFrame + Int64((warmupSeconds / grid.frameSeconds).rounded()))
+        guard target >= warmedThrough + step else { return }
+        func keys(_ f: Int64) -> [StreamKey: FrameRequest] {
+            var out: [StreamKey: FrameRequest] = [:]
+            for r in scene.evaluate(at: grid.ticks(ofFrame: f)).frameRequests where !failedURLs.contains(r.url) {
+                out[key(r)] = r
+            }
+            return out
+        }
+        var lo = max(warmedThrough, currentFrame)
+        var before = keys(lo)
+        var f = lo + step
+        while f <= target {
+            let now = keys(f)
+            for (k, _) in now where before[k] == nil {
+                // Bisect (lo, f] for the first frame showing stream k.
+                var a = lo, b = f
+                while b - a > 1 {
+                    let m = (a + b) / 2
+                    if keys(m)[k] != nil { b = m } else { a = m }
+                }
+                if let r = keys(b)[k] { warm(r) }
+            }
+            before = now
+            lo = f
+            f += step
+        }
+        warmedThrough = lo
+    }
+
+    private func warm(_ r: FrameRequest) {
+        let k = key(r)
+        if plan.frameRequests.contains(where: { key($0) == k }) { return }   // on screen: lane is busy with it
+        var lane = lanes[k] ?? Lane()
+        if lane.ready.contains(where: { Self.covers($0.frame, r.time) }) || lane.queue.contains(r) { return }
+        lane.queue.append(r)
+        lanes[k] = lane
+        runLane(k)
     }
 }
