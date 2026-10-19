@@ -292,9 +292,10 @@ private func children(_ l: Layer?) -> [Layer] {
     ])
     let p = try P.project(tracks: [P.track(0, [shader]), P.track(1, [callout])])
     let plan = P.scene(p).evaluate(at: 0)
-    guard case .shader(let url, let params) = plan.layers[0].content else { Issue.record("not shader"); return }
+    guard case .shader(let url, let params, let time) = plan.layers[0].content else { Issue.record("not shader"); return }
     #expect(url.lastPathComponent == "bg.tscshadervid")
     #expect(params == ["Color0-red": 0.25, "Speed": 2])
+    #expect(time == 0)
     #expect(plan.layers[1].content == .unsupported(type: "Callout"))
     #expect(plan.layers[1].size == CGSize(width: 300, height: 100))
     #expect(plan.frameRequests.isEmpty)
@@ -352,7 +353,7 @@ private func demoScene() throws -> SceneModel {
     let kids = children(group)
     #expect(kids.map(\.clipID) == [5, 6, 8])
 
-    guard case .shader(let url, let params) = kids[0].content else { Issue.record("bg not shader"); return }
+    guard case .shader(let url, let params, _) = kids[0].content else { Issue.record("bg not shader"); return }
     #expect(url.pathExtension == "tscshadervid")
     #expect(approx(params["Color0-red"] ?? 0, 0.368627450980392))
     #expect(params["Speed"] == 2)
