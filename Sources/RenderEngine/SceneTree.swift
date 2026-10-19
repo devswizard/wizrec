@@ -22,7 +22,7 @@ struct SNode: Sendable {
     var end: Int64 { start + duration }
 
     indirect enum Body: Sendable {
-        case video(url: URL, stream: Int, size: CGSize)
+        case video(url: URL, stream: Int, size: CGSize, cursor: CursorTrack?)
         case image(url: URL, size: CGSize)
         case shader(url: URL, parameters: SParams, size: CGSize)
         case audio(url: URL, stream: Int)
@@ -169,7 +169,8 @@ struct SceneBuilder {
                 let p = SParams(c.object["sourceEffect"]?.object?["parameters"]?.object)
                 return .shader(url: src.url, parameters: p, size: size)
             }
-            return .video(url: src.url, stream: stream, size: size)
+            return .video(url: src.url, stream: stream, size: size,
+                          cursor: Conventions.hasCursorSidecar(src.url) ? CursorTrack.sidecar(for: src.url) : nil)
         case .image:
             guard let src else { return .unsupported(type: c.kind.typeName, size: canvas) }
             return .image(url: src.url, size: Conventions.leafSize(source: src.media, trackNumber: stream,
@@ -237,10 +238,15 @@ struct SceneEvaluator {
                   effects: n.effects.filter { $0.isActive(at: kt) }.map { $0.instance(at: kt) })
         }
         switch n.body {
-        case .video(let url, let stream, let size):
+        case .video(let url, let stream, let size, let cursor):
             let req = FrameRequest(url: url, stream: stream,
                                    time: Conventions.streamTime(ticks: n.mediaTime(t), editRate: editRate))
-            return make(.video(req), size)
+            var l = make(.video(req), size)
+            if let cursor, let c = cursor.sample(at: req.time.seconds) {
+                l.cursor = CursorOverlay(image: c.image.url, imageSize: c.image.size, hotspot: c.image.hotspot,
+                                         position: c.position, sourceSize: cursor.videoSize)
+            }
+            return l
         case .image(let url, let size):
             return make(.image(url), size)
         case .shader(let url, let p, let size):

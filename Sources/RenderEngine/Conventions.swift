@@ -91,6 +91,12 @@ enum Conventions {
         }
     }
 
+    /// WizRec recordings keep `cursor.json` next to `screen.mp4` [cursor-log.md §1]; only the screen
+    /// file gets the cursor (not `camera.mp4` in the same folder).
+    static func hasCursorSidecar(_ video: URL) -> Bool {
+        video.deletingPathExtension().lastPathComponent == "screen"
+    }
+
     // MARK: Geometry
 
     /// translate(`translation0`, `translation1`) · rotate(`rotation2`) · scale(`scale0`, `scale1`),
