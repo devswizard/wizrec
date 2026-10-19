@@ -18,17 +18,82 @@ extension TimelineCanvas {
         drawRows(ctx, L, dirty)
         drawMarkerLines(ctx, L)
         drawClips(ctx, L, dirty)
+        drawGroupWindow(ctx, L)
         drawPreviews(ctx, L)
         ctx.restoreGState()
 
         drawRuler(ctx, L, dirty)
         ctx.saveGState()
-        ctx.clip(to: CGRect(x: 0, y: L.metrics.rulerHeight, width: L.metrics.headerWidth,
-                            height: max(0, bounds.height - L.metrics.rulerHeight)))
+        ctx.clip(to: CGRect(x: 0, y: L.rulerBottom, width: L.metrics.headerWidth,
+                            height: max(0, bounds.height - L.rulerBottom)))
         drawHeaders(ctx, L, dirty)
         ctx.restoreGState()
         drawCorner(ctx, L)
+        drawBreadcrumb(ctx, L)
         drawPlayhead(ctx, L)
+    }
+
+    // MARK: Open group (breadcrumb + window)
+
+    /// Breadcrumb segments: "Timeline › Group › …" (level = groups kept open) and the close button.
+    func breadcrumbItems(_ L: TimelineLayout) -> [(rect: CGRect, level: Int, title: String)] {
+        guard L.banner > 0 else { return [] }
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        var x: CGFloat = 10
+        var out: [(CGRect, Int, String)] = []
+        for (i, title) in (["Timeline"] + snapshot.groupNames).enumerated() {
+            let w = NSAttributedString(string: title, attributes: [.font: font]).size().width
+            out.append((CGRect(x: x - 4, y: 0, width: w + 8, height: L.banner), i, title))
+            x += w + 26
+        }
+        let close = "Close Group  esc"
+        let cw = NSAttributedString(string: close, attributes: [.font: font]).size().width + 16
+        out.append((CGRect(x: L.size.width - cw - 8, y: 3, width: cw, height: L.banner - 6),
+                    snapshot.groupPath.count - 1, close))
+        return out
+    }
+
+    /// Breadcrumb level under view point `p`, if any.
+    func breadcrumbLevel(at p: CGPoint, layout L: TimelineLayout) -> Int? {
+        breadcrumbItems(L).first { $0.rect.contains(p) }.map(\.level)
+    }
+
+    func drawBreadcrumb(_ ctx: CGContext, _ L: TimelineLayout) {
+        guard L.banner > 0 else { return }
+        Palette.banner.setFill(); ctx.fill(L.bannerRect)
+        Palette.separator.setFill(); ctx.fill(CGRect(x: 0, y: L.banner - 1, width: L.size.width, height: 1))
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        let items = breadcrumbItems(L)
+        for (n, item) in items.enumerated() {
+            let isClose = n == items.count - 1
+            let isCurrent = !isClose && n == items.count - 2
+            if isClose {
+                Palette.bannerText.withAlphaComponent(0.15).setFill()
+                NSBezierPath(roundedRect: item.rect, xRadius: 5, yRadius: 5).fill()
+            }
+            let color = isCurrent ? Palette.text : Palette.bannerText
+            let text = NSAttributedString(string: item.title, attributes: [.font: font, .foregroundColor: color])
+            let h = text.size().height
+            text.draw(at: CGPoint(x: item.rect.minX + (isClose ? 8 : 4), y: item.rect.midY - h / 2))
+            if !isClose, !isCurrent {
+                NSAttributedString(string: "›", attributes: [.font: font, .foregroundColor: Palette.secondaryText])
+                    .draw(at: CGPoint(x: item.rect.maxX + 4, y: item.rect.midY - h / 2))
+            }
+        }
+    }
+
+    /// Dims the time outside the open group's visible window and marks its edges.
+    func drawGroupWindow(_ ctx: CGContext, _ L: TimelineLayout) {
+        guard let w = snapshot.groupWindow else { return }
+        let a = L.x(ofTicks: w.lowerBound), b = L.x(ofTicks: w.upperBound)
+        let area = L.clipArea
+        Palette.outsideGroup.setFill()
+        if a > area.minX { ctx.fill(CGRect(x: area.minX, y: area.minY, width: a - area.minX, height: area.height)) }
+        if b < area.maxX { ctx.fill(CGRect(x: b, y: area.minY, width: area.maxX - b, height: area.height)) }
+        Palette.bannerText.setFill()
+        for x in [a, b] where x >= area.minX && x <= area.maxX {
+            ctx.fill(CGRect(x: x.rounded() - 1, y: area.minY, width: 2, height: area.height))
+        }
     }
 
     // MARK: Rows
@@ -600,7 +665,9 @@ extension TimelineCanvas {
         NSAttributedString(string: tc, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold), .foregroundColor: Palette.text,
         ]).draw(at: CGPoint(x: c.minX + 10, y: c.minY + 6))
-        drawSymbol("plus", in: addTrackButtonRect(L).insetBy(dx: 3, dy: 3), color: Palette.secondaryText)
+        if snapshot.groupPath.isEmpty {
+            drawSymbol("plus", in: addTrackButtonRect(L).insetBy(dx: 3, dy: 3), color: Palette.secondaryText)
+        }
     }
 
     // MARK: Playhead
@@ -612,8 +679,8 @@ extension TimelineCanvas {
         ctx.clip(to: CGRect(x: L.metrics.headerWidth, y: 0, width: max(0, bounds.width - L.metrics.headerWidth),
                             height: bounds.height))
         Palette.playhead.setFill()
-        ctx.fill(CGRect(x: x - 0.5, y: L.metrics.rulerHeight - 6, width: 1.5, height: bounds.height))
-        let top = L.metrics.rulerHeight - 14
+        ctx.fill(CGRect(x: x - 0.5, y: L.rulerBottom - 6, width: 1.5, height: bounds.height))
+        let top = L.rulerBottom - 14
         let handle = CGMutablePath()
         handle.addRoundedRect(in: CGRect(x: x - 6, y: top - 2, width: 12.5, height: 9), cornerWidth: 2, cornerHeight: 2)
         handle.move(to: CGPoint(x: x - 6, y: top + 6))
@@ -651,15 +718,22 @@ extension TimelineCanvas {
                 menu.addItem(i)
                 menu.addItem(.separator())
             }
+            if case .clip(let id, _, _) = hit, snapshot.clip(id)?.clip.style == .group {
+                let open = NSMenuItem(title: "Open Group", action: #selector(menuOpenGroup(_:)), keyEquivalent: "")
+                open.target = self; open.representedObject = NSNumber(value: id)
+                menu.addItem(open)
+                menu.addItem(.separator())
+            }
             item("Split at Playhead", #selector(menuSplit(_:)), enabled: !editor.splitTargets(at: model.playhead).isEmpty)
             menu.addItem(.separator())
             item("Delete", #selector(menuDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
             item("Ripple Delete", #selector(menuRippleDelete(_:)), enabled: !editor.deletableSelection.isEmpty)
         case .header(let track, _):
-            item("Add Track Above", #selector(menuAddTrack(_:)), track + 1)
-            item("Add Track Below", #selector(menuAddTrack(_:)), track)
+            let top = snapshot.groupPath.isEmpty  // inner tracks: no add/remove yet
+            item("Add Track Above", #selector(menuAddTrack(_:)), track + 1, enabled: top)
+            item("Add Track Below", #selector(menuAddTrack(_:)), track, enabled: top)
             menu.addItem(.separator())
-            item("Remove Track", #selector(menuRemoveTrack(_:)), track)
+            item("Remove Track", #selector(menuRemoveTrack(_:)), track, enabled: top)
         case .ruler(let t):
             item("Add Marker at Playhead", #selector(menuAddMarker(_:)))
             let near = editor.marker(near: t, tolerance: layout.ticks(forWidth: 6))
@@ -671,8 +745,12 @@ extension TimelineCanvas {
             menu.addItem(rename)
             menu.addItem(.separator())
             item("Zoom to Fit", #selector(menuZoomToFit(_:)))
+        case .breadcrumb:
+            if !snapshot.groupPath.isEmpty {
+                item("Close Group", #selector(menuCloseGroup(_:)))
+            }
         case .track, .empty, .corner:
-            item("Add Track", #selector(menuAddTrack(_:)), snapshot.tracks.count)
+            item("Add Track", #selector(menuAddTrack(_:)), snapshot.tracks.count, enabled: snapshot.groupPath.isEmpty)
             item("Zoom to Fit", #selector(menuZoomToFit(_:)))
         }
         return menu
@@ -684,6 +762,10 @@ extension TimelineCanvas {
     @objc func menuAddTrack(_ sender: NSMenuItem) { if !editor.addTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuRemoveTrack(_ sender: NSMenuItem) { if !editor.removeTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuZoomToFit(_ sender: Any?) { zoomToFit() }
+    @objc func menuOpenGroup(_ sender: NSMenuItem) {
+        if let id = (sender.representedObject as? NSNumber)?.int64Value { editor.openGroup(id) }
+    }
+    @objc func menuCloseGroup(_ sender: Any?) { editor.closeGroups(toLevel: snapshot.groupPath.count - 1) }
     @objc func menuRemoveTransition(_ sender: NSMenuItem) {
         guard let pair = sender.representedObject as? NSArray, pair.count == 2 else { return }
         let l = (pair[0] as? NSNumber)?.int64Value, r = (pair[1] as? NSNumber)?.int64Value

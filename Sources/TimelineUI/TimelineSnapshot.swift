@@ -109,8 +109,20 @@ public struct TimelineSnapshot: Sendable, Equatable {
     public var duration: Int64
     /// Timeline markers, sorted by time (ticks).
     public var markers: [Marker] = []
+    /// Ids of the open groups, outermost first (empty: the top-level timeline is shown).
+    public var groupPath: [Int64] = []
+    /// Names of the open groups (breadcrumb), same order.
+    public var groupNames: [String] = []
+    /// Inner ↔ root time map of the innermost open group; all times above are root ticks.
+    public var timeMap: TimelineTimeMap = .identity
+    /// Root-timeline span where the innermost open group is visible.
+    public var groupWindow: ClosedRange<Int64>?
 
     public static let empty = TimelineSnapshot(editRate: 705_600_000, frameRate: Rational(30), tracks: [], duration: 0)
+
+    /// Earliest tick a clip of the shown timeline can start at: 0 at the top level, the root
+    /// tick of the open group's inner time 0 otherwise.
+    public var timeOrigin: Int64 { timeMap.display(0) }
 
     /// Ticks per output frame (≥ 1).
     public var frameTicks: Int64 {
@@ -134,24 +146,97 @@ public struct TimelineSnapshot: Sendable, Equatable {
 // MARK: - Building
 
 extension TimelineSnapshot {
-    /// Projects `project`'s top-level timeline. Never mutates the project.
+    /// Projects `project`'s top-level timeline, or the inner tracks of the group at the end of
+    /// `openGroups` (ids, outermost first). Never mutates the project. A path that no longer
+    /// resolves is cut at the first missing group (`groupPath` says what was opened).
     @MainActor
-    public init(project: Project) {
+    public init(project: Project, openGroups: [Int64] = []) {
         let rate = project.timebase.editRate > 0 ? project.timebase.editRate : 30
         var sources: [Int64: SourceMedia] = [:]
         for s in project.sourceBin { sources[s.id] = s }
         let fr = project.frameRate
         let frame = fr.num > 0 ? max(1, (rate * fr.den) / fr.num) : 1
         let builder = SnapshotBuilder(editRate: rate, sources: sources, frameTicks: frame)
-        let attrs = project.timeline?.trackAttributes ?? []
+
+        var sceneTracks = project.tracks
+        var attrs: [JSONObject?] = (project.timeline?.trackAttributes ?? []).map { $0 }
+        var map = TimelineTimeMap.identity
+        var path: [Int64] = [], names: [String] = []
+        var window: ClosedRange<Int64>?
+        for gid in openGroups {
+            guard let g = sceneTracks.flatMap(\.clips).first(where: { $0.id == gid && $0.kind == .group }) else { break }
+            let s = g.scalar.double > 0 ? g.scalar.double : 1
+            window = map.display(g.start)...map.display(g.end)
+            // inner i → parent g.start + (i − mediaStart) × scalar → display.
+            map = TimelineTimeMap(origin: map.origin + map.scale * (Double(g.start) - g.mediaStart.double * s),
+                                  scale: map.scale * s)
+            path.append(gid)
+            names.append(g.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Group")
+            sceneTracks = g.tracks
+            attrs = g.tracks.map { $0.object }  // inner tracks carry their flags inline
+        }
         var tracks: [TimelineTrackItem] = []
-        for (i, t) in project.tracks.enumerated() {
-            let a = attrs.indices.contains(i) ? attrs[i] : nil
-            tracks.append(builder.track(t, index: i, attributes: a))
+        for (i, t) in sceneTracks.enumerated() {
+            let item = builder.track(t, index: i, attributes: attrs.indices.contains(i) ? attrs[i] : nil)
+            tracks.append(map.isIdentity ? item : item.mapped(map))
         }
         self.init(editRate: rate, frameRate: project.frameRate, tracks: tracks,
-                  duration: tracks.flatMap(\.clips).map(\.end).max() ?? 0,
-                  markers: Markers.timeline(project))
+                  duration: max(tracks.flatMap(\.clips).map(\.end).max() ?? 0, window?.upperBound ?? 0),
+                  markers: Markers.timeline(project), groupPath: path, groupNames: names, timeMap: map,
+                  groupWindow: window)
+    }
+}
+
+/// Affine map between a group's inner timeline and the root timeline the view draws:
+/// `display = origin + scale × inner` (ticks). Identity at the top level.
+public struct TimelineTimeMap: Sendable, Equatable {
+    public var origin: Double
+    public var scale: Double
+    public static let identity = TimelineTimeMap(origin: 0, scale: 1)
+    public var isIdentity: Bool { origin == 0 && scale == 1 }
+
+    public init(origin: Double, scale: Double) { self.origin = origin; self.scale = scale }
+
+    /// Root-timeline tick of inner tick `t`.
+    public func display(_ t: Int64) -> Int64 { isIdentity ? t : Int64((origin + scale * Double(t)).rounded()) }
+    /// Inner tick of root-timeline tick `t` (what nested commands take).
+    public func inner(_ t: Int64) -> Int64 { isIdentity ? t : Int64(((Double(t) - origin) / scale).rounded()) }
+    /// Root-timeline length of `ticks` inner ticks.
+    public func length(_ ticks: Int64) -> Int64 { isIdentity ? ticks : Int64((Double(ticks) * scale).rounded()) }
+}
+
+extension TimelineTrackItem {
+    func mapped(_ m: TimelineTimeMap) -> TimelineTrackItem {
+        var t = self
+        t.clips = clips.map { $0.mapped(m) }
+        t.transitions = transitions.map { tr in
+            var x = tr; x.start = m.display(tr.start); x.end = m.display(tr.end); return x
+        }
+        return t
+    }
+}
+
+extension TimelineClipItem {
+    func mapped(_ m: TimelineTimeMap) -> TimelineClipItem {
+        var c = self
+        c.start = m.display(start)
+        c.duration = m.display(start + duration) - c.start
+        c.videoSpans = videoSpans.map { $0.mapped(m) }
+        c.audioSpans = audioSpans.map { $0.mapped(m) }
+        c.cuts = cuts.map(m.display)
+        c.lanes = lanes.map { $0.map { s in TimelineLaneSpan(start: m.display(s.start), end: m.display(s.end), style: s.style) } }
+        c.minStart = minStart.map(m.display)
+        c.maxEnd = maxEnd.map(m.display)
+        return c
+    }
+}
+
+extension TimelineMediaSpan {
+    func mapped(_ m: TimelineTimeMap) -> TimelineMediaSpan {
+        var s = self
+        s.start = m.display(start); s.end = m.display(end)
+        s.rate = rate / m.scale
+        return s
     }
 }
 

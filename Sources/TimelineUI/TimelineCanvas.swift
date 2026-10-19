@@ -56,6 +56,7 @@ final class TimelineCanvas: NSView {
     var clipColorCache: [String: (body: CGColor, outline: CGColor)] = [:]
 
     private var builtChangeCount = -1
+    private var builtGroups: [Int64] = []
     private var lastPlayhead: Int64 = 0
     private var scrubbing = false
     private var trackingArea: NSTrackingArea?
@@ -98,6 +99,7 @@ final class TimelineCanvas: NSView {
             _ = model.pointsPerSecond
             _ = model.selection
             _ = model.snappingEnabled
+            _ = model.openGroups
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -121,9 +123,17 @@ final class TimelineCanvas: NSView {
 
     /// Rebuilds the snapshot after an edit (cheap: value projection of top-level clips).
     func rebuildIfNeeded() {
-        guard builtChangeCount != model.undo.changeCount else { return }
+        guard builtChangeCount != model.undo.changeCount || builtGroups != model.openGroups else { return }
+        let groupsChanged = builtGroups != model.openGroups
         builtChangeCount = model.undo.changeCount
-        snapshot = TimelineSnapshot(project: model.project)
+        builtGroups = model.openGroups
+        snapshot = TimelineSnapshot(project: model.project, openGroups: model.openGroups)
+        if snapshot.groupPath != model.openGroups {
+            // A group on the path is gone (e.g. undo of Group): show what still exists.
+            model.openGroups = snapshot.groupPath
+            builtGroups = snapshot.groupPath
+        }
+        if groupsChanged { endRenameMarker(commit: false) }
         let ids = Set(snapshot.allClips.map(\.id))
         if !model.selection.isSubset(of: ids) { model.selection.formIntersection(ids) }
     }
@@ -243,16 +253,17 @@ final class TimelineCanvas: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        rebuildIfNeeded()
         let p = convert(event.locationInWindow, from: nil)
         let L = layout
         let flags = event.modifierFlags
         let additive = flags.contains(.shift) || flags.contains(.command)
         // Playhead handle in the ruler or a grab on the playhead line: scrub.
-        if abs(p.x - L.x(ofTicks: model.playhead)) <= 5, p.x >= L.clipArea.minX, p.y < L.metrics.rulerHeight + 4 {
+        if abs(p.x - L.x(ofTicks: model.playhead)) <= 5, p.x >= L.clipArea.minX, p.y < L.rulerBottom + 4 {
             beginScrub(at: p); return
         }
         let hit = L.hit(p, in: snapshot)
-        if case .ruler = hit, p.y >= L.metrics.rulerHeight - 14,
+        if case .ruler = hit, p.y >= L.rulerBottom - 14,
            let m = editor.marker(near: L.ticks(atX: p.x), tolerance: L.ticks(forWidth: 6)) {
             if event.clickCount >= 2 { beginRenameMarker(at: m.time); return }
             drag = .marker(from: m.time, to: m.time, guide: nil)
@@ -260,6 +271,8 @@ final class TimelineCanvas: NSView {
             return
         }
         switch hit {
+        case .breadcrumb:
+            if let level = breadcrumbLevel(at: p, layout: L) { editor.closeGroups(toLevel: level) }
         case .corner:
             if addTrackButtonRect(L).contains(p) { _ = editor.addTrack(at: snapshot.tracks.count) }
         case .ruler:
@@ -284,6 +297,10 @@ final class TimelineCanvas: NSView {
                     drag = .trim(origin: contentPoint(p), plan: plan)
                 }
             case .body:
+                if event.clickCount == 2, snapshot.clip(id)?.clip.style == .group {
+                    editor.openGroup(id)
+                    break
+                }
                 drag = .press(clipID: id, origin: contentPoint(p), wasSelected: wasSelected && !flags.contains(.shift))
             }
         case .track, .empty:
@@ -428,6 +445,7 @@ final class TimelineCanvas: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        rebuildIfNeeded()
         let p = convert(event.locationInWindow, from: nil)
         return contextMenu(for: layout.hit(p, in: snapshot), at: p)
     }
@@ -462,6 +480,7 @@ final class TimelineCanvas: NSView {
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {
+        rebuildIfNeeded()  // the model may have changed since the last draw
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let chars = event.charactersIgnoringModifiers ?? ""
         let plain = flags.subtracting([.numericPad, .function, .capsLock]).isEmpty
@@ -487,8 +506,9 @@ final class TimelineCanvas: NSView {
             seek(to: snapshot.duration)
         case (_, "m") where plain, (_, "M") where plain:
             if !editor.addMarker(at: model.playhead) { NSSound.beep() }
-        case (53, _):  // escape
-            model.selection = []
+        case (53, _):  // escape: close the open group, else clear the selection
+            if !snapshot.groupPath.isEmpty { editor.closeGroups(toLevel: snapshot.groupPath.count - 1) }
+            else { model.selection = [] }
         case (_, "a") where flags == .command:
             model.selection = Set(snapshot.allClips.map(\.id))
         default:
@@ -553,12 +573,14 @@ final class TimelineCanvas: NSView {
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        rebuildIfNeeded()
         if let item = libraryItem(sender.draggingPasteboard) {
             libraryTarget = libraryDrop(item, at: convert(sender.draggingLocation, from: nil))
             needsDisplay = true
             return libraryTarget == nil ? [] : .copy
         }
-        guard model.onDrop != nil, dropPayload(sender) != nil else { dropTarget = nil; return [] }
+        // Media drops add top-level clips; not inside an open group.
+        guard model.onDrop != nil, snapshot.groupPath.isEmpty, dropPayload(sender) != nil else { dropTarget = nil; return [] }
         dropTarget = dropLocation(convert(sender.draggingLocation, from: nil))
         needsDisplay = true
         return .copy
@@ -571,12 +593,13 @@ final class TimelineCanvas: NSView {
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        rebuildIfNeeded()
         defer { dropTarget = nil; libraryTarget = nil; needsDisplay = true }
         if let item = libraryItem(sender.draggingPasteboard) {
             guard let drop = libraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
             return perform(drop)
         }
-        guard let payload = dropPayload(sender), let onDrop = model.onDrop else { return false }
+        guard snapshot.groupPath.isEmpty, let payload = dropPayload(sender), let onDrop = model.onDrop else { return false }
         let loc = dropLocation(convert(sender.draggingLocation, from: nil))
         return onDrop(payload, loc.track, loc.ticks)
     }

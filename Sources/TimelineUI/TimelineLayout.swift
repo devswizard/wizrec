@@ -20,6 +20,8 @@ public struct TimelineMetrics: Sendable, Equatable {
     public var edgeGrab: CGFloat = 6
     /// Size of the header flag buttons, points.
     public var buttonSize: CGFloat = 20
+    /// Height of the breadcrumb band shown above the ruler while a group is open.
+    public var breadcrumbHeight: CGFloat = 26
 
     public init() {}
 }
@@ -58,6 +60,9 @@ public enum TrackHeaderControl: String, Sendable, CaseIterable {
 /// What lies under a point of the timeline view.
 public enum TimelineHit: Sendable, Equatable {
     public enum ClipZone: Sendable, Equatable { case body, leadingEdge, trailingEdge }
+    /// Breadcrumb band (open group); `level` = number of groups that stay open when clicked
+    /// (0 = back to the top-level timeline).
+    case breadcrumb(level: Int)
     /// Top-left corner (add-track button).
     case corner
     /// Time ruler at `ticks`.
@@ -87,6 +92,10 @@ public struct TimelineLayout: Sendable, Equatable {
     public var size: CGSize
     /// Rows top → bottom.
     public private(set) var rows: [TimelineRow]
+    /// Height of the breadcrumb band (0 at the top level).
+    public var banner: CGFloat
+    /// Bottom of the ruler = top of the first row, view y.
+    public var rulerBottom: CGFloat { banner + metrics.rulerHeight }
 
     public init(snapshot: TimelineSnapshot, pointsPerSecond: Double, scrollX: CGFloat = 0, scrollY: CGFloat = 0,
                 size: CGSize, metrics: TimelineMetrics = TimelineMetrics()) {
@@ -94,6 +103,7 @@ public struct TimelineLayout: Sendable, Equatable {
         editRate = max(snapshot.editRate, 1)
         self.pointsPerSecond = TimelineZoom.clamp(pointsPerSecond)
         self.scrollX = scrollX; self.scrollY = scrollY; self.size = size
+        banner = snapshot.groupPath.isEmpty ? 0 : metrics.breadcrumbHeight
         var rows: [TimelineRow] = []
         var y: CGFloat = 0
         for t in snapshot.tracks.reversed() {
@@ -109,15 +119,18 @@ public struct TimelineLayout: Sendable, Equatable {
 
     /// Clip area (right of headers, below the ruler), view coordinates.
     public var clipArea: CGRect {
-        CGRect(x: metrics.headerWidth, y: metrics.rulerHeight,
-               width: max(0, size.width - metrics.headerWidth), height: max(0, size.height - metrics.rulerHeight))
+        CGRect(x: metrics.headerWidth, y: rulerBottom,
+               width: max(0, size.width - metrics.headerWidth), height: max(0, size.height - rulerBottom))
     }
 
     public var rulerRect: CGRect {
-        CGRect(x: metrics.headerWidth, y: 0, width: max(0, size.width - metrics.headerWidth), height: metrics.rulerHeight)
+        CGRect(x: metrics.headerWidth, y: banner, width: max(0, size.width - metrics.headerWidth), height: metrics.rulerHeight)
     }
 
-    public var cornerRect: CGRect { CGRect(x: 0, y: 0, width: metrics.headerWidth, height: metrics.rulerHeight) }
+    public var cornerRect: CGRect { CGRect(x: 0, y: banner, width: metrics.headerWidth, height: metrics.rulerHeight) }
+
+    /// Breadcrumb band across the top (empty at the top level).
+    public var bannerRect: CGRect { CGRect(x: 0, y: 0, width: size.width, height: banner) }
 
     /// Total height of all rows, points.
     public var contentHeight: CGFloat { rows.last.map { $0.y + $0.height } ?? 0 }
@@ -167,12 +180,12 @@ public struct TimelineLayout: Sendable, Equatable {
 
     /// Row rectangle across the clip area, view coordinates.
     public func rowRect(_ row: TimelineRow) -> CGRect {
-        CGRect(x: metrics.headerWidth, y: metrics.rulerHeight + row.y - scrollY,
+        CGRect(x: metrics.headerWidth, y: rulerBottom + row.y - scrollY,
                width: max(0, size.width - metrics.headerWidth), height: row.height)
     }
 
     public func headerRect(_ row: TimelineRow) -> CGRect {
-        CGRect(x: 0, y: metrics.rulerHeight + row.y - scrollY, width: metrics.headerWidth, height: row.height)
+        CGRect(x: 0, y: rulerBottom + row.y - scrollY, width: metrics.headerWidth, height: row.height)
     }
 
     /// Clip rectangle on `track` from `start` for `duration` ticks (inset 2 pt vertically).
@@ -185,7 +198,7 @@ public struct TimelineLayout: Sendable, Equatable {
 
     /// Row whose band contains view y, if any.
     public func row(atY y: CGFloat) -> TimelineRow? {
-        let cy = y - metrics.rulerHeight + scrollY
+        let cy = y - rulerBottom + scrollY
         return rows.first { cy >= $0.y && cy < $0.y + $0.height + metrics.rowGap }
     }
 
@@ -209,7 +222,8 @@ public struct TimelineLayout: Sendable, Equatable {
 
     /// Hit test at view point `p` against `snapshot`.
     public func hit(_ p: CGPoint, in snapshot: TimelineSnapshot) -> TimelineHit {
-        if p.y < metrics.rulerHeight {
+        if p.y < banner { return .breadcrumb(level: 0) }
+        if p.y < rulerBottom {
             return p.x < metrics.headerWidth ? .corner : .ruler(ticks: ticks(atX: p.x))
         }
         guard let row = row(atY: p.y) else {

@@ -16,12 +16,13 @@ public protocol TimelineSnapping: Sendable {
               excluding: Set<Int64>) -> TimelineSnap?
 }
 
-/// Simple rule on a snapshot: top-level clip starts and ends, the playhead and tick 0 (no markers).
+/// Simple rule on a snapshot: the shown clips' starts and ends, the playhead and the timeline
+/// origin (tick 0, or an open group's inner 0). No markers.
 public struct EdgeSnapper: TimelineSnapping {
     public init() {}
 
     public func targets(snapshot: TimelineSnapshot, playhead: Int64, excluding: Set<Int64>) -> [Int64] {
-        var out: [Int64] = [0, playhead]
+        var out: [Int64] = [snapshot.timeOrigin, playhead]
         for t in snapshot.tracks {
             for c in t.clips where !excluding.contains(c.id) { out.append(c.start); out.append(c.end) }
         }

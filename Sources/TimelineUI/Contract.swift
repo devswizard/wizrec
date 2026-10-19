@@ -31,6 +31,10 @@ public final class TimelineModel {
     /// (0 = bottom; always an existing track, or 0 when there are none) and start ticks
     /// (snapped like moves). Return true when the drop was handled.
     public var onDrop: ((DropPayload, _ track: Int, _ ticks: Int64) -> Bool)?
+    /// Groups opened for editing, outermost first (ids). Empty: the top-level timeline.
+    /// Double-clicking a group appends it; Esc or `closeGroup:` removes the last one.
+    /// While a group is open, track indices and `selection` refer to its inner tracks/clips.
+    public var openGroups: [Int64] = []
 
     public init(undo: UndoStack) { self.undo = undo }
 }

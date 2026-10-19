@@ -8,7 +8,7 @@ extension TimelineCanvas: NSTextFieldDelegate {
         guard let m = snapshot.markers.first(where: { $0.time == time }) else { return }
         let L = layout
         let x = min(max(L.x(ofTicks: time) + 6, L.clipArea.minX), max(L.clipArea.minX, bounds.maxX - 160))
-        let field = NSTextField(frame: CGRect(x: x, y: max(0, L.metrics.rulerHeight - 22), width: 150, height: 20))
+        let field = NSTextField(frame: CGRect(x: x, y: max(0, L.rulerBottom - 22), width: 150, height: 20))
         field.stringValue = m.name
         field.placeholderString = "Marker name"
         field.font = .systemFont(ofSize: 11)

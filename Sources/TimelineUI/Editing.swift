@@ -86,6 +86,30 @@ public struct TimelineEditor {
         self.model = model; self.snapshot = snapshot; self.snapper = snapper
     }
 
+    /// Inner ↔ root time map of the shown timeline (identity at the top level).
+    var map: TimelineTimeMap { snapshot.timeMap }
+
+    // MARK: Groups
+
+    /// Opens group `id` (a clip of the shown timeline) for editing.
+    @discardableResult
+    public func openGroup(_ id: Int64) -> Bool {
+        guard snapshot.clip(id)?.clip.style == .group else { return false }
+        model.openGroups = snapshot.groupPath + [id]
+        model.selection = []
+        return true
+    }
+
+    /// Closes open groups down to `level` (0 = top level). Selects the group just closed.
+    @discardableResult
+    public func closeGroups(toLevel level: Int) -> Bool {
+        let path = snapshot.groupPath
+        guard level >= 0, level < path.count else { return false }
+        model.openGroups = Array(path.prefix(level))
+        model.selection = [path[level]]
+        return true
+    }
+
     /// Snap of `edges` (ticks) within `tolerance`, ignoring clips in `excluding`; nil when
     /// snapping is off or nothing is in range. Frame rounding is done by the caller.
     public func snap(edges: [Int64], tolerance: Int64, excluding: Set<Int64>) -> TimelineSnap? {
@@ -93,6 +117,11 @@ public struct TimelineEditor {
         if let snapper {
             return snapper.snap(edges: edges, tolerance: tolerance, snapshot: snapshot, playhead: model.playhead,
                                 excluding: excluding)
+        }
+        // Inside a group the engine helper (top-level clips) does not apply: snap to what is shown.
+        if !snapshot.groupPath.isEmpty {
+            return EdgeSnapper().snap(edges: edges, tolerance: tolerance, snapshot: snapshot, playhead: model.playhead,
+                                      excluding: excluding)
         }
         let s = Snapping(project: model.project, playhead: model.playhead, excluding: excluding, frameSnap: false)
         return s.snap(edges: edges, tolerance: tolerance).map { TimelineSnap(delta: $0.delta, guide: $0.guide.tick) }
@@ -107,7 +136,8 @@ public struct TimelineEditor {
         guard let anchor = moving.min(by: { $0.clip.start < $1.clip.start }) else {
             return MovePlan(ids: ids, delta: 0, trackOffset: 0, isValid: false, guide: nil)
         }
-        let minStart = moving.map(\.clip.start).min() ?? 0
+        // Clips stay at or after the timeline origin (inner time 0 inside a group).
+        let minStart = (moving.map(\.clip.start).min() ?? 0) - snapshot.timeOrigin
         var delta = max(rawDelta, -minStart)
         var guide: Int64?
         let edges = moving.flatMap { [$0.clip.start + delta, $0.clip.end + delta] }
@@ -131,7 +161,7 @@ public struct TimelineEditor {
         for (t, c) in moving {
             let dest = t + trackOffset
             guard let src = snapshot.track(t), let dst = snapshot.track(dest), !src.locked, !dst.locked,
-                  c.start + delta >= 0 else { return false }
+                  c.start + delta >= snapshot.timeOrigin else { return false }
             // Magnetic tracks make room instead of refusing an overlap (MoveClip packs them).
             if dst.magnetic { continue }
             let s = c.start + delta, e = c.end + delta
@@ -158,12 +188,12 @@ public struct TimelineEditor {
         let frame = snapshot.frameTicks
         // Neighbours limit growth unless the trim ripples (⌥ or a magnetic track).
         let free = ripple || t.magnetic
-        let prevEnd = t.clips.filter { $0.id != id && $0.end <= clip.start }.map(\.end).max() ?? 0
+        let prevEnd = t.clips.filter { $0.id != id && $0.end <= clip.start }.map(\.end).max() ?? snapshot.timeOrigin
         let nextStart = t.clips.filter { $0.id != id && $0.start >= clip.end }.map(\.start).min()
         // Limits only stop growth: a clip already past one can still shrink (as TrimClip).
         switch edge {
         case .start:
-            var limit: Int64 = free ? (ripple ? Int64.min / 4 : 0) : prevEnd
+            var limit: Int64 = free ? (ripple ? Int64.min / 4 : snapshot.timeOrigin) : prevEnd
             if let m = clip.minStart { limit = max(limit, m) }
             if target < clip.start { target = max(target, min(limit, clip.start)) }
             target = min(target, clip.end - frame)
@@ -216,16 +246,17 @@ public struct TimelineEditor {
         guard let src = snapshot.track(from), let dst = snapshot.track(to) else { return nil }
         // Destination layout without the clip (gap closed when it is the same track).
         let others = destinationLayout(clip: clip, from: from, to: to)
-        var s = max(0, clip.start + rawDelta)
+        let origin = snapshot.timeOrigin
+        var s = max(origin, clip.start + rawDelta)
         var guide: Int64?
         if let c = others.first(where: { $0.start < s && s < $0.end }) {
             s = s - c.start < c.end - s ? c.start : c.end
             guide = s
         } else if model.snappingEnabled, tolerance > 0 {
-            let edges: [Int64] = [0, model.playhead] + others.flatMap { o -> [Int64] in [o.start, o.end] }
+            let edges: [Int64] = [origin, model.playhead] + others.flatMap { o -> [Int64] in [o.start, o.end] }
             if let best = edges.min(by: { abs($0 - s) < abs($1 - s) }), abs(best - s) <= tolerance { s = best; guide = s }
         }
-        if guide == nil { s = max(0, snapshot.quantize(s)) }
+        if guide == nil { s = max(origin, snapshot.quantize(s)) }
         let valid = !src.locked && !dst.locked && (s != clip.start || to != from || dst.magnetic)
         return RippleMovePlan(id: id, fromTrack: from, toTrack: to, start: s, isValid: valid, guide: guide)
     }
@@ -264,7 +295,7 @@ public struct TimelineEditor {
         let moving = plan.ids.compactMap { snapshot.clip($0) }
         let ordered = moving.sorted { plan.delta > 0 ? $0.clip.start > $1.clip.start : $0.clip.start < $1.clip.start }
         let cmds: [any EditCommand] = ordered.map {
-            MoveClip(clipID: $0.clip.id, toTrack: $0.track + plan.trackOffset, start: $0.clip.start + plan.delta)
+            MoveClip(clipID: $0.clip.id, toTrack: $0.track + plan.trackOffset, start: map.inner($0.clip.start + plan.delta))
         }
         return cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Move", cmds)
     }
@@ -302,14 +333,14 @@ public struct TimelineEditor {
         guard let (_, clip) = snapshot.clip(plan.id) else { return false }
         let original = plan.edge == .start ? clip.start : clip.end
         guard plan.target != original else { return false }
-        if plan.ripple { return perform(RippleTrim(clipID: plan.id, edge: plan.edge, to: plan.target)) }
-        return perform(TrimClip(clipID: plan.id, edge: plan.edge, to: plan.target))
+        if plan.ripple { return perform(RippleTrim(clipID: plan.id, edge: plan.edge, to: map.inner(plan.target))) }
+        return perform(TrimClip(clipID: plan.id, edge: plan.edge, to: map.inner(plan.target)))
     }
 
     @discardableResult
     public func performRippleMove(_ plan: RippleMovePlan) -> Bool {
         guard plan.isValid else { return false }
-        return perform(RippleMove(clipID: plan.id, toTrack: plan.toTrack, start: plan.start))
+        return perform(RippleMove(clipID: plan.id, toTrack: plan.toTrack, start: map.inner(plan.start)))
     }
 
     /// Splits at the playhead (see `splitTargets`).
@@ -317,7 +348,8 @@ public struct TimelineEditor {
     public func splitAtPlayhead() -> Bool {
         let ids = splitTargets(at: model.playhead)
         guard !ids.isEmpty else { return false }
-        let cmds: [any EditCommand] = ids.map { SplitClip(clipID: $0, at: model.playhead) }
+        let at = map.inner(model.playhead)
+        let cmds: [any EditCommand] = ids.map { SplitClip(clipID: $0, at: at) }
         return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Split", cmds))
     }
 
@@ -341,6 +373,7 @@ public struct TimelineEditor {
         case .locked: (.locked, t.locked)
         case .magnetic: (.magnetic, t.magnetic)
         }
+        if let group = snapshot.groupPath.last { return perform(SetGroupTrackFlag(group: group, track: index, flag, !current)) }
         return perform(SetTrackFlag(track: index, flag, !current))
     }
 
@@ -394,7 +427,8 @@ public struct TimelineEditor {
         let ids = retimableSelection.filter { id in snapshot.clip(id).map { !$0.clip.videoSpans.isEmpty } ?? false }
         let ticks = snapshot.quantize(Int64((seconds * Double(snapshot.editRate)).rounded()))
         guard ticks > 0, !ids.isEmpty else { return false }
-        let cmds: [any EditCommand] = ids.map { ExtendFrame(clipID: $0, duration: ticks) }
+        let inner = map.isIdentity ? ticks : max(1, Int64((Double(ticks) / map.scale).rounded()))
+        let cmds: [any EditCommand] = ids.map { ExtendFrame(clipID: $0, duration: inner) }
         return perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Extend Frame", cmds))
     }
 
@@ -448,8 +482,9 @@ public struct TimelineEditor {
     @discardableResult
     public func addTransition(named name: String, left: Int64?, right: Int64?) -> Bool {
         guard left != nil || right != nil else { return false }
+        let d = transitionDuration(left: left, right: right)
         return perform(AddTransition(name: name, leftClipID: left, rightClipID: right,
-                                     duration: transitionDuration(left: left, right: right)))
+                                     duration: map.isIdentity ? d : max(1, Int64((Double(d) / map.scale).rounded()))))
     }
 
     @discardableResult
@@ -465,12 +500,13 @@ public struct TimelineEditor {
 
     @discardableResult
     public func addTrack(at index: Int) -> Bool {
-        perform(AddTrack(at: min(max(index, 0), snapshot.tracks.count)))
+        guard snapshot.groupPath.isEmpty else { return false }  // inner tracks: not supported yet
+        return perform(AddTrack(at: min(max(index, 0), snapshot.tracks.count)))
     }
 
     @discardableResult
     public func removeTrack(at index: Int) -> Bool {
-        guard snapshot.track(index) != nil else { return false }
+        guard snapshot.groupPath.isEmpty, snapshot.track(index) != nil else { return false }
         let gone = Set(snapshot.tracks[index].clips.map(\.id))
         guard perform(RemoveTrack(at: index)) else { return false }
         model.selection.subtract(gone)
