@@ -178,21 +178,51 @@ enum GaussianBlur {
         try run(input, sigma: sigma, alphaOnly: true, ctx: ctx)
     }
 
+    /// Above this sigma (texture px) the blur runs on a box-downsampled copy, `sigma / 4`× smaller
+    /// (at most 8×), which keeps large shadows cheap; the result is sampled back bilinearly.
+    static let downsampleAbove = 4.0
+
     static func run(_ input: any MTLTexture, sigma: Double, alphaOnly: Bool, ctx: EffectContext) throws
         -> any MTLTexture {
-        var fx = ctx.fx(input)
-        let s = max(sigma, 0)
+        let s0 = max(sigma, 0)
+        let f = s0 > downsampleAbove ? min(Int((s0 / downsampleAbove).rounded(.up)), 8) : 1
+        var src = input
+        if f > 1 {
+            let size = (max(input.width / f, 1), max(input.height / f, 1))
+            var d = ctx.fx(input)
+            d.size = SIMD2(Float(size.0), Float(size.1))
+            d.set(0, SIMD4(Float(f), alphaOnly ? 1 : 0, 0, 0))
+            src = try ctx.gpu.pass("downsample_fs", textures: [input], fx: d, size: size,
+                                   commandBuffer: ctx.commandBuffer)
+        }
+        var fx = ctx.fx(src)
+        let s = s0 * Double(src.width) / Double(max(input.width, 1))
         let reach = ceil(3 * s)
         let taps = Float(min(max(reach, 0), Double(maxTaps)))
         let step = taps > 0 ? Float(reach) / taps : 1
         fx.set(0, SIMD4(Float(s), taps, step, alphaOnly ? 1 : 0))
         fx.set(1, SIMD4(1, 0, 0, 0))
-        let h = try ctx.gpu.pass("blur_fs", textures: [input], fx: fx, commandBuffer: ctx.commandBuffer)
+        let h = try ctx.gpu.pass("blur_fs", textures: [src], fx: fx, commandBuffer: ctx.commandBuffer)
         fx.set(1, SIMD4(0, 1, 0, 0))
         return try ctx.gpu.pass("blur_fs", textures: [h], fx: fx, commandBuffer: ctx.commandBuffer)
     }
 
     static let source = """
+    // Box-filters f×f input pixels into each output pixel (fx.size = output size).
+    fragment float4 downsample_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
+                                  texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+        int f = int(fx.p[0].x);
+        float4 acc = float4(0.0);
+        for (int j = 0; j < f; j++) {
+            for (int i = 0; i < f; i++) {
+                float2 o = (float2(i, j) + 0.5) / float(f) - 0.5;
+                acc += src.sample(smp, in.uv + o / fx.size);
+            }
+        }
+        float4 c = acc / float(f * f);
+        return fx.p[0].y > 0.5 ? float4(0, 0, 0, c.a) : c;
+    }
+
     fragment float4 blur_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
                             texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
         float sigma = fx.p[0].x;
