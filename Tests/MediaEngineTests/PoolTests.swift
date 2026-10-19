@@ -3,6 +3,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
+import WizRecTestSupport
 @testable import MediaEngine
 
 private func secs(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: 600_000) }

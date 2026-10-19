@@ -5,6 +5,7 @@ import MediaEngine
 import RenderEngine
 import TestGenKit
 import Testing
+import WizRecTestSupport
 import TSCProjKit
 @testable import Exporter
 

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import WizRecTestSupport
 import TimelineEngine
 import TSCProjKit
 @testable import TimelineUI
