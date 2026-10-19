@@ -92,12 +92,14 @@ import TSCProjKit
         #expect(got == expected)
     }
 
-    @Test func rejectsNonBGRABuffers() async throws {
+    @Test func rejectsUnsupportedBuffers() async throws {
         let src = Self.source()
         let renderer = OfflineRenderer(scene: try scene(), pool: MediaPool()) { _ in src }
         var pb: CVPixelBuffer?
         CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &pb)
-        nonisolated(unsafe) let buffer = try #require(pb)
-        await #expect(throws: RenderError.self) { try await renderer.render(at: 0, into: buffer) }
+        nonisolated(unsafe) let noSurface = try #require(pb)  // 4:2:0 is supported, but not without IOSurface
+        await #expect(throws: RenderError.self) { try await renderer.render(at: 0, into: noSurface) }
+        nonisolated(unsafe) let half = try Buffers.make(16, 16, format: kCVPixelFormatType_64RGBAHalf)
+        await #expect(throws: RenderError.self) { try await renderer.render(at: 0, into: half) }
     }
 }

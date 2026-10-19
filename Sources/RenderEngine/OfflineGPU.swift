@@ -11,6 +11,10 @@ final class OfflineGPU {
     let compositor: Compositor
     /// Wraps caller-owned pixel buffers as render targets (zero-copy).
     private var targetCache: CVMetalTextureCache?
+    /// BT.709 4:2:0 conversion, built on first use.
+    private var yuv: YUVOutput?
+    /// Intermediate BGRA canvases for 4:2:0 output.
+    private let rgbPool: TexturePool
 
     init() throws {
         guard let d = MTLCreateSystemDefaultDevice(), let q = d.makeCommandQueue() else {
@@ -18,27 +22,51 @@ final class OfflineGPU {
         }
         device = d; queue = q
         compositor = try Compositor(device: d)
+        rgbPool = TexturePool(device: d)
         CVMetalTextureCacheCreate(nil, nil, d, nil, &targetCache)
     }
 
-    /// Encodes `plan` straight into `pixelBuffer` (32BGRA, IOSurface-backed), commits, and calls
-    /// `done` from the GPU completion handler (nil = success). Returns before the GPU finishes.
+    /// Encodes `plan` into `pixelBuffer`, commits, and calls `done` from the GPU completion
+    /// handler (nil = success). Returns before the GPU finishes. The buffer must be IOSurface-backed
+    /// and either 32BGRA (drawn straight into, zero-copy) or BT.709 4:2:0 bi-planar `420v`/`420f`
+    /// (composited into a pooled BGRA texture, then converted by `YUVOutput`).
     func submit(_ plan: RenderPlan, frames: [FrameRequest: VideoFrame], into pixelBuffer: CVPixelBuffer,
                 done: @escaping @Sendable ((any Error)?) -> Void) throws {
-        guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA,
+        let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        guard format == kCVPixelFormatType_32BGRA || YUVOutput.formats.contains(format),
               CVPixelBufferGetIOSurface(pixelBuffer) != nil, let cache = targetCache else {
             throw RenderError.notImplemented
         }
         CVMetalTextureCacheFlush(cache, 0)  // drop wrappers of buffers already released
-        let w = CVPixelBufferGetWidth(pixelBuffer), h = CVPixelBufferGetHeight(pixelBuffer)
-        var cvTexture: CVMetalTexture?
-        CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixelBuffer, nil, .bgra8Unorm, w, h, 0, &cvTexture)
-        guard let cvTexture, let target = CVMetalTextureGetTexture(cvTexture),
-              let cb = queue.makeCommandBuffer() else { throw RenderError.noMetalDevice }
-        try compositor.encode(plan, frames: frames, into: target, commandBuffer: cb)
-        let keep = GPURetainer([cvTexture, pixelBuffer])
+        func wrap(_ plane: Int, _ f: MTLPixelFormat) throws -> (CVMetalTexture, any MTLTexture) {
+            let planar = CVPixelBufferIsPlanar(pixelBuffer)
+            let w = planar ? CVPixelBufferGetWidthOfPlane(pixelBuffer, plane) : CVPixelBufferGetWidth(pixelBuffer)
+            let h = planar ? CVPixelBufferGetHeightOfPlane(pixelBuffer, plane) : CVPixelBufferGetHeight(pixelBuffer)
+            var cv: CVMetalTexture?
+            CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixelBuffer, nil, f, w, h, plane, &cv)
+            guard let cv, let t = CVMetalTextureGetTexture(cv) else { throw RenderError.noMetalDevice }
+            return (cv, t)
+        }
+        guard let cb = queue.makeCommandBuffer() else { throw RenderError.noMetalDevice }
+        var keep: [AnyObject] = [pixelBuffer]
+        if format == kCVPixelFormatType_32BGRA {
+            let (cv, target) = try wrap(0, .bgra8Unorm)
+            keep.append(cv)
+            try compositor.encode(plan, frames: frames, into: target, commandBuffer: cb)
+        } else {
+            if yuv == nil { yuv = try YUVOutput(device: device) }
+            guard let yuv else { throw RenderError.noMetalDevice }
+            let (cvY, luma) = try wrap(0, .r8Unorm)
+            let (cvC, chroma) = try wrap(1, .rg8Unorm)
+            keep += [cvY, cvC]
+            let rgb = try rgbPool.take(width: luma.width, height: luma.height, format: .bgra8Unorm, commandBuffer: cb)
+            try compositor.encode(plan, frames: frames, into: rgb, commandBuffer: cb)
+            try yuv.encode(from: rgb, luma: luma, chroma: chroma,
+                           fullRange: format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, commandBuffer: cb)
+        }
+        let retained = GPURetainer(keep)
         cb.addCompletedHandler { finished in
-            withExtendedLifetime(keep) { done(finished.error) }
+            withExtendedLifetime(retained) { done(finished.error) }
         }
         cb.commit()
     }

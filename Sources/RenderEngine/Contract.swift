@@ -402,9 +402,11 @@ public actor OfflineRenderer {
                                     height: max(Int(target.height.rounded()), 1))
     }
 
-    /// Renders the frame at timeline `ticks` into `pixelBuffer` (32BGRA, IOSurface-backed,
-    /// Metal-compatible, e.g. from an `AVAssetWriterInputPixelBufferAdaptor` pool); the canvas is
-    /// scaled to fit the buffer's size. Same frame rule and missing-media policy as `image(at:size:)`.
+    /// Renders the frame at timeline `ticks` into `pixelBuffer` (IOSurface-backed, Metal-compatible,
+    /// e.g. from an `AVAssetWriterInputPixelBufferAdaptor` pool); the canvas is scaled to fit the
+    /// buffer's size. Formats: 32BGRA (premultiplied), or BT.709 4:2:0 bi-planar `420v` (video
+    /// range) / `420f` (full range) converted on the GPU (see `YUVOutput`; alpha is dropped);
+    /// anything else throws `RenderError.notImplemented`. Same frame rule and missing-media policy as `image(at:size:)`.
     /// Suspends (never blocks) until the GPU finishes, so calls may overlap: frames for the next
     /// call are fetched while the GPU draws this one. The caller must not read or write the buffer
     /// until the call returns (CVPixelBuffer is not `Sendable`: hand it over from a
