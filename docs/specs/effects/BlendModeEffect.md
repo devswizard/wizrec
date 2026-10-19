@@ -40,8 +40,15 @@ blended overlapping RGB discs [inf]. Clip metadata says
 B = composite of everything below this layer (same parent canvas)
 L = this layer after its earlier effects (straight colour, alpha a)
 blended = blendFn_mode(B, L)                     per channel, 0–1 sRGB-encoded [inf]
-out = B·(1 − a·i) + mix(L, blended, i)·a·i   where i = intensity
+C = mix(L, blended, i)                           where i = intensity
+out = B·(1 − a) + C·a                            source-over with the layer's alpha a  [inf]
 ```
+
+At i = 0 this is plain normal compositing, and at i = 1 the full blend. The
+layer never disappears. This matches BlendModePreview, which ramps
+`intensity` 0 → 1 while the plain copies fade out. (Corrected 2026-10-19:
+the first version of this formula scaled the alpha by `i`, which hid the
+layer at i = 0. Wait for EF5 before treating this as settled.)
 
 - **Mode numbering.** The usual Photoshop/PDF list (normal, darken,
   multiply, colour burn, linear burn, lighten, screen, colour dodge, linear
