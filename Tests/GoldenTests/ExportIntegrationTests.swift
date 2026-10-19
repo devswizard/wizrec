@@ -182,10 +182,16 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         return try #require(src.info.streams.first { $0.kind == .audio }, "no audio in \(url.lastPathComponent)").sampleRate
     }
 
+    /// The AAC/MP3 sample-rate table rate used for a project rate `r`: the next table rate ≥ r,
+    /// 48 kHz above the table (export4 rate caps).
+    private func aacRate(_ r: Double) -> Double {
+        [8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000].first { $0 >= r } ?? 48_000
+    }
+
     /// Edited project → `audioFormatSampleRate` changed → save → reopen → export: every audio
     /// output (WAV, M4A, MP4's audio track) is written at the reopened project's rate; invalid
     /// rates fall back to 48 kHz. The click stays at 1.0 s ± 1 frame at the new rate.
-    @Test(arguments: [("22050", 22_050.0), ("32000", 32_000.0), ("44100", 44_100.0),
+    @Test(arguments: [("22050", 22_050.0), ("32000", 32_000.0), ("37000", 37_000.0), ("44100", 44_100.0),
                       ("\"abc\"", 48_000.0), ("1000000", 48_000.0)])
     func exportUsesReopenedProjectSampleRate(lexeme: String, expected: Double) async throws {
         let dir = try scratchDir("exp-rate")
@@ -211,7 +217,9 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
                 Issue.record("\(name) at \(lexeme) Hz: \(error)")
                 continue
             }
-            #expect(try await audioRate(out) == expected, "\(name) at \(lexeme)")
+            // PCM keeps the exact rate; AAC takes the next table rate at or above it.
+            let want = name == "out.wav" ? expected : aacRate(expected)
+            #expect(try await audioRate(out) == want, "\(name) at \(lexeme)")
         }
         // Sync at the new rate: decode the WAV at its own rate and find the click.
         let src = try await MediaPool(diskCacheDirectory: nil).source(for: dir.appendingPathComponent("out.wav"))
