@@ -4,6 +4,7 @@
 import CaptionLayout
 import CoreGraphics
 import CoreMedia
+import CoreVideo
 import Foundation
 import MediaEngine
 import Metal
@@ -399,5 +400,28 @@ public actor OfflineRenderer {
         return try gpu.render(plan, frames: fetched,
                                     width: max(Int(target.width.rounded()), 1),
                                     height: max(Int(target.height.rounded()), 1))
+    }
+
+    /// Renders the frame at timeline `ticks` into `pixelBuffer` (32BGRA, IOSurface-backed,
+    /// Metal-compatible, e.g. from an `AVAssetWriterInputPixelBufferAdaptor` pool); the canvas is
+    /// scaled to fit the buffer's size. Same frame rule and missing-media policy as `image(at:size:)`.
+    /// Suspends (never blocks) until the GPU finishes, so calls may overlap: frames for the next
+    /// call are fetched while the GPU draws this one. The caller must not read or write the buffer
+    /// until the call returns (CVPixelBuffer is not `Sendable`: hand it over from a
+    /// `nonisolated(unsafe) let` or an owning wrapper).
+    public func render(at ticks: Int64, into pixelBuffer: CVPixelBuffer) async throws {
+        if gpu == nil { gpu = try OfflineGPU() }
+        guard let gpu else { throw RenderError.noMetalDevice }
+        let plan = scene.evaluate(at: ticks)
+        let fetched = try await OfflineGPU.fetch(plan.frameRequests, using: frames)
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+            do {
+                try gpu.submit(plan, frames: fetched, into: pixelBuffer) { error in
+                    if let error { c.resume(throwing: error) } else { c.resume() }
+                }
+            } catch {
+                c.resume(throwing: error)
+            }
+        }
     }
 }
