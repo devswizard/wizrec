@@ -284,30 +284,14 @@ final class FrameConverter {
         guard let dy = CVPixelBufferGetBaseAddressOfPlane(dst, 0), let dc = CVPixelBufferGetBaseAddressOfPlane(dst, 1) else {
             throw MediaError.decodeFailed("staging buffer has no memory")
         }
-        let ry = CVPixelBufferGetBytesPerRowOfPlane(dst, 0), rcb = CVPixelBufferGetBytesPerRowOfPlane(dst, 1)
         let cwid = min((w + (1 << sf.cw) - 1) >> sf.cw, CVPixelBufferGetWidthOfPlane(dst, 1))
         let chgt = min((h + (1 << sf.ch) - 1) >> sf.ch, CVPixelBufferGetHeightOfPlane(dst, 1))
-        if sf.depth == 8 {
-            for y in 0..<h { (dy + y * ry).copyMemory(from: sy + y * ly, byteCount: w) }
-            for y in 0..<chgt {
-                let u = su + y * lu, v = sv + y * lv
-                let d = (dc + y * rcb).assumingMemoryBound(to: UInt8.self)
-                for x in 0..<cwid { d[2 * x] = u[x]; d[2 * x + 1] = v[x] }
-            }
-        } else {
-            let shift = UInt16(16 - sf.depth)
-            for y in 0..<h {
-                let s = UnsafeRawPointer(sy + y * ly).assumingMemoryBound(to: UInt16.self)
-                let d = (dy + y * ry).assumingMemoryBound(to: UInt16.self)
-                for x in 0..<w { d[x] = s[x] << shift }
-            }
-            for y in 0..<chgt {
-                let u = UnsafeRawPointer(su + y * lu).assumingMemoryBound(to: UInt16.self)
-                let v = UnsafeRawPointer(sv + y * lv).assumingMemoryBound(to: UInt16.self)
-                let d = (dc + y * rcb).assumingMemoryBound(to: UInt16.self)
-                for x in 0..<cwid { d[2 * x] = u[x] << shift; d[2 * x + 1] = v[x] << shift }
-            }
-        }
+        let planes = StagingCopy.Planes(
+            y: UnsafeRawPointer(sy), yRowBytes: ly, cb: UnsafeRawPointer(su), cbRowBytes: lu,
+            cr: UnsafeRawPointer(sv), crRowBytes: lv, width: w, height: h, chromaWidth: cwid, chromaHeight: chgt,
+            depth: sf.depth, luma: dy, lumaRowBytes: CVPixelBufferGetBytesPerRowOfPlane(dst, 0),
+            chroma: dc, chromaRowBytes: CVPixelBufferGetBytesPerRowOfPlane(dst, 1))
+        StagingCopy.copy(planes)
         return dst
     }
 
