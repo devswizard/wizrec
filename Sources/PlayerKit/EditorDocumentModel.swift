@@ -361,6 +361,86 @@ public final class EditorDocumentModel {
         return id
     }
 
+    // MARK: Placing inside an open group
+
+    /// What goes into a group: bin sources, or files to import first.
+    public enum GroupPlacement: Sendable, Equatable {
+        case sources([Int64])
+        case files([URL])
+    }
+
+    /// Places `items` on inner track `track` of group `groupID`, the first at `innerTicks`
+    /// (ticks on the group's inner timeline), each next one where the previous ends. Files are
+    /// imported into the bin in the same step. One undo step; returns the new clip ids in order.
+    @discardableResult
+    public func placeInGroup(_ items: GroupPlacement, group groupID: Int64, track: Int,
+                             at innerTicks: Int64) async throws -> [Int64] {
+        var builders: [CompoundCommand.Builder] = []
+        var inserts: [Int] = []
+        switch items {
+        case .sources(let ids):
+            for id in ids {
+                guard project.source(id: id) != nil else { throw DocumentError.noSuchSource(id) }
+                inserts.append(builders.count)
+                builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
+                                                 previous: inserts.dropLast().last) { _ in id })
+            }
+        case .files(let files):
+            for file in files {
+                let info: MediaInfo
+                do { info = try await thumbnailPool.probe(file) } catch {
+                    throw DocumentError.unsupportedMedia(file.lastPathComponent)
+                }
+                guard info.kind != .unknown, info.kind == .image || info.kind == .shader || !info.streams.isEmpty else {
+                    throw DocumentError.unsupportedMedia(file.lastPathComponent)
+                }
+                let src = try bundle.importFile(file)
+                let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                let d = SourceDescriptor(info: info, src: src, lastModified: date)
+                let addIndex = builders.count
+                builders.append { _, _ in AddSource(d) }
+                inserts.append(builders.count)
+                builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
+                                                 previous: inserts.dropLast().last) { done in
+                    guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
+                    return id
+                })
+            }
+        }
+        guard !builders.isEmpty else { return [] }
+        let c = CompoundCommand(name: "Add to Group", builders)
+        try perform(c)
+        return try inserts.map { i in
+            guard let id = (c.steps[i] as? InsertClipInGroup)?.clipID else { throw EditError.invalid("no clip id") }
+            return id
+        }
+    }
+
+    /// One `InsertClipInGroup` step: at `first`, or at the end of the clip inserted by step `previous`.
+    private static func groupInsert(group: Int64, track: Int, first: Int64, previous: Int?,
+                                    source: @escaping @MainActor ([any EditCommand]) throws -> Int64)
+        -> CompoundCommand.Builder {
+        { project, done in
+            var start = first
+            if let p = previous, let prev = (done[p] as? InsertClipInGroup)?.clipID,
+               let end = innerClipEnd(prev, in: project) {
+                start = end
+            }
+            return InsertClipInGroup(sourceID: try source(done), group: group, track: track, at: .inner(start))
+        }
+    }
+
+    /// End (inner ticks) of clip `id` nested anywhere in a group.
+    static func innerClipEnd(_ id: Int64, in project: Project) -> Int64? {
+        var end: Int64?
+        for t in project.tracks {
+            for c in t.clips {
+                c.walk { inner, depth in if depth > 0, inner.id == id, end == nil { end = inner.end } }
+            }
+        }
+        return end
+    }
+
     // MARK: Relink
 
     /// Points source `sourceID` at `file` (no copy). `src` becomes bundle-relative

@@ -108,7 +108,9 @@ extension EditorWindowController {
                 try await withTaskCancellationHandler {
                     try await session.run()
                 } onCancel: {
-                    Task { await session.cancel() }
+                    // run() throws once the partial output is removed; ExportQueue.cancelAllAndWait
+                    // awaits that, so closing the window never leaves an unfinished file behind.
+                    Task { await session.cancelAndWait() }
                 }
                 progress(1)
             } catch ExportError.cancelled {
@@ -124,7 +126,7 @@ extension EditorWindowController {
     /// Exports a close or quit would cancel; 0 when none or when the user already agreed.
     var exportsBlockingClose: Int {
         if case .ask(let n) = exportCloseGuard.decide(activeJobs: exportQueue.activeJobCount,
-                                                       scripted: options.exportPath != nil) { return n }
+                                                       scripted: options.isScripted) { return n }
         return 0
     }
 

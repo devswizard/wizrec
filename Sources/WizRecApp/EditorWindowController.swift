@@ -98,6 +98,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             }
             return true
         }
+        timelineModel.onGroupDrop = { [weak self] payload, target in
+            guard let self else { return false }
+            switch payload {
+            case .files(let urls): self.placeInGroup(.files(urls), target)
+            case .sources(let ids): self.placeInGroup(.sources(ids), target)
+            }
+            return true
+        }
         updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
         inspector.timebase = model.project.timebase
@@ -203,13 +211,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
               + "canvas=\(Int(model.scene.canvasSize.width))x\(Int(model.scene.canvasSize.height)) "
               + "fps=\(model.scene.frameRate) frames=\(engine.grid.frameCount) missing=\(model.missing.count)")
         fflush(stdout)
-        if options.snapshotDir != nil || !options.importPaths.isEmpty || options.importCaptions != nil
-            || options.exportCaptions != nil || options.exportPath != nil {
+        if options.runsScript {
             Task { await runScript() }
-        } else {
-            if options.autoplay { engine.play() }
-            if !model.missing.isEmpty { showRelink(nil) }
+        } else if options.autoplay {
+            engine.play()
         }
+        if options.showsRelinkAtOpen(missing: model.missing.count) { showRelink(nil) }
     }
 
     override func windowTitle(forDocumentDisplayName displayName: String) -> String {
@@ -416,6 +423,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                     if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
                     select([clip])
                 }
+            }
+        }
+    }
+
+    /// Handles a drop inside an open group: files are imported, then everything is placed on
+    /// the group's inner track one after another (one undo step).
+    func placeInGroup(_ items: EditorDocumentModel.GroupPlacement, _ target: GroupDropTarget) {
+        if case .files = items { ui.isImporting = true }
+        Task {
+            defer { ui.isImporting = false }
+            do {
+                let ids = try await model.placeInGroup(items, group: target.group, track: target.track, at: target.ticks)
+                if let last = ids.last { select([last]) }
+            } catch {
+                ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
             }
         }
     }

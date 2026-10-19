@@ -18,9 +18,10 @@ transcripts.
 | Engine | Setup | Good for |
 |---|---|---|
 | **Apple Speech** (default) | Allow Speech Recognition when asked. For on-device use, download the language in System Settings ▸ Keyboard ▸ Dictation | Languages Apple supports on device |
-| **whisper.cpp** ⏳ | Install `whisper-cli` and a model (below) | Many more languages (including Bengali), accents, noisy audio |
+| **whisper.cpp** | Install `whisper-cli` and a model (below) | Many more languages (including Bengali), accents, noisy audio |
 
-⏳ Choosing the engine in Settings arrives in an upcoming version.
+Choose the engine in **Captions ▸ Speech Engine** or **Settings ▸ Captions**. Settings also
+picks the whisper.cpp model, shows the models folder, and takes a `whisper-cli` path.
 
 ### Setting up whisper.cpp
 

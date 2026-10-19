@@ -1,4 +1,5 @@
 import AppKit
+import Captions
 import TimelineUI
 
 @MainActor
@@ -66,6 +67,16 @@ enum MainMenu {
                          action: #selector(EditorWindowController.transcribeSelection(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Cancel Transcription"),
                          action: #selector(EditorWindowController.cancelTranscription(_:)), keyEquivalent: "")
+        // Speech engine (preference); AppDelegate checks the chosen one.
+        let engines = NSMenu(title: String(localized: "Speech Engine"))
+        for (title, id) in [(String(localized: "Apple Speech"), AppleSpeechRecognizer().id),
+                            (String(localized: "whisper.cpp"), WhisperCppRecognizer().id)] {
+            let item = engines.addItem(withTitle: title, action: #selector(AppDelegate.chooseSpeechEngine(_:)), keyEquivalent: "")
+            item.representedObject = id
+        }
+        engines.addItem(.separator())
+        engines.addItem(withTitle: String(localized: "Caption Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: "")
+        captions.addItem(withTitle: String(localized: "Speech Engine"), action: nil, keyEquivalent: "").submenu = engines
         captions.addItem(withTitle: String(localized: "Add Dynamic Captions"),
                          action: #selector(EditorWindowController.addDynamicCaptions(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Dynamic Caption Style…"),
@@ -93,6 +104,8 @@ enum MainMenu {
         timeline.addItem(withTitle: String(localized: "Extend Frame"), action: #selector(TimelineView.extendFrame(_:)), keyEquivalent: "")
         timeline.addItem(.separator())
         timeline.addItem(withTitle: String(localized: "Add Track"), action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
+        // Removes the selected clip's track (inside an open group: its inner track).
+        timeline.addItem(withTitle: String(localized: "Remove Track"), action: #selector(TimelineView.removeTrack(_:)), keyEquivalent: "")
         timeline.addItem(withTitle: String(localized: "Snapping"), action: #selector(TimelineView.toggleSnapping(_:)), keyEquivalent: "")
         timeline.addItem(.separator())
         timeline.addItem(withTitle: String(localized: "Zoom In"), action: #selector(TimelineView.zoomIn(_:)), keyEquivalent: "=")
