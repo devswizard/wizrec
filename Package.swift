@@ -33,7 +33,8 @@ let package = Package(
         .target(name: "RenderEngine", dependencies: ["TSCProjKit", "MediaEngine", "CaptionLayout", "WizRecAssets"]),
         .target(name: "TimelineEngine", dependencies: ["TSCProjKit"]),
         // M2: timeline view (agent "timelineui").
-        .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine"]),
+        .target(name: "TimelineUI", dependencies: ["TSCProjKit", "TimelineEngine", "MediaEngine", "RenderEngine",
+                                                   "WizRecAssets"]),
         // M7: screen/camera/mic capture + cursor log (agent "recorder").
         .target(name: "Recorder"),
         // recorder: manual capture check from Terminal (`swift run wizrec-record --list`).
@@ -88,7 +89,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TimelineUITests",
-            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit", "MediaEngine"],
+            dependencies: ["TimelineUI", "TimelineEngine", "TSCProjKit", "MediaEngine", "RenderEngine", "WizRecAssets"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
