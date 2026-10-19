@@ -77,6 +77,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             <key>UTTypeDescription</key><string>WizRec media bin item</string>
             <key>UTTypeConformsTo</key><array><string>public.data</string></array>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.devswizard.wizrec.effect</string>
+            <key>UTTypeDescription</key><string>WizRec library effect</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.devswizard.wizrec.transition</string>
+            <key>UTTypeDescription</key><string>WizRec library transition</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        </dict>
     </array>
     <key>UTImportedTypeDeclarations</key>
     <array>

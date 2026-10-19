@@ -1,0 +1,161 @@
+import PlayerKit
+import RenderEngine
+import SwiftUI
+import TimelineUI
+
+/// What the library panel can ask the editor to do.
+struct LibraryActions {
+    /// Double-click: apply the item to the timeline selection (effect → selected clips,
+    /// transition → selected clip edges). Returns false when nothing could take it.
+    var apply: (LibraryItem.Kind, String) -> Bool = { _, _ in false }
+}
+
+/// Left pane: the media bin plus the effects and transitions library (drag items onto
+/// the timeline; TimelineUI applies the preset defaults on drop).
+struct SidebarView: View {
+    enum Tab: String, CaseIterable, Identifiable {
+        case media, effects, transitions
+        var id: String { rawValue }
+        var title: LocalizedStringKey {
+            switch self {
+            case .media: "Media"
+            case .effects: "Effects"
+            case .transitions: "Transitions"
+            }
+        }
+    }
+
+    let model: EditorDocumentModel
+    let thumbnails: ThumbnailStore
+    let actions: BinActions
+    var library = LibraryActions()
+    @AppStorage("WizRec.SidebarTab") private var tab: Tab = .media
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Sidebar", selection: $tab) {
+                ForEach(Tab.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 8).padding(.top, 8)
+            switch tab {
+            case .media: MediaBinView(model: model, thumbnails: thumbnails, actions: actions)
+            case .effects:
+                LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
+                            hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
+            case .transitions:
+                LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
+                            hint: "Drag a transition onto the cut between two clips, or onto a clip's start or end.")
+            }
+        }
+    }
+
+    static func effectItems() -> [LibraryItem] {
+        TimelineLibrary.effects.map {
+            LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
+                        note: Compositor.renderedEffects.contains($0.name) ? nil : String(localized: "not previewed"))
+        }
+    }
+
+    static func transitionItems() -> [LibraryItem] {
+        TimelineLibrary.transitions.map {
+            LibraryItem(name: $0.name, title: $0.displayName, symbol: "square.split.2x1", note: nil)
+        }
+    }
+
+    static func symbol(effect: String) -> String {
+        switch effect {
+        case "RoundCorners": "rectangle.roundedtop"
+        case "DropShadow": "shadow"
+        case "Mask": "theatermasks"
+        case "ColorAdjustment": "slider.horizontal.3"
+        default: "wand.and.stars"
+        }
+    }
+}
+
+/// One library tile: `name` is what the project stores, `title` what the user sees.
+struct LibraryItem: Identifiable, Equatable {
+    enum Kind { case effect, transition }
+    var name: String
+    var title: String
+    var symbol: String
+    var note: String?
+    var id: String { name }
+}
+
+/// A searchable grid of draggable library tiles. The drag carries the kind's pasteboard
+/// type with the item's `name`; double-click applies it to the selection.
+struct LibraryList: View {
+    let items: [LibraryItem]
+    let kind: LibraryItem.Kind
+    let apply: (LibraryItem.Kind, String) -> Bool
+    let hint: LocalizedStringKey
+    @State private var query = ""
+    private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 8)]
+
+    private var type: String {
+        switch kind {
+        case .effect: TimelineUI.TimelineView.effectType.rawValue
+        case .transition: TimelineUI.TimelineView.transitionType.rawValue
+        }
+    }
+
+    private var shown: [LibraryItem] {
+        items.filter { LibrarySearch.matches(query, fields: [$0.title, LibrarySearch.words(ofIdentifier: $0.name)]) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Search", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 10).padding(.top, 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if shown.isEmpty {
+                        Text("No matches").font(.callout).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity).padding(.top, 20)
+                    }
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(shown) { tile($0) }
+                    }
+                }
+                .padding(10)
+            }
+        }
+    }
+
+    private func tile(_ item: LibraryItem) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.12))
+                Image(systemName: item.symbol).font(.system(size: 22)).foregroundStyle(Color.accentColor)
+            }
+            .aspectRatio(16 / 10, contentMode: .fit)
+            Text(item.title).font(.caption).lineLimit(1)
+            if let n = item.note { Text(n).font(.caption2).foregroundStyle(.orange) }
+        }
+        .contentShape(Rectangle())
+        .help(item.note.map { "\(item.title) — \($0): kept in the project, not drawn yet" } ?? item.title)
+        .onTapGesture(count: 2) { if !apply(kind, item.name) { NSSound.beep() } }
+        .onDrag { Self.provider(type: type, name: item.name) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.title)
+        .accessibilityValue(item.note ?? "")
+        .accessibilityHint(kind == .effect ? "Double-click to add to the selected clips" : "Double-click to add to the selected clip")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { _ = apply(kind, item.name) }
+    }
+
+    static func provider(type: String, name: String) -> NSItemProvider {
+        let p = NSItemProvider()
+        let data = Data(name.utf8)
+        p.registerDataRepresentation(forTypeIdentifier: type, visibility: .ownProcess) { done in
+            done(data, nil)
+            return nil
+        }
+        return p
+    }
+}

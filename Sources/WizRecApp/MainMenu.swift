@@ -21,7 +21,7 @@ enum MainMenu {
         file.addItem(withTitle: "New Project", action: #selector(NSDocumentController.newDocument(_:)), keyEquivalent: "n")
         file.addItem(withTitle: "Open…", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
         let recent = NSMenu(title: "Open Recent")
-        recent.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
+        recent.delegate = OpenRecentMenu.shared
         let recentItem = file.addItem(withTitle: "Open Recent", action: nil, keyEquivalent: "")
         recentItem.submenu = recent
         file.addItem(.separator())
@@ -65,6 +65,9 @@ enum MainMenu {
         timeline.addItem(withTitle: "Ripple Delete", action: #selector(TimelineView.rippleDelete(_:)),
                          keyEquivalent: String(Character(UnicodeScalar(NSBackspaceCharacter) ?? "\u{8}")))
             .keyEquivalentModifierMask = [.shift]
+        timeline.addItem(.separator())
+        timeline.addItem(withTitle: "Add Marker  (M)", action: #selector(TimelineView.addMarker(_:)), keyEquivalent: "")
+        timeline.addItem(withTitle: "Extend Frame", action: #selector(TimelineView.extendFrame(_:)), keyEquivalent: "")
         timeline.addItem(.separator())
         timeline.addItem(withTitle: "Add Track", action: #selector(TimelineView.addTrack(_:)), keyEquivalent: "")
         timeline.addItem(withTitle: "Snapping", action: #selector(TimelineView.toggleSnapping(_:)), keyEquivalent: "")

@@ -130,11 +130,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         center.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
 
-        let bin = NSHostingView(rootView: MediaBinView(model: model, thumbnails: thumbnails, actions: BinActions(
+        let bin = NSHostingView(rootView: SidebarView(model: model, thumbnails: thumbnails, actions: BinActions(
             importMedia: { [weak self] in self?.importMedia(nil) },
             importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
             insert: { [weak self] id in self?.insertSource(id) },
-            relink: { [weak self] id in self?.locate(id) })))
+            relink: { [weak self] id in self?.locate(id) }),
+            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false })))
         let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
@@ -177,6 +178,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             (root.arrangedSubviews.first as? EditorSplitView)?.applyDefaultsIfNeeded()
         }
         timelineView.zoomToFit(nil)
+        // Keep keyboard shortcuts (Space, S, M) live: the library search field must not grab focus.
+        window.makeFirstResponder(timelineView)
         startDisplayLink()
         installKeys()
         print("WizRec: opened \(model.bundle.directory.lastPathComponent) window=\(window.windowNumber) "
@@ -323,6 +326,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     func undoEdit() { run("Undo") { try model.undoLast() } }
     func redoEdit() { run("Redo") { try model.redoLast() } }
+
+    // MARK: Library
+
+    /// Library double-click: an effect goes onto every selected clip as one undo step.
+    /// Transitions are placed by dragging onto a cut or clip edge.
+    func applyLibraryItem(_ kind: LibraryItem.Kind, _ name: String) -> Bool {
+        switch kind {
+        case .effect:
+            let ids = timelineModel.selection.sorted()
+            guard !ids.isEmpty else {
+                ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
+                return false
+            }
+            let preset = TimelineLibrary.effect(named: name)
+            let cmds: [any EditCommand] = ids.map {
+                AddEffect(clipID: $0, name: name, category: preset?.category ?? "categoryVisualEffects",
+                          parameters: (preset?.parameters ?? []).map { ($0.key, $0.value) })
+            }
+            var ok = false
+            run("Add Effect") {
+                try model.perform(cmds.count == 1 ? cmds[0] : CompositeCommand(name: "Add Effect", cmds))
+                ok = true
+            }
+            return ok
+        case .transition:
+            ui.show(String(localized: "Drag the transition onto the cut between two clips, or onto a clip's start or end."))
+            return false
+        }
+    }
 
     // MARK: Import and placement
 
@@ -618,6 +650,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case (115, []), (123, [.command]): engine.goToStart()
         case (119, []), (124, [.command]): engine.goToEnd()
         case (1, []): timelineView.splitAtPlayhead(nil)       // S
+        case (46, []): timelineView.addMarker(nil)            // M
         default: return false
         }
         return true
@@ -733,11 +766,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     @objc func zoomOut(_ sender: Any?) { timelineView.zoomOut(sender) }
     @objc func zoomToFit(_ sender: Any?) { timelineView.zoomToFit(sender) }
     @objc func deselectAll(_ sender: Any?) { select([]) }
+    @objc func addMarker(_ sender: Any?) { timelineView.addMarker(sender) }
+    @objc func extendFrame(_ sender: Any?) { timelineView.extendFrame(sender) }
 
     private static let forwarded: Set<Selector> = [
         #selector(splitAtPlayhead(_:)), #selector(rippleDelete(_:)), #selector(addTrack(_:)),
         #selector(toggleSnapping(_:)), #selector(zoomIn(_:)), #selector(zoomOut(_:)), #selector(zoomToFit(_:)),
-        #selector(deselectAll(_:)),
+        #selector(deselectAll(_:)), #selector(addMarker(_:)), #selector(extendFrame(_:)),
     ]
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
