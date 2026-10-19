@@ -210,3 +210,33 @@ default), optional camera MP4, audio files, `cursor.json` in our own format
 (`docs/specs/cursor-log.md`, written by recorder). Recorder never touches
 projects; the app adds a result to a project via `importFile` + `AddSource` +
 `InsertClip`, under `recordings/<ts>/`.
+
+---
+
+# Contracts — wave B (M8 audio, M9 export, M10 captions)
+
+Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.swift`,
+`Sources/Captions/Contract.swift`.
+
+- **AudioEngine** builds its own `AudioScene` value projection (like
+  `SceneModel`): clip time mapping per time-mapping.md, `attributes.gain`
+  × `volume` (keyframed) × group/stitched gains (defaults.md), track mute/solo,
+  audio fades and transitions (`useAudioPreRoll`), loudness normalisation to
+  `targetLoudness` when `shouldApplyLoudnessNormalization`, clip speed
+  (pitch-preserving time-stretch), audio effects by `effectName` (noise
+  removal with an open model, e.g. RNNoise BSD-3, never TechSmith's VST).
+  `AudioMixer.render(range)` is deterministic and chunk-seamless. The player
+  (PlayerKit) and Exporter both use it.
+- **Exporter**: `ExportSession` drives `OfflineRenderer` frames + `AudioMixer`
+  audio into AVAssetWriter (H.264/HEVC/ProRes, VideoToolbox), GIF (palette per
+  segment) and audio-only (m4a/wav; mp3 through libavcodec `libmp3lame`, which
+  the Homebrew FFmpeg already has — add `libavformat` muxing via CFFmpeg if
+  needed). Export frame N must equal the preview frame N; A/V sync within 1
+  frame. Progress + cancel (partial file removed).
+- **Captions**: `SpeechRecognizer` backends: Apple Speech on-device first (no
+  new dependency; needs Speech Recognition permission), whisper.cpp second
+  (MIT; ask the lead before installing anything or downloading models).
+  Transcripts are written via TimelineEngine commands that captions adds
+  (`ApplyTranscription` → `sourceBin[].sourceTracks[].parameters.transcription`
+  per captions.md; `AddCaptions`/dynamic-caption callouts). SRT/VTT import and
+  export.

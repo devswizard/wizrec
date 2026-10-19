@@ -42,7 +42,7 @@ let package = Package(
         // M9: MP4/MOV/GIF/audio export (agent "export").
         .target(name: "Exporter", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "AudioEngine"]),
         // M10: transcription + captions (agent "captions").
-        .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine"]),
+        .target(name: "Captions", dependencies: ["TSCProjKit", "MediaEngine", "TimelineEngine"]),
         .executableTarget(name: "tscproj", dependencies: ["TSCProjKit"]),
         // qa: synthetic test media + golden test-project generator (library shared with the tests).
         .target(name: "TestGenKit", dependencies: ["TSCProjKit"]),
@@ -84,8 +84,8 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
-        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit"]),
-        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit"]),
+        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine"]),
+        .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine"]),
         .testTarget(name: "CaptionsTests", dependencies: ["Captions", "TSCProjKit"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
