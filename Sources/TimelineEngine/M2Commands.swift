@@ -18,7 +18,9 @@ import TSCProjKit
 ///   [obs, edit-semantics.md ED0]; open-ended video (shader backgrounds,
 ///   `range` end ≥ 2^61) gets 60 s [obs, shader-backgrounds.md SH2]. `scale0/1` = `metadata.default-scale` = min(1, fit)
 ///   (transform.md §3). Visual clips get `metadata.lockAspectRatio` true
-///   [obs, ED0]; audio-only clips do not [?]. `start` snaps to the nearest
+///   [obs, ED0]; audio-only clips do not [?]. A video-only source with an `effectDef`
+///   (shader background) gives the clip a `sourceEffect` at its defaults, after
+///   `parameters` [obs, shader-backgrounds.md §6, SH2]. `start` snaps to the nearest
 ///   frame [obs]; overlap throws.
 /// - **DeleteClips**: clips on any track (top level or in groups);
 ///   transitions that reference a deleted clip are removed. With `ripple`,
@@ -143,7 +145,8 @@ enum M2 {
         } else if let v = video {
             let s = scale(v)
             clip = MediaJSON.videoClip(id: take(), type: videoType, src: sourceID, stream: v, ident: ident,
-                                       scale: s, timing: timing, metadata: MediaJSON.metadata(defaultScale: s, lockAspect: true))
+                                       scale: s, timing: timing, metadata: MediaJSON.metadata(defaultScale: s, lockAspect: true),
+                                       sourceEffect: ShaderSource.sourceEffect(for: source.object))
         } else if let a = audio {
             clip = MediaJSON.audioClip(id: take(), src: sourceID, stream: a, ident: ident,
                                        channels: Int(streams[a].channels), timing: timing,
