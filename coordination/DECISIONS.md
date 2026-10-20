@@ -187,3 +187,22 @@ Dated log. Newest last.
 - **2026-10-20 · No Apple Developer account (user):** releases are ad-hoc
   signed, never notarized; README documents the Gatekeeper "Open" step.
   Developer ID is no longer a pending item.
+- **2026-10-20 · No AI attribution on GitHub (user, session 7):** no
+  `Co-Authored-By: Claude…` or "Generated with…" lines in commits, merges,
+  tags, PRs or release notes. History rewritten with `git filter-repo`
+  (messages only; every tree, date and author unchanged) and force-pushed
+  (`7c6dc50`). Backup: `~/WorkDir/vibe_coding/wizrec-pre-coauthor-strip.bundle`
+  and local branch `backup/pre-coauthor-strip`. A local `.git/hooks/pre-push`
+  refuses pushes that carry such lines.
+- **2026-10-20 · Shader background origin metadata [WizRec] (app, approved):**
+  `ShaderVidSource` (clip) and `RevBackground` (group) are written only when a
+  library background lands on inner track 0 of a `revMedia` group; never for
+  top-level placements, plain groups or imports. `RevBackground` is kept when
+  the clip is moved or deleted; `sourceEffect` keyframes add nothing to
+  `animationTracks.visual`. All three are [?] in shader-backgrounds.md §11.
+- **2026-10-20 · Local Swift 6.3 check (session 7):** swiftly 6.3.3 with the
+  Command Line Tools' macOS 26.5 SDK reproduces the CI compiler
+  (`DEVELOPER_DIR=/Library/Developer/CommandLineTools
+  SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swiftly run
+  swift build --build-tests --scratch-path <tmp> +6.3.3`; ~80 s clean). The
+  macOS 27 SDK does not work with 6.3.3 (Foundation fails to import).

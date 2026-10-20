@@ -39,7 +39,9 @@ macOS screen recorder and editor by Devs Wizard that opens and saves Camtasia
   implicit CGFloat→Double in tuple returns, explicit `withUnsafeBytes`
   closure types. Check new code with
   `swift build -Xswiftc -Xfrontend -Xswiftc -warn-long-expression-type-checking=40`
-  and, when installed, `swiftly run swift build +6.3.3`. Swift Testing. Doc comment on every public type with units. No force-unwraps
+  and with the CI compiler: `DEVELOPER_DIR=/Library/Developer/CommandLineTools
+  SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swiftly run
+  swift build --build-tests --scratch-path <tmp> +6.3.3`. Swift Testing. Doc comment on every public type with units. No force-unwraps
   on file data. `@unchecked Sendable` only with a justifying comment.
 - New dependencies must be GPL-3.0-compatible; ask the lead first.
 
