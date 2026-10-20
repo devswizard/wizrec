@@ -133,6 +133,24 @@ reads "none" on a clip without effects [obs].
 Each mapping above needs an exported reference to confirm the sound, which is
 blocked by the trial export gate [?].
 
+### 3.3 AI Noise Removal without the plug-in blob (answer to audio, 2026-10-20)
+
+Test (RT-019): a Camtasia-saved project was copied, and only the
+`metadata.ExtandableEffectData` object was removed from its
+`VSTEffect-DFN3NoiseRemoval` entry, leaving `effectName`, `bypassed`,
+`category` and `parameters` {`Amount` 0.8, `Bypass` 0.0}.
+
+| Check | Result | Tag |
+|---|---|---|
+| Opening it in Camtasia | No alert. Properties shows *AI Noise Removal* with Amount 80 | [obs] |
+| Saving it unchanged | The effect is kept, and Camtasia **regenerates** `metadata.ExtandableEffectData` (the same length and form as before) | [obs] |
+| Changing Amount to 50 in the panel, then saving | `Amount` 0.5 is saved, with a regenerated blob that differs from the 0.8 one in its first bytes. The clip's `metadata` also gains `default-VSTEffect-DFN3NoiseRemoval-Amount` "0.8": the value before the user's change, recorded as a string | [obs] |
+
+So the blob is **optional on input**. Camtasia rebuilds it from
+`parameters` and works normally. WizRec may write this effect **without**
+`metadata` when it creates one, and must still preserve an existing blob
+verbatim [obs]. WizRec must not compute or interpret the blob.
+
 ## 4. Fades and volume points
 
 Fades are **not** effects. They are written as keyframes of the clip's
