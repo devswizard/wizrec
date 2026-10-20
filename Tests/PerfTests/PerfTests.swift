@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import MediaEngine
+import Metal
 import RenderEngine
 import TestGenKit
 import Testing
@@ -107,6 +108,13 @@ struct PerfTests {
     /// 70 % opacity, rotated; and a still card. Measures evaluate → decode → composite → CGImage.
     @MainActor
     static func renderer(_ r: Perf.Resolution) throws -> (OfflineRenderer, Int64) {
+        let (scene, editRate) = try Self.scene(r)
+        return (OfflineRenderer(scene: scene, pool: MediaPool()), editRate)
+    }
+
+    /// The scene of `renderer(_:)` and the project's edit rate.
+    @MainActor
+    static func scene(_ r: Perf.Resolution) throws -> (SceneModel, Int64) {
         let (w, h) = r.size
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("wizrec-perf/project-\(r.rawValue)-\(UUID().uuidString).cmproj", isDirectory: true)
@@ -133,7 +141,7 @@ struct PerfTests {
         try b.build().serialized().write(to: dir.appendingPathComponent("project.tscproj"))
         let bundle = try ProjectBundle(url: dir)
         let scene = SceneModel(project: bundle.project, resolve: bundle.resolve)
-        return (OfflineRenderer(scene: scene, pool: MediaPool()), bundle.project.timebase.editRate)
+        return (scene, bundle.project.timebase.editRate)
     }
 
     @Test("render throughput (decode + composite + readback)", arguments: Perf.Resolution.allCases)
@@ -156,6 +164,45 @@ struct PerfTests {
                            r.rawValue, Double(n) / sequential.seconds, Double(n) / repeated.seconds,
                            repeated.seconds / Double(n) * 1000))
         #expect(sequential > .zero)
+    }
+
+    /// The playback path's GPU cost: `Compositor.encode` of the 3-layer plan into a
+    /// canvas-size texture (what `CanvasRenderer` draws per display frame), frames already
+    /// decoded, timed with command-buffer GPU timestamps. No readback.
+    @Test("playback composite GPU time", arguments: Perf.Resolution.allCases)
+    @MainActor
+    func playbackCompositeGPU(_ r: Perf.Resolution) async throws {
+        let (scene, editRate) = try Self.scene(r)
+        let pool = MediaPool()
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }
+        let compositor = try Compositor(device: device)
+        let plan = scene.evaluate(at: 30 * (editRate / Int64(Perf.fps)))
+        var frames: [FrameRequest: VideoFrame] = [:]
+        for req in plan.frameRequests { frames[req] = try await pool.frame(req) }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: r.size.w, height: r.size.h,
+                                                         mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead, .shaderWrite]
+        d.storageMode = .private
+        let target = try #require(device.makeTexture(descriptor: d))
+        func once() throws -> (gpu: Double, wall: Double) {
+            let t0 = DispatchTime.now().uptimeNanoseconds
+            let cb = try #require(queue.makeCommandBuffer())
+            try compositor.encode(plan, frames: frames, into: target, commandBuffer: cb)
+            cb.commit()
+            cb.waitUntilCompleted()
+            return ((cb.gpuEndTime - cb.gpuStartTime) * 1000, Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6)
+        }
+        for _ in 0..<5 { _ = try once() } // warm: pipelines, texture pool, image cache
+        let n = 60
+        var gpu: [Double] = [], wall: [Double] = []
+        for _ in 0..<n { let t = try once(); gpu.append(t.gpu); wall.append(t.wall) }
+        gpu.sort(); wall.sort()
+        Perf.report(String(format: "playback composite %@ 3 layers: GPU median %.2f ms (p95 %.2f), encode+GPU wall median %.2f ms, load %.1f",
+                           r.rawValue, gpu[n / 2], gpu[n * 95 / 100], wall[n / 2], LoadGate.loadAverage))
+        if Perf.enforce {
+            LoadGate.expect(wall[n / 2] < 16.7,
+                            String(format: "60 fps playback: composite %@ median %.2f ms ≥ 16.7 ms", r.rawValue, wall[n / 2]))
+        }
     }
 
     static let demoProject = FileManager.default.homeDirectoryForCurrentUser
