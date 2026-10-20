@@ -1,6 +1,8 @@
 import PlayerKit
 import SwiftUI
+import TimelineEngine
 import TimelineUI
+import WizRecAssets
 
 /// What the library panel can ask the editor to do.
 struct LibraryActions {
@@ -13,12 +15,14 @@ struct LibraryActions {
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, effects, transitions
+        case media, annotations, effects, audio, transitions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
             case .media: "Media"
+            case .annotations: "Annotations"
             case .effects: "Effects"
+            case .audio: "Audio"
             case .transitions: "Transitions"
             }
         }
@@ -43,6 +47,12 @@ struct SidebarView: View {
             case .effects:
                 LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
                             hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
+            case .annotations:
+                LibraryList(items: Self.calloutItems(), kind: .callout, apply: library.apply,
+                            hint: "Double-click to add at the playhead, above the clips there, for 5 seconds.")
+            case .audio:
+                LibraryList(items: Self.audioItems(), kind: .audio, apply: library.apply,
+                            hint: "Double-click to add to the selected clips' audio. Captions adds empty captions to type into.")
             case .transitions:
                 LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
                             hint: "Drag a transition onto the cut between two clips or a clip's start or end, or double-click to add it at the playhead cut or to the selected clips.")
@@ -54,6 +64,52 @@ struct SidebarView: View {
         TimelineLibrary.effects.map {
             LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
                         note: $0.isRendered ? nil : String(localized: "not previewed"))
+        }
+    }
+
+    /// WizRec's own callout presets (`AssetCatalog.callouts`), grouped by library tab.
+    static func calloutItems() -> [LibraryItem] {
+        AssetCatalog.callouts.map {
+            LibraryItem(name: $0.id, title: $0.displayName, symbol: symbol(calloutGroup: $0.group),
+                        section: calloutSection($0.group))
+        }
+    }
+
+    static func calloutSection(_ g: CalloutPreset.Group) -> String {
+        switch g {
+        case .shapes: String(localized: "Shapes")
+        case .bubbles: String(localized: "Bubbles")
+        case .arrows: String(localized: "Arrows & Lines")
+        case .text: String(localized: "Text")
+        case .regions: String(localized: "Blur & Highlight")
+        }
+    }
+
+    static func symbol(calloutGroup: CalloutPreset.Group) -> String {
+        switch calloutGroup {
+        case .shapes: "square.on.circle"
+        case .bubbles: "bubble.left"
+        case .arrows: "arrow.up.right"
+        case .text: "textformat"
+        case .regions: "eye.slash"
+        }
+    }
+
+    /// The Audio Effects panel items, in Camtasia's panel order (`AudioPanelItem`).
+    static func audioItems() -> [LibraryItem] {
+        AudioPanelItem.allCases.map { LibraryItem(name: $0.rawValue, title: $0.displayName, symbol: symbol(audio: $0)) }
+    }
+
+    static func symbol(audio: AudioPanelItem) -> String {
+        switch audio {
+        case .aiNoiseRemoval: "waveform.badge.minus"
+        case .audioCompression: "arrow.down.right.and.arrow.up.left"
+        case .captions: "captions.bubble"
+        case .clipSpeed: "speedometer"
+        case .emphasize: "speaker.wave.3"
+        case .fadeIn: "speaker.wave.1"
+        case .fadeOut: "speaker.slash"
+        case .pitch: "tuningfork"
         }
     }
 
@@ -100,7 +156,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition }
+    enum Kind { case effect, transition, audio, callout }
     var name: String
     var title: String
     var symbol: String
@@ -120,10 +176,12 @@ struct LibraryList: View {
     @State private var query = ""
     private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 8)]
 
-    private var type: String {
+    /// Drag pasteboard type; nil for audio items (double-click only: the timeline takes no audio drops).
+    private var type: String? {
         switch kind {
         case .effect: TimelineUI.TimelineView.effectType.rawValue
         case .transition: TimelineUI.TimelineView.transitionType.rawValue
+        case .audio, .callout: nil
         }
     }
 
@@ -184,14 +242,16 @@ struct LibraryList: View {
         .contentShape(Rectangle())
         .help(item.note.map { "\(item.title) — \($0): kept in the project, not drawn yet" } ?? item.title)
         .onTapGesture(count: 2) { if !apply(kind, item.name) { NSSound.beep() } }
-        .onDrag { Self.provider(type: type, name: item.name) }
+        .onDrag { type.map { Self.provider(type: $0, name: item.name) } ?? NSItemProvider() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.title)
         .accessibilityValue(item.note ?? "")
-        .accessibilityHint(kind == .effect ? "Double-click to add to the selected clips"
-                           : "Double-click to add at the cut under the playhead or to the selected clips")
+        .accessibilityHint(kind == .transition ? "Double-click to add at the cut under the playhead or to the selected clips"
+                           : kind == .callout ? "Double-click to add at the playhead"
+                           : "Double-click to add to the selected clips")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { _ = apply(kind, item.name) }
+        .accessibilityIdentifier("library.\(item.name)")
     }
 
     static func provider(type: String, name: String) -> NSItemProvider {

@@ -32,6 +32,13 @@ import Testing
         #expect(CaptionTarget.find(in: doc.project, selection: [img]).isEmpty)
         #expect(CaptionTarget.find(in: doc.project, selection: []).isEmpty)
         #expect(CaptionTarget.find(in: doc.project, selection: [a2]).first?.clipID == a2)
+        // Add Captions works per clip: both clips of the same source.
+        #expect(CaptionTarget.find(in: doc.project, selection: [a2, img, a1], perSourceTrack: false).map(\.clipID) == [a1, a2])
+        // Under the playhead (start ≤ t < end): a dynamic caption at the playhead.
+        #expect(CaptionTarget.under(ticks: tb.ticks(seconds: 0.5), in: doc.project).map(\.clipID) == [a1])
+        #expect(CaptionTarget.under(ticks: tb.ticks(seconds: 10), in: doc.project).map(\.clipID) == [a2])
+        #expect(CaptionTarget.under(ticks: tb.ticks(seconds: 5), in: doc.project).isEmpty)   // image only
+        #expect(CaptionTarget.under(ticks: tb.ticks(seconds: 30), in: doc.project).isEmpty)
 
         // Export range of a selection: from the earliest start to the latest end.
         let end = try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == a2 }?.end)

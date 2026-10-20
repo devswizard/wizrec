@@ -86,6 +86,8 @@ private struct CaptionSettings: View {
     @AppStorage(WhisperSettings.vadKey) private var vad = true
     @State private var models: [WhisperModel] = []
     @State private var vadModel: String?
+    /// The model "Automatic" loads now (auto-detected language).
+    @State private var autoModel: String?
     @State private var found: URL?
     @State private var status = ""
     @State private var ready = false
@@ -108,7 +110,7 @@ private struct CaptionSettings: View {
 
             Section("whisper.cpp") {
                 Picker("Model", selection: $model) {
-                    Text("Automatic").tag("")
+                    Text(autoModel.map { String(localized: "Automatic (\($0))") } ?? String(localized: "Automatic")).tag("")
                     ForEach(models, id: \.name) { m in
                         Text("\(m.name) (\(ByteCountFormatter.string(fromByteCount: m.bytes, countStyle: .file)))").tag(m.name)
                     }
@@ -157,6 +159,9 @@ private struct CaptionSettings: View {
         models = WhisperCppRecognizer.installedModels()
         vadModel = WhisperCppRecognizer.preferredVADModel(in: WhisperCppRecognizer.installedVADModels())?.name
         let w = WhisperCppRecognizer.fromDefaults()
+        var automatic = w
+        automatic.model = nil
+        autoModel = automatic.resolvedModel()?.name
         found = w.resolvedBinary()
         Task { @MainActor in
             let s = await w.status(language: nil)

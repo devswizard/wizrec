@@ -59,6 +59,15 @@
     "About WizRec" : {
 
     },
+    "Add Audio Point" : {
+
+    },
+    "Add Callout" : {
+
+    },
+    "Add Captions" : {
+
+    },
     "Add Dynamic Captions" : {
 
     },
@@ -95,10 +104,16 @@
     "Apply" : {
 
     },
+    "Arrows & Lines" : {
+
+    },
     "As preset" : {
 
     },
     "Automatic" : {
+
+    },
+    "Automatic (%arg)" : {
 
     },
     "Back" : {
@@ -110,10 +125,16 @@
     "Background color" : {
 
     },
+    "Blur & Highlight" : {
+
+    },
     "Box behind the word" : {
 
     },
     "Box color" : {
+
+    },
+    "Bubbles" : {
 
     },
     "Cancel" : {
@@ -547,16 +568,19 @@
     "Select All" : {
 
     },
-    "Select a dynamic caption on the timeline." : {
+    "Select a clip with audio under the playhead." : {
 
     },
-    "Select a transcribed audio clip on the timeline." : {
+    "Select a dynamic caption on the timeline." : {
 
     },
     "Select an audio clip, or a clip with audio, on the timeline." : {
 
     },
     "Select clips on the timeline first, or drag the effect onto a clip." : {
+
+    },
+    "Select clips with audio on the timeline first." : {
 
     },
     "Selected clips" : {
@@ -649,6 +673,9 @@
     "Stitch Selected Media" : {
 
     },
+    "Text" : {
+
+    },
     "Text color" : {
 
     },
@@ -662,9 +689,6 @@
 
     },
     "Transcribe Selected Audio" : {
-
-    },
-    "Transcribe the clip first (Captions ▸ Transcribe Selected Audio)." : {
 
     },
     "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas." : {

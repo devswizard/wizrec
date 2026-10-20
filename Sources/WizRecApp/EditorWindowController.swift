@@ -11,6 +11,7 @@ import TimelineEngine
 import TimelineUI
 import TSCProjKit
 import UniformTypeIdentifiers
+import WizRecAssets
 
 /// The editor window: media bin | canvas + transport | inspector, timeline below.
 ///
@@ -361,12 +362,50 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// Library double-click: an effect goes onto every selected clip; a transition onto the
     /// cut at the playhead, else both edges of each selected clip (one undo step each).
     func applyLibraryItem(_ kind: LibraryItem.Kind, _ name: String) -> Bool {
+        if kind == .audio, let item = AudioPanelItem(rawValue: name) { return applyAudioItem(item) }
+        if kind == .callout, let preset = AssetCatalog.callout(id: name) { return insertCallout(preset) }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
         }
         let ok = kind == .effect ? timelineView.applyEffect(named: name) : timelineView.applyTransition(named: name)
         return ok
+    }
+
+    /// Audio library double-click: the item on every selected clip with audio, one undo step.
+    /// Captions is Captions ▸ Add Captions.
+    func applyAudioItem(_ item: AudioPanelItem) -> Bool {
+        if item == .captions {
+            addEmptyCaptions(nil)
+            return true
+        }
+        guard let c = AudioPanel.command(item, project: model.project, selection: timelineModel.selection) else {
+            ui.show(String(localized: "Select clips with audio on the timeline first."))
+            return false
+        }
+        var ok = false
+        run(item.displayName) { try model.perform(c); ok = true }
+        return ok
+    }
+
+    /// Annotations library double-click: the callout at the playhead (5 s, above the clips
+    /// there), selected. One undo step.
+    func insertCallout(_ preset: CalloutPreset) -> Bool {
+        let c = CalloutInsertion.command(preset, project: model.project, playhead: engine.currentTicks)
+        var ok = false
+        run(String(localized: "Add Callout")) { try model.perform(c); ok = true }
+        if let id = c.clipID { select([id]) }
+        return ok
+    }
+
+    /// Edit ▸ Add Audio Point: a volume point at the playhead on the selected clips with audio.
+    @objc func addAudioPoint(_ sender: Any?) {
+        guard let c = AudioPanel.addPointCommand(project: model.project, selection: timelineModel.selection,
+                                                 playhead: engine.currentTicks) else {
+            ui.show(String(localized: "Select a clip with audio under the playhead."))
+            return
+        }
+        run(String(localized: "Add Audio Point")) { try model.perform(c) }
     }
 
     // MARK: Import and placement
@@ -860,6 +899,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             item.title = ui.showOverlay ? "Hide Performance Overlay" : "Show Performance Overlay"
         case #selector(delete(_:)):
             return !timelineModel.selection.isEmpty
+        case #selector(addAudioPoint(_:)):
+            return AudioPanel.audioClips(in: model.project, selection: timelineModel.selection)
+                .contains { $0.contains(engine.currentTicks) }
         case #selector(copy(_:)), #selector(cut(_:)):
             return !topLevelSelection.isEmpty
         case #selector(paste(_:)):
