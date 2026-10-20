@@ -51,7 +51,8 @@ public final class EditorDocumentModel {
     public private(set) var tracker = ChangeTracker()
     /// Bumps on every project change (edit, preview step, save-as reload).
     public private(set) var revision = 0
-    /// Decoded-frame pool for playback. One per document.
+    /// Decoded-frame pool for playback. One per document. HDR sources are tone-mapped on the
+    /// GPU (`.gpu`, for 4K60 HDR); export uses its own `.cpu` pool (the reference).
     @ObservationIgnored public let pool: MediaPool
     /// Separate pool for bin and filmstrip thumbnails, so they never move playback decoders.
     @ObservationIgnored public let thumbnailPool: MediaPool
@@ -71,7 +72,7 @@ public final class EditorDocumentModel {
         scene = SceneModel(project: bundle.project, resolve: bundle.resolve)
         audioScene = AudioScene(project: bundle.project, resolve: bundle.resolve)
         missing = Self.findMissing(bundle)
-        pool = MediaPool(cacheLimitBytes: cacheLimitBytes)
+        pool = MediaPool(cacheLimitBytes: cacheLimitBytes, hdrToneMapping: .gpu)
         thumbnailPool = MediaPool(cacheLimitBytes: 64 << 20)
         isUntitled = false
         observeUndo()
