@@ -234,3 +234,27 @@ click-through not done.
 - qa5 S4-QA-2: shared test-only target `WizRecTestSupport` (LoadGate), 6 copies removed, Captions cancel bound gated. 812 tests green.
 - Demo (built app, copy of demo project): snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 3.1 s.
 - **Session 4 complete: all agents DONE, all branches merged, 812 green, worktrees removed.** Follow-ups in docs/HANDOFF.md §0.
+
+## Session 5 (2026-10-20)
+
+Main green at start: 812 tests (20 known issues). User asked for automation
+instead of questions (DECISIONS 2026-10-20): whisper.cpp + `ggml-small.bin`
+installed by the lead; Camtasia driven by the researcher via UI scripting for
+references and experiments; app click-through automated; bundle ID
+`com.devswizard.WizRec`; Sparkle approved; 4K60 HDR → Metal tone map. Still
+needs the user: GitHub remote, Developer ID/notary profile, history rewrite.
+GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| S5-RES-1 | researcher | open | Automated Camtasia exports of the 15 golden cases + 11 sheets into `camtasia_rea_refs/<case>/reference.mp4` (+ ProRes `reference.mov` where possible); `scripts/golden.sh --status` shows them; watermark check |
+| S5-RES-2 | researcher | open | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
+| S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
+| S5-MED-1 | media | open | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
+| S5-MED-2 | media+render | open | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
+| S5-REN-1 | render | open | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
+| S5-CAP-1 | captions | open | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
+| S5-SHIP-1 | ship | open | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
+| S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
+| S5-TL-1 | timeline | waiting spec | Replace [inf] group-edit rules with X5 results |
+| S5-AUD-1 | audio | waiting spec | Replace [inf]/[WizRec] audio rules with AU1/AU2 spec |

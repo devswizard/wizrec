@@ -108,3 +108,34 @@ Dated log. Newest last.
 - **2026-10-19 · Test-only support target (session 4):** `WizRecTestSupport`
   (Tests/WizRecTestSupport) holds shared test helpers (`LoadGate`); test
   targets only, never a product dependency. (qa, approved.)
+- **2026-10-20 · Session 5: automate the user's pending items (user: "do
+  everything yourself, I want automated solutions").** The lead decides
+  instead of asking:
+  - **Camtasia runtime use approved for automation.** The researcher (only)
+    may drive the user's installed Camtasia through AppleScript / System
+    Events UI scripting to produce reference exports (session 1 Part A,
+    session 2 sheets), experiment saves (X1–X8, SH, TR, BH, EF0, CO3, CA, AU,
+    J) and the `.tscshadervid` acceptance check. Black-box only: outputs
+    (exports, saved projects, thumbnails), no binary analysis beyond the
+    existing `.trec` permission, nothing licensing-related. If an export
+    carries a trial watermark, stop and report; never work around it.
+    Projects are opened from copies under `camtasia_rea_refs/`; the user's
+    `~/Documents` projects are never opened in Camtasia.
+  - **GUI lock.** Only one agent drives the GUI at a time: take
+    `mkdir ~/WorkDir/vibe_coding/camtasia_rea_refs/.gui.lock` (atomic; retry
+    if it exists), write your name into `.gui.lock/owner`, `rm -r` it when
+    done. Hold it per task, not per session.
+  - **App click-through is automated** (UI scripting of `build/WizRec.app`
+    plus its scripted flags) by the app agent under the GUI lock.
+  - **whisper.cpp 1.9.5 + `ggml-small.bin`** installed by the lead (brew,
+    Hugging Face `ggerganov/whisper.cpp`); live test runs.
+  - **Bundle ID `com.devswizard.WizRec`** (Devs Wizard domain) is the default.
+  - **Sparkle (MIT) approved**, keys stay out of the repo (keychain / env).
+  - **4K60 HDR playback matters:** Metal compute tone map (render + media);
+    the CPU path stays the reference and both lanes stay identical.
+  - **Git history not rewritten.** The rewrite (`git filter-repo` dropping
+    the one historical blob with the fixture `ProjectThumbnail`) is
+    destructive and stays a user decision before the first push.
+  - **Still needs the user:** GitHub remote (lead may not use stored
+    credentials), Developer ID + notary profile (only a self-signed "WizRec
+    Dev" identity exists → ad-hoc/self-signed builds).
