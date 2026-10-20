@@ -134,8 +134,8 @@ import WizRecAssets
         // The group's RevBackground is untouched by the split.
         #expect(clip(gid, in: doc.project)?.metadata?["RevBackground"]?.string == "backgrounds/wizrec-stripes.tscshadervid")
 
-        // Nested clips can't be copied on their own (top level only): copy the Rev group, which
-        // carries RevBackground and both ShaderVidSource halves into the pasted copy.
+        // Copy the whole Rev group, which carries RevBackground and both ShaderVidSource halves
+        // into the pasted copy (a nested clip copied alone carries only its ShaderVidSource).
         let payload = try ClipboardPayload.copy(clipIDs: [gid], from: doc.project)
         let topTrack: Int = doc.project.tracks.count
         try doc.perform(AddTrack(at: topTrack))
