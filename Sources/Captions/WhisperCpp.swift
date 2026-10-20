@@ -21,6 +21,9 @@ public enum WhisperSettings {
     public static let modelKey = "captions.whisper.model"
     /// String: id of the transcription backend to use (`"apple-speech"`, `"whisper.cpp"`).
     public static let backendKey = "captions.backend"
+    /// Bool: use whisper's Silero voice-activity detection when a `ggml-silero-*.bin` model is
+    /// installed; missing = true.
+    public static let vadKey = "captions.whisper.vad"
 }
 
 /// A backend that reports progress inside one `transcribe` call; `Transcriber` uses it when present.
@@ -37,6 +40,12 @@ public protocol ProgressReportingBackend: TranscriptionBackend {
 ///   `maxChunkSeconds` per process run (the model loads once per run).
 /// - Output: `--output-json-full` with `--max-len 1 --split-on-word`, so each segment is one word;
 ///   times are seconds from the start of the buffer, `confidence` the mean token probability (0–1).
+/// - Timing [WizRec]: whisper alone puts words inside long pauses (measured with 1.9.5 and
+///   `ggml-small`: sentence starts up to 3 s early). With a Silero model installed and `useVAD`,
+///   whisper's `--vad` skips silences; otherwise the audio is compacted around energy-detected
+///   speech (`SpeechActivity`, `Compaction`) and times mapped back. Either way each word is then
+///   trimmed to its voiced frames and clamped to the buffer. Audio without any voiced frame
+///   returns no words and never runs whisper (it hallucinates text on silence).
 /// - Language: BCP-47 or bare code; only the language subtag goes to whisper (`"bn-IN"` → `bn`);
 ///   nil = auto-detect (`-l auto`).
 /// - Cancellation terminates the process.
@@ -56,22 +65,26 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
     public var modelsDirectory: URL
     /// Directories searched for the executable, in order.
     public var searchDirectories: [URL]
-    /// Threads passed to `-t`; nil = whisper's default.
+    /// Threads passed to `-t`; nil = whisper's default (4, the fastest measured on an M3 Pro).
     public var threads: Int?
+    /// Pass `--vad` with the installed Silero model (`installedVADModels`) when there is one.
+    public var useVAD: Bool
 
     public init(binary: URL? = nil, model: String? = nil,
                 modelsDirectory: URL = WhisperCppRecognizer.defaultModelsDirectory,
-                searchDirectories: [URL] = WhisperCppRecognizer.defaultSearchDirectories(), threads: Int? = nil) {
+                searchDirectories: [URL] = WhisperCppRecognizer.defaultSearchDirectories(), threads: Int? = nil,
+                useVAD: Bool = true) {
         self.binary = binary; self.model = model; self.modelsDirectory = modelsDirectory
-        self.searchDirectories = searchDirectories; self.threads = threads
+        self.searchDirectories = searchDirectories; self.threads = threads; self.useVAD = useVAD
     }
 
     /// A recognizer configured from the app's preferences (`WhisperSettings` keys).
     public static func fromDefaults(_ defaults: UserDefaults = .standard) -> WhisperCppRecognizer {
         let path = defaults.string(forKey: WhisperSettings.binaryPathKey).flatMap { $0.isEmpty ? nil : $0 }
         let model = defaults.string(forKey: WhisperSettings.modelKey).flatMap { $0.isEmpty ? nil : $0 }
+        let vad = defaults.object(forKey: WhisperSettings.vadKey) == nil || defaults.bool(forKey: WhisperSettings.vadKey)
         return WhisperCppRecognizer(binary: path.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
-                                    model: model)
+                                    model: model, useVAD: vad)
     }
 
     // MARK: Discovery
@@ -114,8 +127,25 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
         return fm.fileExists(atPath: u.path, isDirectory: &dir) && !dir.boolValue && fm.isExecutableFile(atPath: u.path)
     }
 
-    /// `ggml-*.bin` files in `directory`, sorted by name.
+    /// Transcription models: `ggml-*.bin` files in `directory`, sorted by name. Voice-activity
+    /// models (`ggml-silero-*.bin`, see `installedVADModels`) are not transcription models and are
+    /// left out, so a settings picker never offers them.
     public static func installedModels(in directory: URL = defaultModelsDirectory) -> [WhisperModel] {
+        ggmlFiles(in: directory).filter { !isVADModelName($0.name) }
+    }
+
+    /// Silero voice-activity models (`ggml-silero-*.bin`) in `directory`, sorted by name.
+    public static func installedVADModels(in directory: URL = defaultModelsDirectory) -> [WhisperModel] {
+        ggmlFiles(in: directory).filter { isVADModelName($0.name) }
+    }
+
+    /// The VAD model used for `--vad`: the last (newest-versioned by name) silero model, if any.
+    public static func preferredVADModel(in models: [WhisperModel]) -> WhisperModel? { models.last }
+
+    static func isVADModelName(_ name: String) -> Bool { name.lowercased().hasPrefix("silero") }
+
+    /// Non-empty `ggml-*.bin` files in `directory`, sorted by name.
+    private static func ggmlFiles(in directory: URL) -> [WhisperModel] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else {
             return []
@@ -152,6 +182,11 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
         let all = Self.installedModels(in: modelsDirectory)
         if let model { return all.first { $0.name == model } }
         return Self.preferredModel(in: all)
+    }
+
+    /// The Silero model `--vad` would use, nil when `useVAD` is off or none is installed.
+    public func resolvedVADModel() -> WhisperModel? {
+        useVAD ? Self.preferredVADModel(in: Self.installedVADModels(in: modelsDirectory)) : nil
     }
 
     /// True when both the executable and a model are present. Never prompts.
@@ -205,18 +240,23 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
         guard !samples.isEmpty else { return [] }
         let rate = audio.format.sampleRate
         let mono = rate == 16_000 ? samples : Transcriber.resample(samples, from: rate, to: 16_000)
+        let activity = SpeechActivity(mono, sampleRate: 16_000)
+        guard activity.hasSpeech else { progress?(1); return [] }
+        let vad = resolvedVADModel()
+        let compaction = vad == nil ? Compaction(mono, sampleRate: 16_000, regions: activity.regions()) : nil
 
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("wizrec-whisper-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: dir) }
         let wav = dir.appendingPathComponent("audio.wav")
-        try Self.wav16(mono, sampleRate: 16_000).write(to: wav)
+        try Self.wav16(compaction?.samples ?? mono, sampleRate: 16_000).write(to: wav)
         let prefix = dir.appendingPathComponent("out")
 
         var args = ["-m", model.url.path, "-f", wav.path, "-l", Self.whisperLanguage(language),
                     "-oj", "-ojf", "-of", prefix.path, "-ml", "1", "-sow", "-pp"]
         if let threads, threads > 0 { args += ["-t", String(threads)] }
+        if let vad { args += ["--vad", "-vm", vad.url.path] }
         let result = try await WhisperProcess.run(exe, arguments: args, progress: progress)
         try Task.checkCancellation()
         let json = prefix.appendingPathExtension("json")
@@ -226,7 +266,9 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
                                                  + (tail.isEmpty ? "" : ": \(tail)"))
         }
         progress?(1)
-        return try Self.parseJSON(data)
+        var words = try Self.parseJSON(data)
+        if let compaction { words = compaction.original(words) }
+        return words.map(activity.trim)
     }
 
     // MARK: Audio and output
