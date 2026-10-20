@@ -86,7 +86,8 @@ let package = Package(
         ),
         .testTarget(
             name: "PlayerKitTests",
-            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit"]
+            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit",
+                           "WizRecAssets"]
         ),
         .testTarget(
             name: "GoldenTests",
