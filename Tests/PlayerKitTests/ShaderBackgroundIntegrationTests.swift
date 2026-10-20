@@ -49,23 +49,15 @@ import WizRecAssets
         for s in [0.0, 1.0, 30.0, 59.9] { frames.append(try await render(doc.bundle, doc.project, at: s)) }
         let counts = frames.map(distinct)
         print("shader background \(asset.id): clip \(Double(clip.duration) / 705_600_000) s; distinct colours at 0/1/30/59.9 s = \(counts)")
-        #expect(counts[0] > 20 && counts[1] > 20, "background not drawn: \(counts)")
-        #expect(frames[0] != frames[1], "background does not animate")
+        #expect(clip.duration == 60 * 705_600_000, "shader clip is \(Double(clip.duration) / 705_600_000) s")
+        #expect(counts.allSatisfy { $0 > 20 }, "background not drawn: \(counts)")
+        #expect(frames[0] != frames[1] && frames[1] != frames[2], "background does not animate")
         let after = try await render(doc.bundle, doc.project, at: 60.5)
         #expect(distinct(after) <= 2, "background drawn past its 60 s clip")
-
-        // Placement reserves 60 s (SourceDescriptor.naturalDuration), but TimelineEngine's
-        // InsertClip still gives an endless video track the 5 s still default (M2Commands
-        // `stillSeconds`), so the placed clip is 5 s. Remove this wrapper once InsertClip
-        // uses 60 s for shader sources (S5 finding, reported to main).
-        withKnownIssue("InsertClip places shader backgrounds for 5 s, not 60 s") {
-            #expect(clip.duration == 60 * 705_600_000, "shader clip is \(Double(clip.duration) / 705_600_000) s")
-            #expect(counts[2] > 20 && counts[3] > 20, "background missing at 30 / 59.9 s: \(counts)")
-        }
 
         try doc.save()
         let reopened = try ProjectBundle(url: doc.bundle.directory)
         #expect(reopened.project.serialized() == doc.project.serialized())
-        #expect(try await render(reopened, reopened.project, at: 1) == frames[1], "render changed across save/reopen")
+        #expect(try await render(reopened, reopened.project, at: 30) == frames[2], "render changed across save/reopen")
     }
 }
