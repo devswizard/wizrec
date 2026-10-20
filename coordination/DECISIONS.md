@@ -144,3 +144,16 @@ Dated log. Newest last.
   are made; saved `ProjectThumbnail`s are not used as substitute golden
   references without the user's ruling. Researcher continues with save-only
   format experiments (JSON diffs) and the `.tscshadervid` acceptance check.
+- **2026-10-20 · GPU tone map (session 5):** `HDRToneMapping.gpu` (Metal,
+  CPU LUTs) is used only for playback; export, thumbnails and golden tests
+  use `.cpu`, the reference. Tolerance ≤ 1 code per channel and ≥ 99.9 %
+  exact (measured: byte-identical). Per-frame fallback to CPU on error.
+- **2026-10-20 · ProRes 4444 swscale in row bands** (byte-identical to one
+  pass; `WIZREC_SWS_BANDS=0` disables). (media, approved.)
+- **2026-10-20 · Signing without Developer ID:** self-signed/ad-hoc builds
+  skip hardened runtime (no Team ID → library validation would reject the
+  bundled dylibs); `WIZREC_HARDENED=1` forces it. Developer ID builds use it.
+- **2026-10-20 · whisper.cpp timing:** Silero `--vad` when a
+  `ggml-silero-*.bin` model is installed (`captions.whisper.vad`, default on),
+  else own energy speech detection with silence compaction and time remap;
+  silent audio is never sent to whisper. (captions, approved.)
