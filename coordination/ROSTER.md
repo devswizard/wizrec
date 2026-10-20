@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 5 agents all finished and their branches are merged; none is live.
+Live agents: session 7 table at the end.
 
 ## Session 3 (2026-10-19)
 
@@ -63,3 +63,15 @@ from the old worktrees, which are left untouched):
 
 Finished (idle, resumable): qa a3b5355b400e41f76, render a5fac92c06082ebec,
 captions af316ccda71a0a936, ship a5ee05d5f4a6cf8fc.
+
+## Session 7 (2026-10-20)
+
+User: no licensed exports, no thumbnails as references, Sparkle off, manual
+checks pending → no researcher/render/audio/captions.
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` (CI fixes) |
+| ship | aa28312e4ab9a18e3 | `agent/ship9` |
+| app | a9e409eb044fc2982 | `agent/app9` |
+| qa | a6b149a71c4ac904b | `agent/qa9` |

@@ -286,3 +286,19 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - app7 slice 3: transition insert defaults, caption spoken-language setting. qa6 slice 5: Extend Frame, callout, import-loudness integration tests; flaky watch 3/3 clean. 979 green.
 - Demo (built app, copy of demo project): snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 3.0 s.
 - **Session 5 complete: all agents DONE, all branches merged, 979 green.** Blocked: golden parity (trial export gate), remote, Developer ID, Sparkle feed, history rewrite. Follow-ups in docs/HANDOFF.md §0.
+
+# Session 7 — CI green on Swift 6.3, v0.1.0, follow-ups (2026-10-20)
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| S7-CI | main | claimed | CI green on GitHub (Xcode 26.6 / Swift 6.3.3) |
+| SHIP9-1 | ship | claimed | actions/checkout, cache, upload-artifact on current majors (no Node 20) |
+| SHIP9-2 | ship | claimed | `diskutil image` when available, hdiutil fallback; local DMG mounts + launches |
+| SHIP9-3 | ship | claimed | v0.1.0 release notes (What's new, install, known limits) |
+| SHIP9-4 | ship | todo | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
+| APP9-1 | app | claimed | inspector controls for a shader background's `sourceEffect` params |
+| APP9-2 | app | claimed | `ShaderVidSource` / group `RevBackground` metadata + timeline rules |
+| APP9-3 | app | claimed | scripted mouse double-click UI check on library tiles |
+| QA9-1 | qa | claimed | test targets type-check fast on Swift 6.3 |
+| QA9-2 | qa | claimed | integration tests for app8 and every session-7 merge |
+| QA9-3 | qa | claimed | flaky watch (3 runs) |
