@@ -59,7 +59,7 @@ Callout {
 | `stroke-color-red/-green/-blue/-opacity` | double | 0–1 | Outline colour |
 | `stroke-width` | double | 0, 2, 6 (shapes); 8 (arrows) | Outline width in callout px [inf] |
 | `stroke-style` | string | `solid`, `dash`, `dot`, `dashdot`, `dashdotdot` | Dash pattern [obs values]. Dash lengths [?] |
-| `corner-radius` | double | 6.0 (captions) | Box corner radius, px [inf] |
+| `corner-radius` | double | 6.0 (captions) | Box corner radius, px [inf]. Region callouts (blur, pixelate, spotlight, inverted highlighter) round their box too; clamped to half the short side, negative or non-finite = 0 [WizRec] |
 | `tail-x`, `tail-y` | double, or animatable `{defaultValue, interp: "eioe"}` on arrows | see §4 | Tail or arrow vector |
 | `text` | string | UTF-8 | Plain text content; `""` for shape-only callouts |
 | `font` | object | §5 | Base font |
