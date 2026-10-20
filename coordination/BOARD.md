@@ -292,13 +292,27 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | id | owner | status | acceptance |
 |---|---|---|---|
 | S7-CI | main | claimed | CI green on GitHub (Xcode 26.6 / Swift 6.3.3) |
-| SHIP9-1 | ship | claimed | actions/checkout, cache, upload-artifact on current majors (no Node 20) |
-| SHIP9-2 | ship | claimed | `diskutil image` when available, hdiutil fallback; local DMG mounts + launches |
-| SHIP9-3 | ship | claimed | v0.1.0 release notes (What's new, install, known limits) |
+| SHIP9-1 | ship | done | actions/checkout, cache, upload-artifact on current majors (no Node 20) |
+| SHIP9-2 | ship | done | `diskutil image` when available, hdiutil fallback; local DMG mounts + launches |
+| SHIP9-3 | ship | done | v0.1.0 release notes (What's new, install, known limits) |
 | SHIP9-4 | ship | todo | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
-| APP9-1 | app | claimed | inspector controls for a shader background's `sourceEffect` params |
-| APP9-2 | app | claimed | `ShaderVidSource` / group `RevBackground` metadata + timeline rules |
-| APP9-3 | app | claimed | scripted mouse double-click UI check on library tiles |
-| QA9-1 | qa | claimed | test targets type-check fast on Swift 6.3 |
-| QA9-2 | qa | claimed | integration tests for app8 and every session-7 merge |
-| QA9-3 | qa | claimed | flaky watch (3 runs) |
+| APP9-1 | app | done | inspector controls for a shader background's `sourceEffect` params |
+| APP9-2 | app | done | `ShaderVidSource` / group `RevBackground` metadata + timeline rules |
+| APP9-3 | app | done | scripted mouse double-click UI check on library tiles |
+| QA9-1 | qa | done | test targets type-check fast on Swift 6.3 |
+| QA9-2 | qa | done | integration tests for app8 and every session-7 merge |
+| QA9-3 | qa | done | flaky watch (3 runs) |
+
+## Session 7 wave 2 (user: "use multi agents")
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| APP10-1 | app | done | `--quit-after` runs quit without the unsaved-changes prompt (QuitPolicy) |
+| APP10-2 | app | done | UI checks poll for the window with a first-launch allowance; run-all 2× green |
+| TL10-1 | timeline | done | copy clips inside groups, paste at top level or into an open group [WizRec rules] |
+| REN10-1 | render | done | region callout corners: already on main (render7); rotation + degenerate radius tests added |
+| QA10-1 | qa | done | async MediaWriter for main-actor tests; every test wait bounded (Deadline/TestProcess/GPUWait) |
+| QA10-2 | qa | done | load / strict-pool runs measured; export suites' time limits raised to 6 min |
+| QA10-3 | qa | done | Swift 6.3.3 slow expressions listed; RGBAImage, TimelineLayout fixed |
+| DOC10-1 | docs | done | session-7 CLAUDE.md / HANDOFF / next prompt drafted |
+| S7-CI | main | in progress | CI: media suites serial; VM-specific test gates |
