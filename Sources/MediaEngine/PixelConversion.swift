@@ -71,6 +71,8 @@ final class FrameConverter {
     private var stagingKey: [Int] = []
     /// HDR (PQ/HLG) streams: tone-mapped to SDR BT.709 on the CPU from either lane's YCbCr.
     private let toneMapper: ToneMapper?
+    /// Metal tone mapper for `.gpu` pools (nil: CPU). Dropped after its first failure.
+    private var gpuToneMapper: MetalToneMapper?
     /// Full-size tone-mapped frames awaiting a scale (thumbnails of HDR streams).
     private var hdrPool: BGRAPool?
     /// HDR pictures with no bi-planar equivalent are first resampled to 4:4:4 10-bit.
@@ -82,14 +84,20 @@ final class FrameConverter {
                                                       AV_CODEC_ID_MPEG4, AV_CODEC_ID_MPEG2VIDEO, AV_CODEC_ID_VP9,
                                                       AV_CODEC_ID_AV1]
 
-    /// Converter for the stream described by `par`.
-    init(par: UnsafeMutablePointer<AVCodecParameters>) {
+    /// Converter for the stream described by `par`. `hdrToneMapping` picks where full-size HDR
+    /// frames are tone-mapped (scaled thumbnails always use the CPU reference).
+    init(par: UnsafeMutablePointer<AVCodecParameters>, hdrToneMapping: HDRToneMapping = .cpu) {
         codecID = par.pointee.codec_id
         sharesGPUConversion = Self.gpuConvertedCodecs.contains(codecID)
         tags = VTPictureDecoder.colourAttachments(par)
         fullRange = Self.isFullRange(par)
-        toneMapper = ToneMapper(par: par)
+        let tm = ToneMapper(par: par)
+        toneMapper = tm
+        gpuToneMapper = hdrToneMapping == .gpu ? tm.flatMap { MetalToneMapper($0) } : nil
     }
+
+    /// Full-size HDR frames are tone-mapped on the GPU.
+    var usesGPUToneMapping: Bool { gpuToneMapper != nil }
 
     /// Converter for a stream known only by its codec (swscale only).
     init(codec: AVCodecID) {
@@ -128,7 +136,16 @@ final class FrameConverter {
         guard w > 0, h > 0 else { throw MediaError.decodeFailed("empty frame") }
         if let tm = toneMapper {
             let dst = try buffer(width: w, height: h)
-            try tm.convert(try hdrSource(frame), into: dst)
+            let src = try hdrSource(frame)
+            if let gpu = gpuToneMapper {
+                do {
+                    try gpu.convert(src, into: dst)
+                    return dst
+                } catch {
+                    gpuToneMapper = nil // unsupported here: the CPU reference from now on
+                }
+            }
+            try tm.convert(src, into: dst)
             return dst
         }
         if let src = try yuvSource(frame) { return try transferVT(src) }

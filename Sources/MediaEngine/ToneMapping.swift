@@ -54,14 +54,14 @@ final class ToneMapper: Sendable {
     let fullRange: Bool
     /// Non-linear signal [0, 1] → linear (PQ: relative to 203 cd/m²; HLG: scene light [0, 1]),
     /// `eotfSize + 1` entries, nearest entry (16-bit signal resolution, finer than any source).
-    private let eotf: [Float]
+    let eotf: [Float]
     /// HLG OOTF gain Lw · Ys^(γ−1) ÷ 203 over Ys ∈ [0, 1], `ootfSize + 1` entries, interpolated.
-    private let ootf: [Float]
-    private static let ootfSize = 4096
+    let ootf: [Float]
+    static let ootfSize = 4096
     /// Linear [0, 1] → 8-bit BT.709 OETF code, `encodeSize` entries.
-    private let encode: [UInt8]
-    private static let eotfSize = 65536
-    private static let encodeSize = 65536
+    let encode: [UInt8]
+    static let eotfSize = 65536
+    static let encodeSize = 65536
 
     /// SDR reference white in cd/m² (BT.2408): linear 1.0.
     static let referenceWhite: Float = 203
