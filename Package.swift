@@ -101,7 +101,7 @@ let package = Package(
                            "WizRecTestSupport"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "RecorderTests", dependencies: ["Recorder"]),
+        .testTarget(name: "RecorderTests", dependencies: ["Recorder", "WizRecTestSupport"]),
         .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine", "TSCProjKit", "MediaEngine", "TestGenKit", "WizRecTestSupport"]),
         .testTarget(name: "ExporterTests", dependencies: ["Exporter", "TSCProjKit", "RenderEngine", "AudioEngine", "MediaEngine", "TestGenKit",
                                                    "WizRecTestSupport"]),
