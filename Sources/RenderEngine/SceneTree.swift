@@ -405,6 +405,7 @@ struct SceneEvaluator {
                 content.dynamicCaption = DynamicCaptionRender(frame: frame, style: dc.style)
                 content.text = frame?.text ?? ""
                 content.runs = SDynamicCaption.textRun(content.runs, length: content.text.utf16.count)
+                content.fontSize = dc.baseFontSize
             }
             return make(.callout(content), size)
         case .unsupported(let type, let size):
