@@ -252,7 +252,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
 | S5-MED-1 | media | done (4K ProRes 4444 23.9→57–63 fps, 422 HQ ≥ 112 fps) | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
 | S5-MED-2 | media+render | done (Metal tone map byte-identical; 4K60 HEVC PQ 34→478 fps; playback pool .gpu) | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
-| S5-REN-1 | render | blocked (no references) | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
+| S5-REN-1 | render | spec alignment merged (Border/Reflection, catalog defaults, rotation X/Y, shear); parity blocked (no references) | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
 | S5-CAP-1 | captions | live test + timing fixes done; CA1/CA2 waits on spec | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
 | S5-SHIP-1 | ship | done (Sparkle 2.10.0 off when unconfigured, self-signed DMG verified) | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
 | S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
@@ -269,3 +269,5 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - researcher6 batch 1 (wall-reviewed): group-edits.md, effects/catalog.md, Border/Reflection params, animation.md, behaviours defaults, transform X2; `wizrec-testgen experiments|shadervids`. 848 green.
 - qa6 slice 2: live whisper, whisper timing, GPU tone map, app bundle integration tests; flaky watch 5/5 clean at load 12–50. 856 green.
 - researcher6: group key layout (§1a), X7 edit semantics (stitched split keeps segments, auto-stitch, transitions, no pruning, image trimStartSum).
+- render6 slice 2: Border/Reflection render, catalog defaults, rotation0/1 + shear0 (provisional look). 867 green.
+- media7: MediaPool.toneMapStats; BandedSws; banded HDR 12-bit/alpha resample (4K HDR 4444 GPU 11.8 → 4.4 ms). 871 green.
