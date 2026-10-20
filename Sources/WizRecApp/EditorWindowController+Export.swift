@@ -43,7 +43,8 @@ extension EditorWindowController {
     func closeFromExportSheet() {
         guard let window else { return }
         if let s = exportSheet { window.endSheet(s); exportSheet = nil }
-        window.performClose(nil)
+        // Next turn of the run loop: the sheet is fully gone before the close path runs.
+        DispatchQueue.main.async { [weak window] in window?.performClose(nil) }
     }
 
     /// Queues one job per preset, rendering the project as it is now.
@@ -145,6 +146,17 @@ final class ExportSheetWindow: NSWindow {
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(performClose(_:)), onPerformClose != nil { return true }
         return super.validateUserInterfaceItem(item)
+    }
+
+    /// ⌘W also when the menu never sees it (a sheet's key equivalents can stop at the sheet).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let onPerformClose, event.type == .keyDown,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "w" {
+            onPerformClose()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 

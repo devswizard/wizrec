@@ -310,7 +310,11 @@ struct LibraryTileAccessibility: NSViewRepresentable {
 
     final class Element: NSView {
         var press: () -> Bool = { false }
+        var title = ""
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        // NSView drops a stored AXTitle for button roles; answer it directly.
+        override func accessibilityTitle() -> String? { title }
+        override func accessibilityLabel() -> String? { title }
         override func isAccessibilityElement() -> Bool { true }
         override func accessibilityRole() -> NSAccessibility.Role? { .button }
         override func accessibilityPerformPress() -> Bool {
@@ -323,8 +327,7 @@ struct LibraryTileAccessibility: NSViewRepresentable {
 
     func updateNSView(_ v: Element, context: Context) {
         v.press = press
-        v.setAccessibilityTitle(title)
-        v.setAccessibilityLabel(title)
+        v.title = title
         v.setAccessibilityValue(note ?? "")
         v.setAccessibilityHelp(hint)
         v.setAccessibilityIdentifier(identifier)
