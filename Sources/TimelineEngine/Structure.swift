@@ -106,7 +106,9 @@ private func isIdentity(_ params: JSONObject?) -> Bool {
 /// - Inner tracks: one per source track, bottom to top, with clip times
 ///   relative to the group start; flags inline on the track [obs]. Emptied
 ///   top-level tracks stay [obs].
-/// - Group JSON: parameters = the offset + `volume` 1.0 [obs];
+/// - Group JSON: parameters = bare numbers: the offset, `geometryCrop0…3`
+///   0.0, `volume` 1.0 [obs, §1a]; members' new position keys are bare and
+///   go first (`GroupGeometry.insert`) [obs];
 ///   `attributes` {ident "Group n", widthAttr, heightAttr, maxDurationAttr 0,
 ///   gain 1.0, mixToMono false} [obs]; decimal `mediaStart` 0.0 /
 ///   `mediaDuration` [obs]; `isOpen` false metadata [obs]. n = groups in
@@ -172,9 +174,11 @@ public final class GroupClips: EditCommand {
             if centre.x != 0 { GroupGeometry.map(GroupGeometry.params(o), "translation0") { $0 - centre.x } }
             if centre.y != 0 { GroupGeometry.map(GroupGeometry.params(o), "translation1") { $0 - centre.y } }
         }
+        // Bare numbers: offset, geometry crops, volume [obs, group-edits.md §1a].
         var gParams: [(String, JSON)] = []
-        if centre.x != 0 { gParams.append(("translation0", J.param(centre.x))) }
-        if centre.y != 0 { gParams.append(("translation1", J.param(centre.y))) }
+        if centre.x != 0 { gParams.append(("translation0", J.dbl(centre.x))) }
+        if centre.y != 0 { gParams.append(("translation1", J.dbl(centre.y))) }
+        gParams += (0..<4).map { ("geometryCrop\($0)", J.dbl(0)) }
         gParams.append(("volume", J.dbl(1)))
 
         let base = try edits.topTrack(lowest)

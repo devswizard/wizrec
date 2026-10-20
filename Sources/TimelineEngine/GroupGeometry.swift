@@ -66,15 +66,34 @@ enum GroupGeometry {
         return (x - w, x + w, y - h, y + h)
     }
 
+    /// Transform keys in Camtasia's canonical parameter order [obs for
+    /// translation0 before scale; the rest inf, group-edits.md §1a].
+    static let canonical = ["translation0", "translation1", "translation2", "rotation0", "rotation1", "rotation2",
+                            "scale0", "scale1", "scale2"]
+
+    /// Inserts a new key in canonical position: before the first existing
+    /// key that is not a transform key or ranks later. Existing keys keep
+    /// their order.
+    static func insert(_ params: JSONObject, _ name: String, _ value: JSON) {
+        let rank = canonical.firstIndex(of: name) ?? canonical.count
+        let entries = params.entries
+        let at = entries.firstIndex { e in (canonical.firstIndex(of: e.key) ?? canonical.count) > rank } ?? entries.count
+        guard at < entries.count else { params[name] = value; return }
+        for e in entries[at...] { params[e.key] = nil }
+        params[name] = value
+        for e in entries[at...] { params[e.key] = e.value }
+    }
+
     /// Rewrites every numeric value of `name` (constant/`defaultValue` and
-    /// keyframe values) with `f`. A missing parameter is created from
-    /// `f(default)` in the style the clip already uses (`ParamWriter`), unless
-    /// that equals the default. Each new value is a double.
+    /// keyframe values) with `f`, keeping the parameter's form. A missing
+    /// parameter is created from `f(default)` as a bare number in canonical
+    /// position (`insert`) [obs], unless that equals the default. Each new
+    /// value is a double.
     static func map(_ params: JSONObject, _ name: String, _ f: (Double) -> Double) {
         let d = ParamWriter.defaultValue(name)
         guard let v = params[name] else {
             let nv = f(d)
-            if nv != d { ParamWriter.setConstant(params, name, nv) }
+            if nv != d { insert(params, name, J.dbl(nv)) }
             return
         }
         if let o = v.object {

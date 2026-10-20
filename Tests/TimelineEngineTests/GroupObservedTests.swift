@@ -48,14 +48,15 @@ private func expectLossless(_ p: Project, sourceLocation: SourceLocation = #_sou
     try expectReversible(group, on: p)
     try group.apply(to: p)
     let g = try #require(p.tracks[0].clips.first)
-    #expect(g.object["parameters"] == (try JSON.parse(#"{"translation0" : \#(long("-150.0")), "volume" : 1.0}"#)))
+    #expect(g.object["parameters"] == (try JSON.parse(#"{"translation0" : -150.0, "geometryCrop0" : 0.0, "geometryCrop1" : 0.0, "geometryCrop2" : 0.0, "geometryCrop3" : 0.0, "volume" : 1.0}"#)))
     #expect(g.object["attributes"] == (try JSON.parse("""
         {"ident" : "Group 1", "widthAttr" : 1100.0, "heightAttr" : 450.0, "maxDurationAttr" : 0, \
         "gain" : 1.0, "mixToMono" : false, "assetProperties" : []}
         """)))
     #expect(g.object["mediaStart"]?.number?.lexeme == "0.0" && g.object["mediaDuration"]?.number?.lexeme == "150.0")
     // Members shift the opposite way; scale untouched.
-    #expect(g.tracks[0].clips[0].parameters.object.entries.map(\.key) == ["scale0", "scale1", "translation0"])
+    #expect(g.tracks[0].clips[0].parameters.object.entries.map(\.key) == ["translation0", "scale0", "scale1"])
+    #expect(g.tracks[0].clips[0].parameters.object["translation0"]?.number?.lexeme == "150.0")  // bare, first
     #expect(g.tracks[0].clips[0].parameters.translation().x == 150)
     #expect(g.tracks[1].clips[0].object["parameters"] == (try JSON.parse(#"{"translation0" : \#(long("-150.0")), \#(half)}"#)))
     #expect(g.tracks[0].clips[0].parameters.scale().x == 0.5)
@@ -76,7 +77,7 @@ private func expectLossless(_ p: Project, sourceLocation: SourceLocation = #_sou
     let g = try #require(p.tracks[0].clips.first)
     // Boxes: y 100±225 and −100±225 → [−325, 325]: centre 0, height 650.
     #expect(g.attributes?["heightAttr"]?.double == 650 && g.attributes?["widthAttr"]?.double == 800)
-    #expect(g.object["parameters"] == (try JSON.parse(#"{"volume" : 1.0}"#)))
+    #expect(g.object["parameters"] == (try JSON.parse(#"{"geometryCrop0" : 0.0, "geometryCrop1" : 0.0, "geometryCrop2" : 0.0, "geometryCrop3" : 0.0, "volume" : 1.0}"#)))
     #expect(g.tracks[0].clips[0].object["parameters"] == (try JSON.parse(#"{"translation1" : \#(kf), \#(half)}"#)))
 }
 
