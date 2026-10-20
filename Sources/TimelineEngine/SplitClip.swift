@@ -18,22 +18,20 @@ import TSCProjKit
 /// `TimeWriter`). Per kind:
 /// - `UnifiedMedia`: `video` and `audio` are split at the same track time,
 ///   each with its own fields (time-mapping.md §4).
-/// - `Group`: the inner timeline is copied unchanged; only `mediaStart` moves.
-/// - `StitchedMedia`: segments are partitioned. The left half drops segments
-///   that start at or after its media end; the right half drops segments that
-///   end at or before its media start, and the remaining segments are rebased
-///   so the first starts at 0 (`mediaStart` reduced to match). Segment
-///   durations are not trimmed, matching how Camtasia stores trimmed stitched
-///   clips [obs]. Partitioning itself is an assumption.
+/// - `Group`: both halves hold a full copy of the inner timeline (the right
+///   one with new ids); only the window moves [obs, group-edits.md §5].
+/// - `StitchedMedia`: both halves keep every segment (new ids on the right);
+///   only the outer window moves [obs, edit-semantics.md X7 #1].
 /// - `IMFile`: `mediaStart`/`mediaDuration` stay (images have no media
-///   time); the right half's `trimStartSum` grows by `d` (`Retime`).
+///   time); the right half's `trimStartSum` grows by `d` (`Retime`) [obs, X7 #5].
 ///
 /// Keyframes, effect windows and `animationTracks` are on the media time axis
-/// (time-mapping.md §6–7), so both halves keep them unchanged.
+/// (time-mapping.md §6–7), so both halves keep them unchanged and unpruned
+/// [obs, X7 #4].
 ///
 /// Transitions on the clip's track: one whose `leftMedia` is the clip (at its
 /// end) now points at the right half; `rightMedia` (at its start) stays on
-/// the left half.
+/// the left half [obs, X7 #3].
 @MainActor
 public final class SplitClip: EditCommand {
     public let clipID: Int64
@@ -116,35 +114,8 @@ public final class SplitClip: EditCommand {
                 guard let l = left[k]?.object, let r = right[k]?.object else { continue }
                 try split(left: l, right: r, at: at)
             }
-        case "StitchedMedia":
-            try partition(left: left, right: right, boundary: boundary)
         default:
-            break  // Group: inner timeline untouched. Leaf clips: done.
+            break  // Group and StitchedMedia: inner content copied whole. Leaf clips: done.
         }
-    }
-
-
-    /// Keeps in each half only the stitched segments its media window uses.
-    /// `boundary` is the split point in the stitched clip's inner time (the
-    /// left half's media end and the right half's media start).
-    private static func partition(left: JSONObject, right: JSONObject, boundary: Rational) throws {
-        func span(_ s: JSON) -> (start: Int64, end: Int64)? {
-            guard let o = s.object else { return nil }
-            let st = o["start"]?.int ?? 0
-            return (st, st + (o["duration"]?.int ?? 0))
-        }
-        if let segs = left["medias"]?.array {
-            let kept = segs.items.filter { s in span(s).map { Exact.less(Rational($0.start), boundary) } ?? true }
-            if !kept.isEmpty { segs.items = kept }
-        }
-        guard let segs = right["medias"]?.array else { return }
-        let kept = segs.items.filter { s in span(s).map { Exact.less(boundary, Rational($0.end)) } ?? true }
-        guard !kept.isEmpty else { return }
-        segs.items = kept
-        guard let shift = kept.first.flatMap(span)?.start, shift > 0 else { return }
-        for s in kept {
-            if let o = s.object, let st = o["start"]?.int { TimeWriter.set(st - shift, "start", in: o) }
-        }
-        TimeWriter.set(try Exact.sub(boundary, Rational(shift)), "mediaStart", in: right)
     }
 }

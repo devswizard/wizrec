@@ -13,7 +13,9 @@ import TSCProjKit
 /// Exception: still images (`IMFile`) have no media time (`mediaStart` 0,
 /// `mediaDuration` 1 tick, whatever the duration [obs]); their animation base
 /// is `t − start + trimStartSum` [inf]. Their `mediaStart`/`mediaDuration` are
-/// never changed, and left-edge moves go to `trimStartSum` instead.
+/// never changed, and left-edge moves go to `trimStartSum` instead: trim-start
+/// adds the trimmed amount and a split gives the right half the split offset
+/// [obs, edit-semantics.md X7 #5].
 enum Retime {
     /// True for clips whose media fields must not be rescaled (images).
     static func isStill(_ clip: JSONObject) -> Bool { clip.clipType == "IMFile" }

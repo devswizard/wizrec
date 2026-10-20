@@ -93,7 +93,7 @@ import TSCProjKit
     #expect(Set(allIDs(p)).count == allIDs(p).count)
 }
 
-@MainActor @Test func splitStitchedMediaPartitionsSegments() throws {
+@MainActor @Test func splitStitchedMediaKeepsEverySegment() throws {
     func seg(_ id: Int64, _ start: Int64, _ dur: Int64) -> String {
         #"{"id" : \#(id), "_type" : "AMFile", "src" : 1, "start" : \#(start), "duration" : \#(dur), "mediaStart" : \#(start * 2), "mediaDuration" : \#(dur), "scalar" : 1}"#
     }
@@ -111,15 +111,10 @@ import TSCProjKit
     let split = SplitClip(clipID: 40, at: 100)  // inner boundary 150
     try expectReversible(split, on: p)
     try split.apply(to: p)
-    // Left [50,150) uses 41, 42. Right [150,350) uses 42, 43, rebased by −100.
+    // Both halves keep every segment; only the outer window moves [obs, X7 #1].
     try expectTracks(p, tracks(track(0, [
-        stitched(40, start: 0, dur: 100, ms: 50, segs: [seg(41, 0, 100), seg(42, 100, 150)]),
-        """
-        {"id" : 44, "_type" : "StitchedMedia", "start" : 100, "duration" : 200, \
-        "mediaStart" : 50, "mediaDuration" : 200, "scalar" : 1, "minMediaStart" : 0.0, "medias" : [\
-        {"id" : 45, "_type" : "AMFile", "src" : 1, "start" : 0, "duration" : 150, "mediaStart" : 200, "mediaDuration" : 150, "scalar" : 1}, \
-        {"id" : 46, "_type" : "AMFile", "src" : 1, "start" : 150, "duration" : 150, "mediaStart" : 500, "mediaDuration" : 150, "scalar" : 1}]}
-        """,
+        stitched(40, start: 0, dur: 100, ms: 50, segs: [seg(41, 0, 100), seg(42, 100, 150), seg(43, 250, 150)]),
+        stitched(44, start: 100, dur: 200, ms: 150, segs: [seg(45, 0, 100), seg(46, 100, 150), seg(47, 250, 150)]),
     ])))
 }
 

@@ -28,12 +28,15 @@ public enum TrimEdge: Sendable, Equatable {
 /// Media maths is exact (`mediaDuration × scalar = duration`): moving the
 /// start by `δ` ticks moves `mediaStart` by `δ / scalar`. `UnifiedMedia` trims
 /// its `video` and `audio` halves to the same edge, each with its own fields,
-/// and is limited by the shorter one. Group and stitched contents are not
-/// changed; only the clip's window into them moves. Images keep
+/// and is limited by the shorter one. Stitched contents are not changed;
+/// only the clip's window into them moves. Trimming a group's start also
+/// trims its inner clips to the new window start (`trimGroupInner`, [obs]
+/// group-edits.md §4); its end edge leaves the inner clips alone. Images keep
 /// `mediaStart`/`mediaDuration` and move `trimStartSum` instead (`Retime`).
 ///
-/// Keyframes, effect windows and `animationTracks` are on the media time axis
-/// and stay unchanged (time-mapping.md §6–7). Transitions stay as they are.
+/// Keyframes, effect and behaviour windows and `animationTracks` are on the
+/// media time axis and stay unchanged, never pruned (time-mapping.md §6–7;
+/// [obs] edit-semantics.md X7 #4). Transitions stay as they are.
 @MainActor
 public final class TrimClip: EditCommand {
     public let clipID: Int64
@@ -173,7 +176,38 @@ public final class TrimClip: EditCommand {
             return
         }
         let dm = try t.media(delta)
-        TimeWriter.set(try Exact.add(t.mediaStart, dm), "mediaStart", in: o)
+        let newMediaStart = try Exact.add(t.mediaStart, dm)
+        TimeWriter.set(newMediaStart, "mediaStart", in: o)
         TimeWriter.set(try Exact.sub(t.mediaDuration, dm), "mediaDuration", in: o)
+        if delta > 0, o.clipType == "Group" { try trimGroupInner(o, before: newMediaStart) }
+    }
+
+    /// Trimming a group's start also trims its inner clips [obs,
+    /// group-edits.md §4]: every inner clip that starts before the new
+    /// window start `cut` (inner ticks, floored) is cut there (`setStart`:
+    /// stills grow `trimStartSum`, other media `mediaStart`, nested groups
+    /// recurse); clips that end at or before it are removed [inf], with the
+    /// transitions that reference them. Inner positions are not shifted.
+    static func trimGroupInner(_ group: JSONObject, before cut: Rational) throws {
+        let lo = Exact.floor(cut)
+        for inner in group["tracks"]?.array?.items.compactMap(\.object) ?? [] {
+            guard let medias = inner["medias"]?.array else { continue }
+            var removed = Set<Int64>()
+            medias.items.removeAll { m in
+                guard let c = m.object else { return false }
+                let e = (c["start"]?.int ?? 0) + (c["duration"]?.int ?? 0)
+                guard e <= lo else { return false }
+                if let id = c.clipID { removed.insert(id) }
+                return true
+            }
+            for c in medias.items.compactMap(\.object) where (c["start"]?.int ?? 0) < lo {
+                for p in timedParts(c) { try setStart(p, to: lo) }
+            }
+            if !removed.isEmpty {
+                inner["transitions"]?.array?.items.removeAll { t in
+                    [t.object?["leftMedia"]?.int, t.object?["rightMedia"]?.int].contains { $0.map(removed.contains) ?? false }
+                }
+            }
+        }
     }
 }
