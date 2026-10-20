@@ -29,6 +29,9 @@ struct SNode: Sendable {
     indirect enum Body: Sendable {
         case video(url: URL, stream: Int, size: CGSize, cursor: CursorTrack?)
         case image(url: URL, size: CGSize)
+        /// An `IMFile` whose source is a video (Extend Frame, edit-semantics.md ED1): one frame of the
+        /// stream, at media time `at` (ticks), held for the whole clip.
+        case heldFrame(url: URL, stream: Int, size: CGSize, at: Rational)
         case shader(url: URL, parameters: SParams, size: CGSize)
         case audio(url: URL, stream: Int)
         case group(tracks: [STrack], size: CGSize)
@@ -251,8 +254,12 @@ struct SceneBuilder {
             return .video(url: src.url, stream: stream, size: size, cursor: cursor)
         case .image:
             guard let src else { return .unsupported(type: c.kind.typeName, size: canvas) }
-            return .image(url: src.url, size: Conventions.leafSize(source: src.media, trackNumber: stream,
-                                                                     fallback: canvas))
+            let size = Conventions.leafSize(source: src.media, trackNumber: stream, fallback: canvas)
+            if Conventions.isVideoSource(src.media, stream: stream, url: src.url) {
+                // Extend Frame: the frame at `mediaStart` (the clip's last frame) [obs form ED1; inf rendering].
+                return .heldFrame(url: src.url, stream: stream, size: size, at: c.mediaStart)
+            }
+            return .image(url: src.url, size: size)
         case .audio:
             guard let src else { return .unsupported(type: c.kind.typeName, size: .zero) }
             return .audio(url: src.url, stream: stream)
@@ -389,6 +396,10 @@ struct SceneEvaluator {
             return l
         case .image(let url, let size):
             return make(.image(url), size)
+        case .heldFrame(let url, let stream, let size, let at):
+            // Same frame for every t: the segment's duration and trimStartSum do not choose it.
+            return make(.video(FrameRequest(url: url, stream: stream,
+                                            time: Conventions.streamTime(ticks: at, editRate: editRate))), size)
         case .shader(let url, let p, let size):
             let seconds = Conventions.shaderTime(media: n.mediaTime(t), editRate: editRate)
             return make(.shader(url, parameters: p.evaluated(at: kt), time: seconds), size)
@@ -483,7 +494,7 @@ struct AudioEvaluator {
             for s in segments where Q.lt(Rational(s.start), mhi) && Q.lt(mlo, Rational(s.end)) {
                 node(s, map: m, lo: mlo, hi: mhi, gain: g, into: &out)
             }
-        case .video, .image, .shader, .callout, .unsupported:
+        case .video, .image, .heldFrame, .shader, .callout, .unsupported:
             return
         }
     }

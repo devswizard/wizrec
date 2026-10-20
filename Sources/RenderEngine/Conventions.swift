@@ -99,6 +99,15 @@ enum Conventions {
         }
     }
 
+    /// The source's stream `stream` is video (`sourceTracks[].type` 0), so an `IMFile` on it is a
+    /// held frame (ED1). Shader sources are excluded.
+    static func isVideoSource(_ media: SourceMedia, stream: Int, url: URL) -> Bool {
+        guard url.pathExtension.lowercased() != "tscshadervid" else { return false }
+        let tracks = media.tracks
+        let t = tracks.indices.contains(stream) ? tracks[stream] : tracks.first
+        return t?.isVideo ?? false
+    }
+
     /// WizRec recordings keep `cursor.json` next to `screen.mp4` [cursor-log.md §1]; only the screen
     /// file gets the cursor (not `camera.mp4` in the same folder).
     static func hasCursorSidecar(_ video: URL) -> Bool {

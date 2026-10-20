@@ -425,3 +425,30 @@ func vlogEvaluatesEverywhereAndFast() throws {
     let r = try #require(videoRequest(l))
     #expect(abs(r.time.value - (12_841_920_000 + 3)) < 5)
 }
+
+// MARK: - Extend Frame (edit-semantics.md ED1)
+
+@Test func extendFrameHoldsTheVideoFrameAtMediaStart() throws {
+    // A 10 s video extended by 2 s: StitchedMedia [VMFile 0–10 s, IMFile on the same video source at
+    // mediaStart 299/30 s with a huge segment duration] [obs ED1].
+    let last = 299 * s / 30
+    let st = P.clip("StitchedMedia", id: 60, start: 0, duration: 12 * s, extra: [
+        "minMediaStart": 0.0,
+        "medias": [
+            P.clip("VMFile", id: 61, src: 1, start: 0, duration: 10 * s),
+            P.clip("IMFile", id: 62, src: 1, start: 10 * s, duration: 3602 * s, mediaStart: last,
+                   extra: ["trimStartSum": 0, "mediaDuration": 1]),
+        ],
+    ])
+    let scene = P.scene(try P.project(tracks: [P.track(0, [st])]))
+    let a = try #require(videoRequest(scene.evaluate(at: 5 * s).layers.first))
+    #expect(a.time.value == 5 * s)
+    for t in [10 * s, 11 * s, 12 * s - 1] {
+        let r = try #require(videoRequest(scene.evaluate(at: t).layers.first), "t = \(t)")
+        #expect(r.time == CMTime(value: last, timescale: Int32(s)) && r.stream == 0)
+    }
+    // An IMFile on an image source stays an image.
+    let still = P.clip("IMFile", id: 63, src: 2, start: 0, duration: s)
+    let l = try #require(P.scene(try P.project(tracks: [P.track(0, [still])])).evaluate(at: 0).layers.first)
+    if case .image = l.content {} else { Issue.record("expected an image layer") }
+}
