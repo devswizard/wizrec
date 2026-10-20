@@ -97,8 +97,8 @@ enum Shaders {
     }
 
     // Coverage of the quad's full rect (q.full, local px) rounded by corner radius r (local px, clamped to
-    // half the short side). Only the four corner squares are shaped (antialiased over one target px);
-    // straight edges stay the quad's own, so r <= 0 is exactly the square box.
+    // half the short side [WizRec], as CalloutRaster.rounded does). Only the four corner squares are shaped
+    // (antialiased over one target px); straight edges stay the quad's own, so r <= 0 is exactly the square box.
     inline float wz_round_cov(VOut in, constant Quad& q, float r) {
         float2 lo = q.full.xy, hi = q.full.zw;
         float2 b = (hi - lo) * 0.5;
