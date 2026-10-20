@@ -6,11 +6,76 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 5 snapshot (2026-10-20) — read this first
+## 0. Session 7 snapshot (2026-10-20) — read this first
+
+- **`main` is green locally: 1029 tests** (23 known issues = 21
+  golden-harness + 2 LoadGate self-tests). Sections 0a–2 are history.
+- **CI / release:** <<CI/RELEASE STATUS>>
+- **Session 6 (short, no snapshot):** remote `devswizard/wizrec` pushed
+  after the first history rewrite; DMG-only install, tags publish a draft
+  Release; CI annotations for toolchain and errors; first Swift 6.3 fixes;
+  render7 rounded blur/pixelate/spotlight callouts; app8 shader `effectDef`
+  on import, Backgrounds tab, accessible library tiles, ⌘W on the export
+  sheet.
+- **User at start:** no licensed exports, no thumbnails as references,
+  Sparkle feed not set up, manual checks pending → wave 1 only ship, app, qa
+  (+ main on CI). Wave 2 (user: "use multi agents"): app10, timeline10,
+  render10, qa10, docs10.
+- **Landed in session 7:**
+  - CI (main): package and tests compile on Swift 6.3.3 (Xcode 26.6); tests
+    built separately; watchdog `scripts/ci/test-with-watchdog.sh` (deadline,
+    stall detector, `sample` thread stacks of the stuck test process,
+    unfinished tests in start order — all as annotations).
+  - CI hang root cause [obs]: TestGenKit `MediaWriter` `finishWriting` never
+    returned on the 3-core runner VM with several encodes in flight (seen in
+    the sampled stacks). Fix: one encode at a time + timeouts.
+  - History: AI co-author lines stripped with `git filter-repo` (messages
+    only) and force-pushed; backup bundle
+    `~/WorkDir/vibe_coding/wizrec-pre-coauthor-strip.bundle` + local branch
+    `backup/pre-coauthor-strip`; local `.git/hooks/pre-push` refuses such
+    lines; AGENT_BRIEF forbids them.
+  - Local Swift 6.3.3 recipe (DECISIONS): swiftly 6.3.3 + CLT macOS 26.5
+    SDK, ~80 s clean build.
+  - Ship (ship9): checkout v7 / cache v6 / upload-artifact v7 (Node 24);
+    `diskutil image` DMGs (APFS/ULFO, 20.9 MB) with hdiutil fallback
+    (`WIZREC_DMG_TOOL`); v0.1.0 release notes; `SHA256SUMS.txt` with bare
+    names; RELEASING: verify a draft asset without `gh`.
+  - App (app9): Background inspector section (colour wells, sliders,
+    switches, x/y; one undo step via `SetSourceEffectParameters`, keyframe
+    at the playhead when animated); `SetShaderVidSource` writes
+    `ShaderVidSource` (clip) + `RevBackground` (group) only on inner track 0
+    of a Rev group [WizRec, shader-backgrounds.md §11];
+    `check-library-double-click.sh` (CGEvent double-click).
+  - QA (qa9): Swift 6.3 sweep of test targets; Backgrounds tab / shader drop
+    (app8) and shader background edit (app9) integration tests.
+  - Wave 2: <<WAVE 2 RESULTS>>
+- **Demo (built app, copy of demo project):** snapshots 0/5/12.5/25 s OK;
+  ProRes 422 export 25.67 s in 2.2 s.
+- **Follow-ups (no owner):**
+  - everything export-dependent (golden parity, eioe, looks of Border/
+    Reflection/tilt/shear/stencils/LuminanceFadeIn/key caps, particle
+    canvas, transition windows, caption layout, normalisation output);
+  - manual-only checks ED2–ED4, CA1 caption text;
+  - `MediaWriter` serialised encodes: re-measure test time; relax only with
+    the watchdog green on the runner;
+  - GPU tests on GitHub's paravirtual Metal: confirm from the CI annotations;
+  - Sparkle appcast (GitHub Pages) once the user has keys;
+  - local `agent/*` branches and `backup/pre-coauthor-strip` hold old
+    history: never push; delete only with the user's OK;
+  - remove finished session-7 worktrees at session start.
+- **NEED_USER:**
+  1. Licensed reference exports (or activate this Camtasia).
+  2. Sparkle feed host + one `generate_keys` run.
+  3. Manual checks ED2–ED4 and CA1 caption text in Camtasia.
+  4. Close or reset other WizRec Claude sessions: after the history rewrite
+     their clones/branches carry the old commits, and a push from them would
+     bring back AI co-author lines (the pre-push hook guards only this
+     clone).
+
+## 0a. Session 5 snapshot (2026-10-20) — history
 
 - **`main` is green: 979 tests** (23 known issues = 21 golden-harness +
-  2 LoadGate self-tests). All session-5 branches merged. Sections 0a–2 are
-  history.
+  2 LoadGate self-tests). All session-5 branches merged.
 - **User at start: "do everything yourself, I want automated solutions."**
   The lead decided instead of asking (DECISIONS 2026-10-20):
   whisper.cpp 1.9.5 + `ggml-small`, `ggml-silero-v5.1.2` (VAD) and
@@ -74,7 +139,7 @@ This is for the **lead session** that continues the WizRec build. Read
     media6, app6) and the other finished worktrees — remove at session start
     (WIP already carried into the *7 branches).
 
-## 0a. Session 4 snapshot (2026-10-19) — history
+## 0b. Session 4 snapshot (2026-10-19) — history
 
 - **`main` is green: 812 tests** (20 known issues = 18 golden-harness + 2
   LoadGate self-tests). All `agent/*5` branches merged; no WIP, no worktrees.
@@ -120,7 +185,7 @@ This is for the **lead session** that continues the WizRec build. Read
   signing/Sparkle/CI when remote and identity arrive; app for click-through
   findings.
 
-## 0b. Session 3 snapshot (2026-10-19) — history
+## 0c. Session 3 snapshot (2026-10-19) — history
 
 - **`main` is green: 783 tests** (18 known issues = golden-harness
   self-tests). All `agent/*4` branches merged; no WIP. Sections 0a–2 are
@@ -176,7 +241,7 @@ This is for the **lead session** that continues the WizRec build. Read
 - **Next team:** researcher + render + qa when references land; ship when
   remote/Developer ID/Sparkle arrive; captions to live-test whisper.
 
-## 0c. Session 2 snapshot (2026-10-19) — history
+## 0d. Session 2 snapshot (2026-10-19) — history
 
 - **`main` is green: 700 tests** (18 known issues, all deliberate golden-harness
   self-tests). Every session-2 branch (`agent/*3`, `agent/media3`) is merged;
@@ -213,7 +278,7 @@ This is for the **lead session** that continues the WizRec build. Read
   terminal with Speech permission, or Captions ▸ Transcribe in the app);
   confirm Camtasia accepts our own `.tscshadervid` backgrounds; Sparkle OK.
 
-## 0d. Snapshot (2026-10-19, end of session 1)
+## 0e. Snapshot (2026-10-19, end of session 1)
 
 - The previous session ended when the API usage limit was hit. Every agent
   stopped mid-task.
@@ -284,7 +349,7 @@ worktree is now **clean** (all work committed). Recommended start:
 
 ## 3. Waiting on the user (one batched ask; never nag)
 
-Status after session 5. Done by automation: whisper.cpp + models, app
+Status after session 7 (see §0 NEED_USER). Done by automation: whisper.cpp + models, app
 click-through, `.tscshadervid` acceptance (rejected by Camtasia), all
 save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
 4K60 HDR (Metal).
@@ -299,20 +364,27 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
 3. ~~GitHub remote~~ done: `devswizard/wizrec` (public), history rewritten
    before the first push (DECISIONS 2026-10-20).
 4. ~~Developer ID~~ not applicable: no Apple Developer account; ad-hoc DMGs.
-5. CI on the remote: see BOARD for the first run's result.
+5. CI on the remote: see §0 and BOARD. v0.1.0 is a draft Release; the user
+   publishes it.
 6. **Sparkle update host:** feed URL, download prefix, and one
    `generate_keys` run (private key in the user's keychain, backed up).
 7. **Manual checks:** ED2–ED4 (clip speed field, magnetic track, Shift
    ripple trim) and CA1 caption text typing in Camtasia; VoiceOver pass on
    the library tiles.
+8. **Other WizRec Claude sessions:** close or reset them after the history
+   rewrite (peer sessions can push).
 
 ## 4. Team setup for the next session
 
 - **Roster:** at most about 8 concurrent agents (load hit ~50 with 8 in
-  session 5; LoadGate absorbed it). Session 6: qa always; render + researcher
-  + qa when licensed references arrive (golden parity, calibration, looks);
-  ship when remote/Developer ID/feed arrive; researcher for manual-only
-  checks only with the user. Agent branches next: `agent/<name>8`.
+  session 5; LoadGate absorbed it). Session 8: qa always; ship for the
+  v0.1.0 check and Sparkle once the feed exists; render + researcher + qa
+  when licensed references arrive (golden parity, calibration, looks);
+  researcher for manual-only checks only with the user. Agent branches next:
+  `agent/<name>11`.
+- **Toolchains:** local `swift` stays Xcode's 6.4. After any swiftly
+  install, run `swiftly use xcode`; reach 6.3.3 only through
+  `swiftly run … +6.3.3` (recipe in AGENT_BRIEF / DECISIONS).
 - **Stopped agents:** an agent the user stops cannot be resumed. Spawn a
   replacement on `agent/<name>N+1` from the old branch and copy the old
   worktree's uncommitted files with plain `diff`/`cp` (git commands aimed at
@@ -364,7 +436,7 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
   - WizRec ships its own originals (WizRecAssets).
 - Nothing licensing-related, ever.
 
-## 6. Lessons (sessions 1–5)
+## 6. Lessons (sessions 1–7)
 
 - **The format had surprises:** `scalar = 1/speed`; keyframes run on media
   time; video size comes from `sourceTracks[trackNumber].trackRect`.
@@ -384,3 +456,12 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
   Using Camtasia thumbnails in place of gated exports was also blocked.
   Driving Camtasia by UI scripting works for save-only experiments; drags
   from the media bin and edge drags are unreliable.
+- **Session 7:**
+  - `swiftly install` puts its toolchain first on `PATH` and shadows Xcode's
+    `swift`; `swiftly use xcode` restores it.
+  - Swift 6.3.3 needs the CLT macOS 26.5 SDK; with the macOS 27 SDK
+    Foundation fails to import.
+  - A silent CI hang is diagnosed from `sample` thread stacks of the stuck
+    test process, published as annotations (readable without login).
+  - Peer Claude sessions on the same repo can push. A local `pre-push` hook
+    guards repo-wide rules (no AI attribution).
