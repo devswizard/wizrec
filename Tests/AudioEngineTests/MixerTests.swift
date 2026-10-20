@@ -77,6 +77,34 @@ private func tone(_ i: Int, freq: Double = 440, amp: Double = 0.5) -> Float {
     }
 }
 
+/// Volume points as Camtasia writes fades and audio points (AU1): zero-length keyframes, no
+/// `interp`, no `defaultValue`.
+private func points(_ p: [(Int64, Double)]) -> [String: Any] {
+    ["type": "double", "keyframes": p.map { ["endTime": $0.0, "time": $0.0, "value": $0.1, "duration": 0] }]
+}
+
+@Test func volumePointsRampLinearlyBetweenPoints() async throws {
+    let dir = try Synth.tempDir()
+    let u = try sineFile(dir)
+    // Fade in (0 → 1 over 1 s) then the AU1 fade-out layout on a 4 s clip (1 at 3 s, 0 at 4 s).
+    let vol = points([(0, 0), (sec(1), 1), (sec(3), 1), (sec(4), 0)])
+    let p = try P.project(tracks: [P.track(0, [
+        P.clip("AMFile", id: 10, src: 1, start: sec(1), duration: sec(4), parameters: ["volume": vol]),
+    ])], sources: [P.source(1, u)])
+    let x = try await P.mixer(p).render(0 ..< sec(5)).channels[0]
+    for (s, v) in [(1.25, 0.25), (1.5, 0.5), (2.0, 1.0), (3.0, 1.0), (4.0, 1.0), (4.5, 0.5), (4.9, 0.1)] {
+        let i = idx(s)
+        #expect(abs(Double(x[i]) - v * Double(tone(idx(s - 1)))) < 1e-5, "t=\(s)")
+    }
+    // Add Audio Point layout (two points at level 1): unchanged level.
+    let flat = try P.project(tracks: [P.track(0, [
+        P.clip("AMFile", id: 10, src: 1, start: 0, duration: sec(2),
+               parameters: ["volume": points([(0, 1), (sec(1), 1)])]),
+    ])], sources: [P.source(1, u)])
+    let y = try await P.mixer(flat).render(0 ..< sec(2)).channels[0]
+    #expect(y[idx(0.5)] == tone(idx(0.5)) && y[idx(1.5)] == tone(idx(1.5)))
+}
+
 @Test func renderIsChunkSeamlessAndDeterministic() async throws {
     let dir = try Synth.tempDir()
     let u = try sineFile(dir, seconds: 12)

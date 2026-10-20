@@ -1,4 +1,4 @@
-// WizRec's own audio effect DSP (AUD-3): spectral noise reduction and leveling. (Pitch is a
+// WizRec's own audio effect DSP (AUD-3): spectral noise reduction, compression and leveling. (Pitch is a
 // placement step: resample + WSOLA in Mixer.swift.)
 //
 // Every processor has finite memory (`AudioProcessor`, Processing.swift): its output at sample i
@@ -287,7 +287,8 @@ struct NoiseReducer: AudioProcessor {
 
 /// Volume leveling: rides the gain toward −20 dBFS RMS with ratio 3:1, at most ±12 dB, from a
 /// centred 400 ms RMS window; the gain curve is averaged over 200 ms. Passages under −50 dBFS RMS
-/// get no boost (noise stays down). Parameters are WizRec's own until AU1 [inf].
+/// get no boost (noise stays down). Only for volume-leveling effect names of older projects:
+/// Camtasia 2026.2.3 has no Volume Leveling item (audio.md §3.1) [obs]. Parameters are WizRec's own.
 struct Leveler: AudioProcessor {
     let win: Int
     let smooth: Int
@@ -329,6 +330,100 @@ struct Leveler: AudioProcessor {
             let a = max(gLo, i - sh), b = min(gHi, i + sh)
             let g = b > a ? Float((gsum[b - gLo] - gsum[a - gLo]) / Double(b - a)) : 1
             for c in 0..<input.channelCount { out.channels[c][j] = input.channels[c][i] * g }
+        }
+        return out
+    }
+}
+
+// MARK: Compression
+
+/// Downward compressor for `WinCompression` (audio.md §3.2): above `thresholdDB` (dBFS, linked
+/// sample peak of all channels) the level is reduced by `ratio`; `makeupDB` is added afterwards.
+/// Finite memory by construction: the gain reduction at sample i is
+/// `max over j in [i − W, i] of (want_j − slope · (i − j))`, i.e. instant peak attack and a
+/// linear release of 20 dB per `releaseMS` [WizRec], over a window W long enough for the largest
+/// reduction (levels up to +24 dBFS) to recover. A non-zero `attackMS` averages the reduction
+/// over that many trailing samples [WizRec]. Parameter meanings are [inf]; the exact curve needs
+/// a reference export.
+struct Compressor: AudioProcessor {
+    let thresholdDB: Double
+    let ratio: Double
+    let makeupDB: Double
+    /// Release slope, dB per sample (∞ for release 0).
+    let slope: Double
+    /// Release window W, samples.
+    let window: Int
+    /// Attack averaging length, samples (0 = instant).
+    let attack: Int
+
+    /// Level (dBFS) beyond which no extra reduction is modelled.
+    static let maxLevelDB = 24.0
+
+    init(sampleRate: Double, thresholdDB: Double, ratio: Double, makeupDB: Double, attackMS: Double, releaseMS: Double) {
+        self.thresholdDB = thresholdDB.isFinite ? thresholdDB : -20
+        self.ratio = ratio.isFinite ? max(1, ratio) : 1
+        self.makeupDB = makeupDB.isFinite ? min(max(makeupDB, -60), 60) : 0
+        let rel = releaseMS.isFinite ? max(0, releaseMS) : 0
+        let releaseSamples = rel / 1000 * sampleRate
+        slope = releaseSamples > 0 ? 20 / releaseSamples : .infinity
+        let maxGR = max(0, (Self.maxLevelDB - self.thresholdDB) * (1 - 1 / self.ratio))
+        window = slope.isFinite ? Int((maxGR / slope).rounded(.up)) : 0
+        attack = attackMS.isFinite ? max(0, Int((attackMS / 1000 * sampleRate).rounded())) : 0
+    }
+
+    var history: Int { window + max(0, attack - 1) }
+    var lookahead: Int { 0 }
+
+    /// Wanted gain reduction (dB, ≥ 0) for a linear peak level.
+    func want(_ peak: Float) -> Double {
+        guard peak > 0 else { return 0 }
+        let l = min(20 * log10(Double(peak)), Self.maxLevelDB)
+        return max(0, (l - thresholdDB) * (1 - 1 / ratio))
+    }
+
+    func process(_ input: Signal, outputStart: Int64, count: Int) -> Signal {
+        let L = input.count
+        let h = history
+        var out = Signal.zeros(channels: input.channelCount, count: count)
+        guard count > 0, L >= h + count else { return out }
+        // Linked detector.
+        var want = [Double](repeating: 0, count: L)
+        for i in 0..<L {
+            var p: Float = 0
+            for c in 0..<input.channelCount { p = max(p, abs(input.channels[c][i])) }
+            want[i] = self.want(p)
+        }
+        // Reduction with linear release: monotonic deque of candidates (index), dominated ones dropped.
+        let first = h - max(0, attack - 1)   // first index whose reduction is needed (= window)
+        var gr = [Double](repeating: 0, count: L)
+        var dq = [Int](), head = 0
+        dq.reserveCapacity(1024)
+        let w = window
+        for i in 0..<L {
+            if want[i] > 0 {
+                while dq.count > head, let b = dq.last,
+                      want[i] >= want[b] - slope * Double(i - b) { dq.removeLast() }
+                dq.append(i)
+            }
+            while dq.count > head, dq[head] < i - w { head += 1 }
+            if head > 4096 { dq.removeFirst(head); head = 0 }
+            guard i >= first else { continue }
+            if dq.count > head {
+                let j = dq[head]
+                gr[i] = max(0, want[j] - (slope.isFinite ? slope * Double(i - j) : (i == j ? 0 : .infinity)))
+            }
+        }
+        // Optional attack averaging, then gain.
+        for k in 0..<count {
+            let i = h + k
+            var r = gr[i]
+            if attack > 1 {
+                var s = 0.0
+                for j in (i - attack + 1)...i { s += gr[j] }
+                r = s / Double(attack)
+            }
+            let g = Float(pow(10, (makeupDB - r) / 20))
+            for c in 0..<input.channelCount { out.channels[c][k] = input.channels[c][i] * g }
         }
         return out
     }
