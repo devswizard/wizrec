@@ -8,10 +8,10 @@ import TimelineEngine
 ///
 /// Carriers: top-level `AMFile` clips, and the `audio` child of top-level `UnifiedMedia` clips [inf].
 /// Keyframe time axis: the clip's **media time** in ticks (`mediaStart + (t − start) / scalar`), like
-/// every other keyframed clip parameter (time-mapping.md §6), so split, trim, move and speed changes
-/// keep captions on the right words with no rewrite [inf; the one observed instance has mediaStart
-/// 1.117 s with keyframes from 0, consistent with captions made before a trim; experiment CA1].
-/// `localTicks`/`timelineTicks` are the only places that encode this choice.
+/// every other keyframed clip parameter (time-mapping.md §6) [obs CA1: keyframes stay put when the
+/// clip moves]. Split, ripple delete and move keep every caption keyframe on each piece, none pruned
+/// or shifted, so a piece may carry captions outside its media window [obs CA1]; readers clip to the
+/// window. `localTicks`/`timelineTicks` are the only places that encode the axis.
 @MainActor
 public enum ClassicCaptions {
     /// A clip that can carry captions.
@@ -83,17 +83,20 @@ public enum ClassicCaptions {
 
     static func value(_ text: String) -> JSON { J.obj([("text", J.str(text)), ("textAttributes", .null)]) }
 
-    /// Keyframes for sorted, non-overlapping segments: `""` at 0 when the first caption starts
-    /// later (the observed list starts at 0 [obs]), `""` in gaps and after the last caption when it
-    /// ends before the clip does.
-    static func keyframes(_ segs: [Segment], end: Int64) -> [JSON] {
+    static func keyframe(_ t: Int64, _ v: JSON) -> JSON {
+        J.obj([("endTime", J.int(t)), ("time", J.int(t)), ("value", v), ("duration", J.int(0))])
+    }
+
+    /// Keyframes for sorted, non-overlapping segments: `""` at the media window's start (`start`,
+    /// = `mediaStart`; Camtasia's lists start there [obs CA1]) when the first caption starts later,
+    /// `""` in gaps and after the last caption when it ends before the clip does.
+    static func keyframes(_ segs: [Segment], start: Int64, end: Int64) -> [JSON] {
         var out: [JSON] = []
-        func kf(_ t: Int64, _ v: JSON) {
-            out.append(J.obj([("endTime", J.int(t)), ("time", J.int(t)), ("value", v), ("duration", J.int(0))]))
-        }
-        var cursor: Int64 = 0
+        func kf(_ t: Int64, _ v: JSON) { out.append(keyframe(t, v)) }
+        let origin = min(start, segs.first?.start ?? start)
+        var cursor = origin
         for (i, s) in segs.enumerated() {
-            if s.start > cursor || (i == 0 && s.start > 0) { kf(cursor, value("")) }
+            if s.start > cursor || (i == 0 && s.start > origin) { kf(cursor, value("")) }
             kf(s.start, s.value)
             cursor = s.end
         }
@@ -145,7 +148,7 @@ public enum ClassicCaptions {
             let c = carriers[ci]
             let segs = Self.merge(existing: ClassicCaptions.segments(c), added: added)
             let captions = J.obj([("type", J.str("caption")),
-                                  ("keyframes", J.arr(ClassicCaptions.keyframes(segs, end: c.mediaHi)))])
+                                  ("keyframes", J.arr(ClassicCaptions.keyframes(segs, start: c.mediaLo, end: c.mediaHi)))])
             let params = c.owner["parameters"]?.object?.copy() ?? JSONObject()
             params["captions"] = captions
             edits.append((c.parametersPath, .object(params)))
@@ -178,6 +181,46 @@ public enum ClassicCaptions {
     }
 }
 
+/// Modify ▸ Closed Captions ▸ Add Captions on one audio clip (a top-level `AMFile` or
+/// `UnifiedMedia`): one empty caption (`text` "", `textAttributes` null) every `segmentSeconds`
+/// (4 s) of **media time**, starting at the clip's `mediaStart` and running to the end of its media
+/// window; the last segment may be very short [obs CA1: 0/4/8/12 s on a 13.2 s clip, 1/5/9/13 s
+/// after a 1 s left trim]. `timeline.captionAttributes` is not touched [obs]. A clip that already
+/// has a `captions` parameter is rejected [WizRec; Camtasia's behaviour there is unobserved].
+/// Revert is byte-identical.
+@MainActor public final class AddEmptyCaptions: EditCommand {
+    public let name = "Add Captions"
+    public let clipID: Int64
+    /// Segment length, seconds of media time.
+    public static let segmentSeconds: Int64 = 4
+    private var swap = Swap()
+
+    public init(clipID: Int64) { self.clipID = clipID }
+
+    public func apply(to project: Project) throws {
+        guard let c = ClassicCaptions.carriers(project).first(where: { $0.clip.clip.id == clipID }) else {
+            throw EditError.invalid("clip \(clipID) is not a top-level audio clip")
+        }
+        guard c.owner["parameters"]?.object?["captions"] == nil else {
+            throw EditError.invalid("clip \(clipID) already has captions")
+        }
+        let lo = c.clip.clip.mediaStart.double.rounded(), hi = Double(c.mediaHi)
+        let step = project.timebase.editRate * Self.segmentSeconds
+        guard Double(lo) < hi, step > 0 else { throw EditError.invalid("clip \(clipID) is empty") }
+        var kfs: [JSON] = []
+        var t = Int64(lo)
+        while Double(t) < hi {
+            kfs.append(ClassicCaptions.keyframe(t, ClassicCaptions.value("")))
+            t += step
+        }
+        let params = c.owner["parameters"]?.object?.copy() ?? JSONObject()
+        params["captions"] = J.obj([("type", J.str("caption")), ("keyframes", J.arr(kfs))])
+        try swap.commit([(c.parametersPath, .object(params))], in: project)
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
+}
+
 /// Removes classic captions inside a timeline range (seconds; nil = everything), trimming captions
 /// that cross its edges, on `clipID` only when given. A clip left without captions loses its
 /// `captions` parameter. Throws when no caption is touched. Revert is byte-identical.
@@ -205,7 +248,7 @@ public enum ClassicCaptions {
                 params["captions"] = nil
             } else {
                 params["captions"] = J.obj([("type", J.str("caption")),
-                                            ("keyframes", J.arr(ClassicCaptions.keyframes(kept, end: c.mediaHi)))])
+                                            ("keyframes", J.arr(ClassicCaptions.keyframes(kept, start: c.mediaLo, end: c.mediaHi)))])
             }
             edits.append((c.parametersPath, .object(params)))
         }

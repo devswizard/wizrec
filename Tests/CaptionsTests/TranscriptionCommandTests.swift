@@ -17,9 +17,9 @@ import TimelineEngine
          "parameters" : {"transcription" : {"type" : "string", "keyframes" : [
            {"endTime" : 0, "time" : 0, "value" : "Hello", "duration" : 0},
            {"endTime" : \(s(0.5)), "time" : \(s(0.5)), "value" : "world.", "duration" : 0},
-           {"endTime" : \(s(1)), "time" : \(s(1)), "value" : "", "duration" : 0},
+           {"endTime" : \(s(1)), "time" : \(s(1)), "value" : "%GAP", "duration" : 0},
            {"endTime" : \(s(3)), "time" : \(s(3)), "value" : "Again", "duration" : 0},
-           {"endTime" : \(s(3.4)), "time" : \(s(3.4)), "value" : "", "duration" : 0}]}}}
+           {"endTime" : \(s(3.4)), "time" : \(s(3.4)), "value" : "%GAP", "duration" : 0}]}}}
         """)
         // Reads back as the trimmed, non-empty words, ends from the next keyframe.
         let back = Transcript.words(in: p, sourceID: 1, track: 0)
@@ -30,14 +30,32 @@ import TimelineEngine
         try expectReversible(cmd, on: p)
     }
 
-    @Test func roundsToFramesAndKeepsTimesIncreasing() throws {
+    @Test func keepsExactTicksAndTimesIncreasing() throws {
         let p = try makeProject(tracks: [amFile(10, start: 0, dur: s(10))])
-        // 0.01 s and 0.02 s both round to frame 0: the second is pushed to frame 1.
+        // Not frame-rounded [obs CA2]: 0.01 s stays 7056000 ticks.
         let cmd = ApplyTranscription(sourceID: 1, track: 0, words: [w("b", 0.02, 0.03), w("a", 0.01, 0.02)], closeGap: 10)
         try cmd.apply(to: p)
         let kfs = at(p, "sourceBin/0/sourceTracks/0/parameters/transcription/keyframes")?.array?.items ?? []
-        #expect(kfs.compactMap { $0.object?["time"]?.int } == [0, frame, 2 * frame])
-        #expect(kfs.compactMap { $0.object?["value"]?.string } == ["a", "b", ""])
+        #expect(kfs.compactMap { $0.object?["time"]?.int } == [s(0.01), s(0.02), s(0.03)])
+        #expect(kfs.compactMap { $0.object?["value"]?.string } == ["a", "b", "%GAP"])
+        // Equal times: pushed one tick later.
+        let same = ApplyTranscription(sourceID: 1, track: 0, words: [w("x", 1, 1), w("y", 1, 1)])
+        try same.apply(to: p)
+        let k2 = at(p, "sourceBin/0/sourceTracks/0/parameters/transcription/keyframes")?.array?.items ?? []
+        #expect(k2.compactMap { $0.object?["time"]?.int } == [s(1), s(1) + 1, s(1) + 2])
+    }
+
+    @Test func readsBothEndMarkerForms() throws {
+        // CP1 closes with "", Camtasia 2026 with "%GAP" [obs]; neither is a word.
+        let kf = { (t: Double, v: String) in #"{"endTime" : \#(s(t)), "time" : \#(s(t)), "value" : "\#(v)", "duration" : 0}"# }
+        let bin = testSourceBin.replacingOccurrences(of: #""metaData" : "", "parameters" : {}}]}, "#, with: """
+        "metaData" : "", "transcriptionSet" : true, "parameters" : {"transcription" : {"type" : "string", "keyframes" : [\
+        \(kf(0, "One")), \(kf(0.5, "timing.The")), \(kf(1, "%GAP")), \(kf(2, "two")), \(kf(2.5, ""))]}}}]},
+        """)
+        let p = try makeProject(tracks: [""], sourceBin: bin)
+        let words = Transcript.words(in: p, sourceID: 1, track: 0)
+        #expect(words.map(\.text) == ["One", "timing.The", "two"])
+        #expect(words.map(\.end) == [0.5, 1, 2.5])
     }
 
     @Test func replacesExistingTranscriptionAndCreatesParameters() throws {

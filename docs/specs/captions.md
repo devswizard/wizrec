@@ -269,7 +269,8 @@ Each is replaceable once CA2 answers it.
 | **Size.** Base `font.size`, shrunk until the block fits the box; the `textAttributes` `fontSize` (fitted to the placeholder `def.text`) is ignored, its font/weight/colour kept | [WizRec] | `DynamicCaptionText.fit` |
 | **Block transition.** Any non-empty `block-transition-name` fades the block in over `block-transition-duration` | [WizRec] | `DynamicCaptionText.draw` |
 | **Easing.** Over `word-easing-duration` the current word's colour, outline and scale ease in while the previous word's ease out; the word box slides over `word-rectangle-transition-time` | [inf] from key names | same |
-| **Callout `mediaStart`.** Ignored (CP1's 0.2333 s is unexplained); new callouts get 0 | [WizRec] | `AddDynamicCaption` |
+| **New callout.** 60 s from the playhead on a new top track, `mediaStart` 0, preset `def` keys as in "CA2 results"; a second style adds a second callout. Box size and `translation1` scale with canvas height / 1080 | [obs CA2]; scaling [WizRec] | `AddDynamicCaption`, `DynamicCaptionPreset` |
+| **Base size for blocks.** Run `fontSize` when `resize-behavior` is `resizeCallout`, else `font.size` | [inf, CA2] | `CaptionBlockRules.baseFontSize` |
 | **Export to SRT/VTT.** One cue per block of every paired audio clip | [WizRec] | `DynamicCaptions.cues` |
 
 ## 5. Experiments

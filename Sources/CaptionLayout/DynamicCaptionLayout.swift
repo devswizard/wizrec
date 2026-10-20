@@ -32,11 +32,25 @@ public struct CaptionBlockRules: Sendable, Equatable {
                   sentenceBreak: style.newParagraphForEachSentence)
     }
 
-    /// Rules for a dynamic-caption callout `def`: its `width` (default 1728) and base `font.size`
-    /// (default 96). Export (Captions) and rendering (RenderEngine) both use this, so their blocks match.
+    /// Rules for a dynamic-caption callout `def`: its `width` (default 1728) and base font size:
+    /// with `resize-behavior: "resizeCallout"` (Camtasia 2026 presets) the `textAttributes` run
+    /// `fontSize`, since `def.font` is a leftover default there [obs CA2]; otherwise (CP1 and earlier
+    /// WizRec saves, `"resizeText"`) `font.size`, default 96. Export (Captions) and rendering
+    /// (RenderEngine) both use this, so their blocks match.
     public init(def: JSONObject) {
-        self.init(boxWidth: def["width"]?.double ?? 1728, fontSize: def["font"]?.object?["size"]?.double ?? 96,
+        self.init(boxWidth: def["width"]?.double ?? 1728, fontSize: Self.baseFontSize(def: def),
                   style: DynamicCaptionStyle(def: def))
+    }
+
+    /// The base font size of a dynamic-caption `def`, points (see `init(def:)`).
+    public static func baseFontSize(def: JSONObject) -> Double {
+        if def["resize-behavior"]?.string == "resizeCallout",
+           let runs = def["textAttributes"]?.object?["keyframes"]?.array?.items.first?.object?["value"]?.array?.items,
+           let size = runs.compactMap(\.object).first(where: { $0["name"]?.string == "fontSize" })?["value"]?.double,
+           size > 0 {
+            return size
+        }
+        return def["font"]?.object?["size"]?.double ?? 96
     }
 }
 

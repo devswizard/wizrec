@@ -18,12 +18,17 @@ public struct TranscriptWord: Sendable, Equatable {
 
 /// Reads the word transcription stored on a source track (`docs/specs/captions.md` §2):
 /// `sourceTracks[j].parameters.transcription.keyframes`, one `{time, value}` per word, `time` in
-/// project ticks on the source's media axis; a keyframe with `value: ""` closes the previous word.
+/// project ticks on the source's media axis; a keyframe with `value: ""` (CP1) or `"%GAP"` (what
+/// Camtasia 2026 writes where speech stops, CA2) closes the previous word [obs]. A token is not
+/// always one word: it may hold a sentence break with no space ("timing.The") [obs CA2].
 public enum Transcript {
+    /// End markers: "nothing is spoken from here on". Never displayed.
+    public static let endMarkers: Set<String> = ["", "%GAP"]
+
     /// Words of `track`, seconds of source media time. A word ends at the next keyframe; the last
     /// word (when no `""` closes it) ends at the track's duration (`range`/`editRate`), or 1 s after
-    /// its start when the track has no usable range. Keyframes are read in time order; empty
-    /// `value`s produce no word. Times use `editRate` (the project's, ticks per second).
+    /// its start when the track has no usable range. Keyframes are read in time order; end markers
+    /// (`endMarkers`) produce no word. Times use `editRate` (the project's, ticks per second).
     public static func words(_ track: SourceTrack, editRate: Int64) -> [TranscriptWord] {
         let kfs = track.object["parameters"]?.object?["transcription"]?.object?["keyframes"]?.array?.items
             .compactMap(\.object) ?? []
@@ -35,7 +40,7 @@ public enum Transcript {
         .enumerated().sorted { ($0.element.t, $0.offset) < ($1.element.t, $1.offset) }.map(\.element)
         let duration = track.durationSeconds
         var out: [TranscriptWord] = []
-        for (i, m) in marks.enumerated() where !m.text.isEmpty {
+        for (i, m) in marks.enumerated() where !endMarkers.contains(m.text) {
             let end: Double
             if i + 1 < marks.count { end = marks[i + 1].t } else if duration > m.t { end = duration } else { end = m.t + 1 }
             out.append(TranscriptWord(text: m.text, start: m.t, end: max(end, m.t)))

@@ -7,13 +7,12 @@ import TimelineEngine
 /// with one `{endTime, time, value, duration: 0}` keyframe per word (that key order [obs]), and
 /// `transcriptionSet: true` (inserted before `parameters` when new [obs position]).
 ///
-/// - Times: word `start` (seconds of source media time) → project ticks, rounded to the nearest
-///   output frame (`editRate / videoFormatFrameRate`; CP1's words are all whole 30-fps frames
-///   [obs]). Words that land on an earlier or equal frame are pushed one frame later so times stay
-///   strictly increasing.
-/// - Closing marks: a `value: ""` keyframe at the word's `end` after the last word (always; pushed
-///   to the next frame when needed), and after any word followed by at least `closeGap` seconds of
-///   silence [WizRec rule; CP1 shows the closing mark after the last word only].
+/// - Times: word `start` (seconds of source media time) → project ticks, **not** frame-rounded
+///   (Camtasia 2026 writes e.g. 2776800600 [obs CA2]). A time at or before the previous keyframe
+///   is pushed one tick later so times stay strictly increasing.
+/// - Closing marks: a `value: "%GAP"` keyframe where speech stops: at the last word's `end`
+///   (always [obs CA2]), and after any word followed by at least `closeGap` seconds of silence
+///   [WizRec; CA2 shows only the final one]. Readers also accept CP1's `""` (`Transcript.endMarkers`).
 /// - Words are trimmed; empty words are skipped. An empty list writes an empty `keyframes` array.
 /// - Replaces any existing transcription of that track. Revert is byte-identical.
 @MainActor public final class ApplyTranscription: EditCommand {
@@ -48,7 +47,9 @@ import TimelineEngine
     public func revert(on project: Project) throws { try swap.restore(in: project) }
 
     static func keyframes(_ words: [TranscriptWord], _ project: Project, _ closeGap: Double) -> [JSON] {
-        let step = Tree.frameTicks(project) ?? 1
+        let step: Int64 = 1
+        func ticks(_ seconds: Double) -> Int64 { project.timebase.ticks(seconds: max(0, seconds)) }
+        let gap = "%GAP"
         let clean = words.map { w in
             var w = w; w.text = w.text.trimmingCharacters(in: .whitespacesAndNewlines); return w
         }.filter { !$0.text.isEmpty }.sorted { $0.start < $1.start }
@@ -60,12 +61,12 @@ import TimelineEngine
             last = t
         }
         for (i, w) in clean.enumerated() {
-            mark(Tree.ticks(w.start, project), w.text)
-            let end = Tree.ticks(w.end, project)
+            mark(ticks(w.start), w.text)
+            let end = ticks(w.end)
             if i + 1 == clean.count {
-                mark(end, "")  // always closed, at least one frame after its start
+                mark(end, gap)  // always closed, at least one tick after its start
             } else if clean[i + 1].start - w.end >= closeGap, let l = last, end > l {
-                mark(end, "")
+                mark(end, gap)
             }
         }
         return out
