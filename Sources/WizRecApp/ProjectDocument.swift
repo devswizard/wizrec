@@ -138,9 +138,12 @@ final class ProjectDocument: NSDocument {
         }
     }
 
+    /// A `--quit-after` quit dropped this document's edits: it stays clean until it closes.
+    private(set) var discardsEditsForQuit = false
+
     /// Mirrors the model's dirty state into NSDocument (title-bar dot, close confirmation).
     func refreshEditedState() {
-        guard let model else { return }
+        guard let model, !discardsEditsForQuit else { return }
         let edited = model.isDirty || model.isUntitled && model.undo.canUndo
         if edited != isDocumentEdited { updateChangeCount(edited ? .changeDone : .changeCleared) }
     }
@@ -151,9 +154,11 @@ final class ProjectDocument: NSDocument {
     }
 
     /// Window close (and closing during quit): ask before cancelling running exports, then
-    /// continue with NSDocument's usual unsaved-changes review.
+    /// continue with NSDocument's usual unsaved-changes review. `--quit-after` runs drop unsaved
+    /// edits instead of asking (⌘Q and ⌘W included), as they never wait for the user.
     override func canClose(withDelegate delegate: Any, shouldClose shouldCloseSelector: Selector?,
                            contextInfo: UnsafeMutableRawPointer?) {
+        Self.discardUnsavedEdits(in: [self], options: AppEnvironment.options)
         guard let wc = windowControllers.lazy.compactMap({ $0 as? EditorWindowController }).first,
               wc.exportsBlockingClose > 0 else {
             super.canClose(withDelegate: delegate, shouldClose: shouldCloseSelector, contextInfo: contextInfo)
@@ -199,6 +204,28 @@ final class ProjectDocument: NSDocument {
 
     static func error(_ text: String) -> NSError {
         NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError, userInfo: [NSLocalizedDescriptionKey: text])
+    }
+
+    /// Before a quit: in `--quit-after` runs (`UnsavedEditsOnQuit.discard`) marks every edited
+    /// project clean, so the quit neither asks nor saves, and logs one line naming them.
+    /// Interactive runs keep NSDocument's unsaved-changes review.
+    static func discardUnsavedEditsBeforeQuit(options: LaunchOptions) {
+        discardUnsavedEdits(in: NSDocumentController.shared.documents.compactMap { $0 as? ProjectDocument },
+                            options: options)
+    }
+
+    /// `discardUnsavedEditsBeforeQuit` for `documents` only.
+    static func discardUnsavedEdits(in documents: [ProjectDocument], options: LaunchOptions) {
+        guard options.unsavedEditsOnQuit == .discard else { return }
+        let edited = documents.filter { $0.isDocumentEdited }
+        if let line = UnsavedEditsOnQuit.discardNotice(documents: edited.map(\.displayName)) {
+            Swift.print(line)   // not NSDocument.print(_:)
+            fflush(stdout)
+        }
+        for doc in edited {
+            doc.discardsEditsForQuit = true
+            doc.updateChangeCount(.changeCleared)
+        }
     }
 }
 

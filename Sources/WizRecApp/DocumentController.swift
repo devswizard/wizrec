@@ -28,6 +28,14 @@ final class WizRecDocumentController: NSDocumentController {
         return doc
     }
 
+    /// Quit's unsaved-changes review: `--quit-after` runs drop the edits first, so nothing asks.
+    override func reviewUnsavedDocuments(withAlertTitle title: String?, cancellable: Bool, delegate: Any?,
+                                         didReviewAllSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
+        MainActor.assumeIsolated { ProjectDocument.discardUnsavedEditsBeforeQuit(options: AppEnvironment.options) }
+        super.reviewUnsavedDocuments(withAlertTitle: title, cancellable: cancellable, delegate: delegate,
+                                     didReviewAllSelector: didReviewAllSelector, contextInfo: contextInfo)
+    }
+
     override func beginOpenPanel(_ openPanel: NSOpenPanel, forTypes inTypes: [String]?,
                                  completionHandler: @escaping (Int) -> Void) {
         openPanel.allowedContentTypes = ProjectDocument.contentTypes

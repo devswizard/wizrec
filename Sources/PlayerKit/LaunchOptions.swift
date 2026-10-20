@@ -8,7 +8,8 @@ import Foundation
 /// - `--stats-log`: print playback stats once per second to stdout.
 /// - `--overlay`: show the performance overlay.
 /// - `--no-audio`: play silently on the host clock.
-/// - `--quit-after <seconds>`: quit this long after launch (benchmarks).
+/// - `--quit-after <seconds>`: quit this long after launch (benchmarks); quitting then never asks and
+///   drops unsaved edits (`unsavedEditsOnQuit`).
 /// - `--snapshot-dir <dir>` / `--snapshot-at <s,s,…>`: write window snapshots (verification).
 /// - `--draw-always`: redraw every refresh (render-loop stress test).
 /// - `--import <file>` (repeatable): import and place at the playhead (scripted verification).
