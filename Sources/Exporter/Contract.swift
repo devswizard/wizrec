@@ -60,10 +60,24 @@ public struct ExportPreset: Sendable, Equatable {
     public init(name: String, settings: ExportSettings) { self.name = name; self.settings = settings }
 }
 
-public enum ExportError: Error, Sendable, Equatable {
+/// Why an export stopped. `errorDescription` is a sentence the UI shows as is.
+public enum ExportError: Error, Sendable, Equatable, LocalizedError {
     case notImplemented
     case cancelled
     case failed(String)
+    /// The encoder (AVAssetWriter) accepted nothing, or did not finish the file, for `seconds` s.
+    /// The export was stopped and its partial file removed.
+    case encoderStalled(seconds: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .notImplemented: "This export format is not available yet."
+        case .cancelled: "Export cancelled."
+        case .failed(let message): message
+        case .encoderStalled(let s):
+            "The encoder stopped responding for \(s) s. The export was stopped and the partial file removed."
+        }
+    }
 }
 
 /// One export job. Progress 0–1 via `progress`; `cancel()` stops and removes the partial file.
