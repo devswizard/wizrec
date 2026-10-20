@@ -187,9 +187,20 @@ public struct CacheStats: Sendable, Equatable {
     }
 }
 
+/// Where HDR (PQ/HLG) pictures are tone-mapped to SDR BT.709.
+public enum HDRToneMapping: Sendable, Equatable {
+    /// Plain Swift on the CPU: the reference. Deterministic; export and thumbnails use it.
+    case cpu
+    /// Metal compute (playback of 4K60 HDR). Within ±1 code per channel of `.cpu`; falls back
+    /// to `.cpu` per frame when Metal is unavailable or the picture format is unsupported.
+    case gpu
+}
+
 /// Opens and caches media sources and decoded frames. One per document.
 public actor MediaPool {
     public let cacheLimitBytes: Int
+    /// Tone mapping of HDR video frames (`.cpu` unless the pool serves interactive playback).
+    public nonisolated let hdrToneMapping: HDRToneMapping
 
     var sources: [URL: Task<any MediaSource, Error>] = [:]
     var cache: FrameCache
@@ -226,8 +237,11 @@ public actor MediaPool {
 
     /// `cacheLimitBytes`: budget for the decoded-frame cache (LRU). `diskCacheDirectory`: where
     /// waveform peaks persist between launches (nil = memory only; never inside a project bundle).
-    public init(cacheLimitBytes: Int = 512 << 20, diskCacheDirectory: URL? = MediaPool.defaultDiskCacheDirectory) {
+    /// `hdrToneMapping`: `.gpu` only for playback pools; export keeps the `.cpu` reference.
+    public init(cacheLimitBytes: Int = 512 << 20, diskCacheDirectory: URL? = MediaPool.defaultDiskCacheDirectory,
+                hdrToneMapping: HDRToneMapping = .cpu) {
         self.cacheLimitBytes = cacheLimitBytes
+        self.hdrToneMapping = hdrToneMapping
         self.cache = FrameCache(limitBytes: cacheLimitBytes)
         self.diskCacheDirectory = diskCacheDirectory
     }
@@ -241,8 +255,9 @@ public actor MediaPool {
     /// Opens (or returns the already open) source for `url`.
     public func source(for url: URL) async throws -> any MediaSource {
         if let t = sources[url] { return try await t.value }
+        let toneMapping = hdrToneMapping
         let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
-            try openSource(try await Prober.probeDetailed(url))
+            try openSource(try await Prober.probeDetailed(url), hdrToneMapping: toneMapping)
         }
         sources[url] = t
         do {

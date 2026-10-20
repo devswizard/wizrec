@@ -8,10 +8,10 @@ import ImageIO
 import VideoToolbox
 
 /// Opens the right `MediaSource` for a probed file.
-func openSource(_ probe: ProbeResult) throws -> any MediaSource {
+func openSource(_ probe: ProbeResult, hdrToneMapping: HDRToneMapping = .cpu) throws -> any MediaSource {
     let info = probe.info
     switch info.kind {
-    case .movie, .recording: return FFMediaSource(info: info, map: probe.map)
+    case .movie, .recording: return FFMediaSource(info: info, map: probe.map, hdrToneMapping: hdrToneMapping)
     case .image: return ImageSource(info: info)
     case .shader: return ShaderSource(info: info)
     case .unknown: throw MediaError.unsupported("unrecognised media: \(info.url.lastPathComponent)")
@@ -24,8 +24,12 @@ actor FFMediaSource: MediaSource {
     nonisolated let map: StreamMap
     private var video: [Int: VideoStreamDecoder] = [:]
     private var audioDecoders: [Int: AudioDecoder] = [:]
+    /// Where HDR frames are tone-mapped.
+    nonisolated let hdrToneMapping: HDRToneMapping
 
-    init(info: MediaInfo, map: StreamMap) { self.info = info; self.map = map }
+    init(info: MediaInfo, map: StreamMap, hdrToneMapping: HDRToneMapping = .cpu) {
+        self.info = info; self.map = map; self.hdrToneMapping = hdrToneMapping
+    }
 
     /// Container index of public stream `stream` after checking its kind.
     private func containerIndex(_ stream: Int, kind: StreamKind) throws -> Int {
@@ -38,7 +42,8 @@ actor FFMediaSource: MediaSource {
 
     private func videoDecoder(_ stream: Int) throws -> VideoStreamDecoder {
         if let d = video[stream] { return d }
-        let d = try VideoStreamDecoder(url: info.url, streamIndex: try containerIndex(stream, kind: .video))
+        let d = try VideoStreamDecoder(url: info.url, streamIndex: try containerIndex(stream, kind: .video),
+                                   hdrToneMapping: hdrToneMapping)
         video[stream] = d
         return d
     }
