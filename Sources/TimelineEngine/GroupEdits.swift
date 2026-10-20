@@ -30,10 +30,27 @@ public enum GroupTime: Sendable, Equatable {
 public enum GroupTiming {
     /// Inner-timeline time of group `groupID` at project time `timeline` (ticks).
     public static func innerTime(group groupID: Int64, timeline: Int64, in project: Project) throws -> Rational {
-        var t = Rational(timeline)
+        try innerTime(group: groupID, timeline: Rational(timeline), in: project)
+    }
+
+    /// `innerTime` for an exact (possibly fractional) project time.
+    static func innerTime(group groupID: Int64, timeline: Rational, in project: Project) throws -> Rational {
+        var t = timeline
         for g in try GroupChain.groups(to: groupID, in: project) {
             let tm = try Timing(g)
             t = try Exact.add(tm.mediaStart, Exact.div(Exact.sub(t, Rational(tm.start)), tm.scalar))
+        }
+        return t
+    }
+
+    /// Project-timeline time of `inner` ticks on the track at `trackPath`
+    /// (any depth): mapped out through every group enclosing that track.
+    static func timelineTime(inner: Int64, onTrack trackPath: JSONPath, in project: Project) throws -> Rational {
+        var t = Rational(inner)
+        let groups = GroupChain.enclosingClipPaths(trackPath).compactMap { $0.resolve(in: project.root)?.object }
+        for g in groups.reversed() {
+            let tm = try Timing(g)
+            t = try Exact.add(Rational(tm.start), Exact.mul(Exact.sub(t, tm.mediaStart), tm.scalar))
         }
         return t
     }
