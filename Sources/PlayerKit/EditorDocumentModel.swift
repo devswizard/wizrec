@@ -181,8 +181,18 @@ public final class EditorDocumentModel {
         public var value: Double
         /// Clip media time (ticks) of the keyframe to set, or nil for a constant.
         public var keyframeAt: Int64?
+        /// True for a shader background's `sourceEffect` parameter (`SetSourceEffectParameters`)
+        /// rather than the clip's own `parameters`.
+        public var isSourceEffect = false
         public init(clipID: Int64, _ name: String, _ value: Double, keyframeAt: Int64? = nil) {
             self.clipID = clipID; self.name = name; self.value = value; self.keyframeAt = keyframeAt
+        }
+
+        /// A shader background `sourceEffect` change (`ShaderInspection.changes`).
+        public static func sourceEffect(clipID: Int64, _ change: SourceEffectChange) -> ParameterChange {
+            var c = ParameterChange(clipID: clipID, change.name, change.value, keyframeAt: change.keyframeAt)
+            c.isSourceEffect = true
+            return c
         }
     }
 
@@ -226,7 +236,17 @@ public final class EditorDocumentModel {
 
     private static func command(for changes: [ParameterChange]) -> any EditCommand {
         // Volume keyframes are audio points: Camtasia's point shape, not eased windows.
-        let steps: [any EditCommand] = changes.map { ch in
+        var steps: [any EditCommand] = []
+        // Background parameters of one clip go in one SetSourceEffectParameters (e.g. a colour's 4 channels).
+        var clips: [Int64] = []
+        for ch in changes where ch.isSourceEffect && !clips.contains(ch.clipID) { clips.append(ch.clipID) }
+        for id in clips {
+            let mine: [SourceEffectChange] = changes.filter { $0.isSourceEffect && $0.clipID == id }.map {
+                SourceEffectChange($0.name, $0.value, keyframeAt: $0.keyframeAt)
+            }
+            steps.append(SetSourceEffectParameters(clipID: id, changes: mine))
+        }
+        steps += changes.filter { !$0.isSourceEffect }.map { (ch: ParameterChange) -> any EditCommand in
             if ch.name == "volume", let at = ch.keyframeAt {
                 return SetVolumePoint(clipID: ch.clipID, at: at, value: ch.value)
             }
@@ -406,6 +426,61 @@ public final class EditorDocumentModel {
         return id
     }
 
+    /// Root of WizRec's background library on disk (default `~/Library/Application Support/WizRec`).
+    /// A library background placed into a Rev group is written to `<root>/backgrounds/<id>.tscshadervid`
+    /// first, so the clip's `metadata.ShaderVidSource` names a lasting file, as Camtasia's names its
+    /// own library file (`shader-backgrounds.md` §1).
+    @ObservationIgnored public var backgroundLibraryRoot = EditorDocumentModel.defaultBackgroundLibraryRoot
+
+    /// `~/Library/Application Support/WizRec`.
+    public nonisolated static var defaultBackgroundLibraryRoot: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("WizRec", isDirectory: true)
+    }
+
+    /// The library file of `background` under `backgroundLibraryRoot`, (re)written when missing or stale.
+    func libraryFile(for background: BackgroundAsset) throws -> URL {
+        let dir = backgroundLibraryRoot.appendingPathComponent("backgrounds", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent(background.fileName)
+        let data = try background.shaderVidData()
+        if (try? Data(contentsOf: file)) != data { try data.write(to: file, options: .atomic) }
+        return file
+    }
+
+    /// Places one of WizRec's backgrounds on inner track `track` of group `groupID` at `innerTicks`
+    /// (the group's inner timeline), imported like a dropped file. On inner track 0 of a Rev group
+    /// (`metadata.groupType` "revMedia") the clip also gets `metadata.ShaderVidSource` (the library
+    /// file's path) and the group `metadata.RevBackground` (`backgrounds/<file>`), as in Camtasia's
+    /// demo save; anywhere else neither is written [WizRec, DECISIONS 2026-10-20]. One undo step
+    /// ("Add Background"); returns the clip id.
+    @discardableResult
+    public func placeBackground(_ background: BackgroundAsset, inGroup groupID: Int64, track: Int = 0,
+                                at innerTicks: Int64) async throws -> Int64 {
+        let file = try libraryFile(for: background)
+        let origin: (path: String, rev: String)? = track == 0 && Self.isRevGroup(groupID, in: project)
+            ? (path: file.path, rev: "backgrounds/" + background.fileName) : nil
+        let ids = try await placeInGroup(.files([file]), group: groupID, track: track, at: innerTicks,
+                                         name: String(localized: "Add Background"), origin: origin)
+        guard let id = ids.first else { throw EditError.invalid("no clip id") }
+        return id
+    }
+
+    /// True when clip `groupID` (anywhere) is a group with `metadata.groupType` "revMedia".
+    static func isRevGroup(_ groupID: Int64, in project: Project) -> Bool {
+        var rev = false
+        for t in project.tracks {
+            for c in t.clips {
+                c.walk { inner, _ in
+                    if inner.id == groupID, inner.kind.typeName == "Group",
+                       inner.metadata?["groupType"]?.string == "revMedia" { rev = true }
+                }
+            }
+        }
+        return rev
+    }
+
     /// Places source `sourceID` at `ticks`: on `track` when free there, else the lowest free
     /// track, else a new track on top. One undo step. Returns the clip id.
     @discardableResult
@@ -436,6 +511,12 @@ public final class EditorDocumentModel {
     @discardableResult
     public func placeInGroup(_ items: GroupPlacement, group groupID: Int64, track: Int,
                              at innerTicks: Int64) async throws -> [Int64] {
+        try await placeInGroup(items, group: groupID, track: track, at: innerTicks, name: "Add to Group", origin: nil)
+    }
+
+    /// `placeInGroup` named `name`; `origin` adds `SetShaderVidSource` for the first clip (Rev backgrounds).
+    private func placeInGroup(_ items: GroupPlacement, group groupID: Int64, track: Int, at innerTicks: Int64,
+                              name: String, origin: (path: String, rev: String)?) async throws -> [Int64] {
         var builders: [CompoundCommand.Builder] = []
         var inserts: [Int] = []
         switch items {
@@ -473,7 +554,13 @@ public final class EditorDocumentModel {
             }
         }
         guard !builders.isEmpty else { return [] }
-        let c = CompoundCommand(name: "Add to Group", builders)
+        if let origin, let first = inserts.first {
+            builders.append { _, done in
+                guard let id = (done[first] as? InsertClipInGroup)?.clipID else { throw EditError.invalid("no clip id") }
+                return SetShaderVidSource(clipID: id, path: origin.path, revBackground: origin.rev)
+            }
+        }
+        let c = CompoundCommand(name: name, builders)
         try perform(c)
         return try inserts.map { i in
             guard let id = (c.steps[i] as? InsertClipInGroup)?.clipID else { throw EditError.invalid("no clip id") }

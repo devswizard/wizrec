@@ -111,6 +111,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
+        // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
+        // into a Rev group are written (UI checks keep them out of Application Support).
+        if let root = UserDefaults.standard.string(forKey: "WizRec.BackgroundLibraryRoot"), !root.isEmpty {
+            model.backgroundLibraryRoot = URL(fileURLWithPath: (root as NSString).expandingTildeInPath, isDirectory: true)
+        }
         inspector.timebase = model.project.timebase
 
         engine.highSpeedPolicyEnabled = options.framePolicy != "exact"
@@ -168,7 +173,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             commit: { [weak self] in self?.commitPreview() },
             set: { [weak self] f, v in self?.setField(f, v) },
             setSpeed: { [weak self] v in self?.setSpeed(v) },
-            setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) })))
+            setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) },
+            previewBackground: { [weak self] n, v in self?.previewBackground(n, v) },
+            setBackground: { [weak self] n, v in self?.setBackground(n, v) })))
         bin.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         props.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
@@ -220,6 +227,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             engine.play()
         }
         if options.showsRelinkAtOpen(missing: model.missing.count) { showRelink(nil) }
+        if options.openGroup, let g = model.project.tracks.flatMap(\.clips).first(where: { $0.kind == .group }) {
+            timelineModel.openGroups = [g.id]
+            print("WizRec: opened group \(g.id) for editing")
+            fflush(stdout)
+        }
     }
 
     override func windowTitle(forDocumentDisplayName displayName: String) -> String {
@@ -347,6 +359,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         run("Change property") { try model.set(changes) }
     }
 
+    /// Live shader background parameter values from the inspector (no undo step yet).
+    private func previewBackground(_ name: String, _ values: [Double]) {
+        guard let s = inspector.inspection?.shader else { return }
+        preview(s.parameterChanges(name, values))
+    }
+
+    /// Shader background parameter values from the inspector: one undo step ("Change Background").
+    private func setBackground(_ name: String, _ values: [Double]) {
+        guard let s = inspector.inspection?.shader else { return }
+        let changes = s.parameterChanges(name, values)
+        guard !changes.isEmpty else { return }
+        run("Change background") { try model.set(changes) }
+    }
+
     /// Clip speed from the inspector, as an exact rational (percent precision); later clips ripple.
     private func setSpeed(_ speed: Double) {
         guard let i = inspector.inspection, speed.isFinite, speed > 0 else { return }
@@ -401,14 +427,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     /// Backgrounds library double-click: the background at the playhead (60 s, lowest free
-    /// track), selected. One undo step ("Add Background").
+    /// track), selected. With a group open on the timeline it goes on that group's bottom inner
+    /// track at the playhead instead (a Rev group then records it, `placeBackground(_:inGroup:)`).
+    /// One undo step ("Add Background").
     func placeBackground(_ bg: BackgroundAsset) -> Bool {
         let at = engine.currentTicks
+        let group = timelineModel.openGroups.last
         ui.isImporting = true
         Task {
             defer { ui.isImporting = false }
             do {
-                let clip = try await model.placeBackground(bg, at: at)
+                let clip: Int64
+                if let group {
+                    let inner = try GroupTiming.innerTime(group: group, timeline: at, in: model.project)
+                    let num: Int64 = inner.num, den: Int64 = max(inner.den, 1)
+                    let ticks: Int64 = num >= 0 ? num / den : (num - den + 1) / den   // floor
+                    clip = try await model.placeBackground(bg, inGroup: group, track: 0, at: ticks)
+                } else {
+                    clip = try await model.placeBackground(bg, at: at)
+                }
                 select([clip])
             } catch {
                 ui.show(String(localized: "Could not add \(bg.displayName): \(Self.describe(error))"))

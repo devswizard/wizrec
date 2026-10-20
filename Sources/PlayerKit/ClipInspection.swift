@@ -65,12 +65,14 @@ public struct ClipInspection: Equatable, Sendable {
     public var effects: [(name: String, bypassed: Bool)]
     /// `attributes.gain` of the audio clip (linear), when present.
     public var gain: Double?
+    /// The clip's shader background parameters (`sourceEffect`), when it plays a `.tscshadervid`.
+    public var shader: ShaderInspection?
 
     public static func == (a: ClipInspection, b: ClipInspection) -> Bool {
         a.clipID == b.clipID && a.typeName == b.typeName && a.name == b.name && a.start == b.start
             && a.duration == b.duration && a.speed == b.speed && a.visualClipID == b.visualClipID
             && a.audioClipID == b.audioClipID && a.values == b.values && a.animated == b.animated
-            && a.keyframeTime == b.keyframeTime && a.gain == b.gain
+            && a.keyframeTime == b.keyframeTime && a.gain == b.gain && a.shader == b.shader
             && a.effects.map(\.name) == b.effects.map(\.name) && a.effects.map(\.bypassed) == b.effects.map(\.bypassed)
     }
 
@@ -121,7 +123,11 @@ public struct ClipInspection: Equatable, Sendable {
             visualClipID: visual.map { _ in clip.kind == .unified ? clip.id : visual?.id ?? clip.id },
             audioClipID: audio.map { _ in clip.kind == .unified ? clip.id : audio?.id ?? clip.id }, values: values, animated: animated,
             keyframeTime: keyframeTime, effects: (visual ?? clip).effects.filter { !$0.isPlaceholder }.map { ($0.name, $0.bypassed) },
-            gain: audio?.attributes?["gain"]?.double)
+            gain: audio?.attributes?["gain"]?.double,
+            shader: clip.kind.typeName == "VMFile"
+                ? ShaderInspection.make(clip: clip, source: clip.sourceID.flatMap { project.source(id: $0) },
+                                        at: t, keyframeTime: keyframeTime)
+                : nil)
     }
 
     /// Parameter changes that set `field` to `value` (keyframe at the playhead when animated).

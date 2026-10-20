@@ -24,6 +24,8 @@ import Foundation
 /// - `--group-drop <file>` (repeatable): open the first top-level group for editing and drop the
 ///   files on its bottom inner track after its last clip, through the timeline's group-drop
 ///   handler (scripted UI check of media drops into open groups).
+/// - `--open-group`: open the first top-level group for editing after opening, as a double-click
+///   on it does (UI checks of placements into an open group; not a scripted step).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -58,6 +60,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var exportPresets: [String] = []
     /// Files dropped into the first group (`--group-drop`).
     public var groupDropPaths: [String] = []
+    /// Open the first top-level group for editing (`--open-group`).
+    public var openGroup = false
 
     public init() {}
 
@@ -82,7 +86,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
-            && a.groupDropPaths == b.groupDropPaths
+            && a.groupDropPaths == b.groupDropPaths && a.openGroup == b.openGroup
     }
 
     /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
@@ -122,6 +126,7 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--export": exportPath = value()
             case "--export-preset": if let v = value() { exportPresets.append(v) }
             case "--group-drop": if let v = value() { groupDropPaths.append(v) }
+            case "--open-group": openGroup = true
             default:
                 if a.hasPrefix("-psn_") { break }
                 // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,

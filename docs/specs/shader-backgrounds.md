@@ -51,7 +51,8 @@ A `.tscshadervid` file is a JSON object [obs, S3]:
   into the bundle under `media/<ts>/`, and `sourceBin[].src` points at that
   copy [obs, S1]. `clip.metadata.ShaderVidSource` records the absolute path it
   came from [obs]. The parent group's `metadata.RevBackground` names it
-  relative to the bundle's resources, e.g. `backgrounds/<file>` [obs].
+  relative to the bundle's resources, e.g. `backgrounds/<file>` [obs]. Both
+  were seen only for a background inside a Rev group; see §11.
 
 ## 2. Host-provided inputs (implicit names)
 
@@ -343,3 +344,39 @@ Consequences for WizRec:
   [obs].
 - WizRec must accept unsigned files itself and must ignore `signature`
   (§1).
+
+## 11. Origin metadata: `ShaderVidSource` and `RevBackground` (2026-10-20)
+
+What is on disk [obs: the demo project, the SH2 and §10 research saves, and every
+other `.tscproj` under `~/Documents`, `camtasia_rea_refs` and the Camtasia bundle,
+142 files]:
+
+| Claim | Tag |
+|---|---|
+| Only one clip has `metadata.ShaderVidSource`: the demo's background, on inner track 0 of a group with `metadata.groupType` `"revMedia"`. Its value is the absolute path of the library file the bundle copy came from (inside the Camtasia app bundle). It is that clip's only metadata key | [obs] |
+| That group's metadata is `RevBackground` (`backgrounds/<file>`, the same file named relative to the library's resources), `RevLayoutID`, `RevLook`, then the usual keys, `groupType` `"revMedia"`. The other 12 groups on disk have no `Rev*` keys and no `groupType` | [obs] |
+| Backgrounds imported into the media bin and dragged onto the timeline (SH2 `sh2-codes`, the §10 control projects) have no `ShaderVidSource` | [obs] |
+| Metadata keys are written in sorted byte order (upper case first) | [obs] |
+| Camtasia opens projects with or without these keys | [obs] |
+
+WizRec's rules (`SetShaderVidSource`, `EditorDocumentModel.placeBackground(_:inGroup:)`):
+
+- **Writes both keys only** when a library background is placed on inner track 0 of a
+  `revMedia` group: the clip gets `ShaderVidSource` = the absolute path of WizRec's library
+  file (`~/Library/Application Support/WizRec/backgrounds/<id>.tscshadervid`, written
+  before the import), and the group gets `RevBackground` = `backgrounds/<id>.tscshadervid`.
+  Keys are inserted in sorted order; an existing key is replaced in place [WizRec, from the
+  demo layout].
+- **Writes neither** for top-level placements, plain groups, other inner tracks, or media-bin
+  imports and drops [WizRec; matches the SH2 imports].
+- Both are plain metadata: `ShaderVidSource` travels with the clip (split halves, copies,
+  moves, ungroup); `RevBackground` stays with its group and goes away when it is ungrouped.
+
+Open questions (no researcher session without licensed exports):
+
+- [?] Does Camtasia write `ShaderVidSource` for a background placed from its own library
+  panel outside Rev? **[WizRec]** no (only the Rev case is observed).
+- [?] Does `RevBackground` change when the Rev background clip is deleted or moved?
+  **[WizRec]** it is kept as it is.
+- [?] Are `sourceEffect` keyframe windows listed in `animationTracks.visual`?
+  **[WizRec]** no: `SetSourceEffectParameters` leaves `animationTracks` unchanged.

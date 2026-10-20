@@ -195,6 +195,21 @@ verbatim) only to a video-only clip whose source is a `.tscshadervid` with a
 non-empty `effectDef`; never for ordinary video. Existing clips' `sourceEffect` and
 sources' `effectDef` are never rewritten.
 
+Shader background edits (app, approved 2026-10-20; `Sources/TimelineEngine/ShaderBackgroundEdits.swift`):
+- `struct SourceEffectChange { name: String; value: Double; keyframeAt: Int64? }`: a
+  clip-side `sourceEffect` key (`ColorN-red|-green|-blue|-alpha` 0–1, `Pos.x|.y` px,
+  or a double's name), constant or keyframe at clip media time (ticks).
+- `SetSourceEffectParameters(clipID:changes:)`: one undo step ("Change Background");
+  `ParamWriter` keyframe rule with the parameter's `interp` (`linr`); a missing
+  parameter is added at its `effectDef` default, a missing `sourceEffect` is created
+  from the source's `effectDef`; string parameters are rejected; `animationTracks` is
+  untouched [WizRec]. Top-level or nested clips.
+- `SetShaderVidSource(clipID:path:revBackground:)`: clip `metadata.ShaderVidSource` =
+  `path`; the parent group's `metadata.RevBackground` = `revBackground` only when the
+  clip is on inner track 0 of a `groupType` `"revMedia"` group. Keys inserted in sorted
+  byte order. Callers write it only for library backgrounds placed into a Rev group
+  (`EditorDocumentModel.placeBackground(_:inGroup:track:at:)`; `shader-backgrounds.md` §11).
+
 ## MediaEngine M2 (additive)
 
 - `StreamInfo` gains what `SourceDescriptor.Track` needs: stream timescale,

@@ -31,6 +31,11 @@ struct InspectorActions {
     var setSpeed: (Double) -> Void
     /// New style for the selected dynamic caption: one undo step.
     var setCaptionStyle: (DynamicCaptionStyle) -> Void
+    /// Live values of a shader background parameter (`ShaderInspection.Item.name`), no undo step yet;
+    /// `commit` makes them one.
+    var previewBackground: (String, [Double]) -> Void = { _, _ in }
+    /// Shader background parameter values: one undo step.
+    var setBackground: (String, [Double]) -> Void = { _, _ in }
 }
 
 /// Properties of the selected clip: transform, crop, opacity, volume; speed read-only.
@@ -94,6 +99,12 @@ struct InspectorView: View {
                 }
                 section("Visual") {
                     row(i, .opacity, "Opacity", unit: "%", scale: 100, range: 0...100, step: 1)
+                }
+            }
+            if let shader = i.shader, !shader.items.isEmpty {
+                section("Background") {
+                    BackgroundInspectorSection(shader: shader, preview: actions.previewBackground,
+                                               commit: actions.commit, set: actions.setBackground)
                 }
             }
             if let style = state.captionStyle {
@@ -178,7 +189,7 @@ struct InspectorView: View {
 }
 
 /// A numeric text field that reports a new value on Return or focus loss.
-private struct NumberField: View {
+struct NumberField: View {
     let value: Double
     let unit: String
     let onSet: (Double) -> Void
