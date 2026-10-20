@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 // A document sheet (e.g. Relink Missing Media shown at open) blocks closing the
                 // document and with it the scripted quit; dismiss sheets first.
                 for w in NSApp.windows { if let s = w.attachedSheet { w.endSheet(s) } }
+                // Unsaved edits would make the quit ask; a timed run never waits for the user.
+                ProjectDocument.discardUnsavedEditsBeforeQuit(options: options)
                 NSApp.terminate(nil)
             }
         }
