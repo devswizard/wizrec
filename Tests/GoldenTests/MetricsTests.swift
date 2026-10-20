@@ -79,7 +79,7 @@ func naiveSSIM(_ a: RGBAImage, _ b: RGBAImage) -> Double {
 @Suite struct MetricsTests {
     @Test func gaussianWindowIsNormalised() {
         #expect(Metrics.gaussian.count == 11)
-        let gaussianSum: Double = Metrics.gaussian.reduce(0, +)
+        let gaussianSum: Float = Metrics.gaussian.reduce(0, +)
         #expect(abs(gaussianSum - 1) < 1e-6)
         #expect(Metrics.gaussian[5] > Metrics.gaussian[4] && Metrics.gaussian[0] == Metrics.gaussian[10])
     }
