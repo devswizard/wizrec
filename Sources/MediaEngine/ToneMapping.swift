@@ -7,6 +7,7 @@
 import CFFmpeg
 import CoreVideo
 import Foundation
+import os
 
 /// HDR transfer characteristic of a stream, from its stream-level colour tags.
 enum HDRTransfer: Sendable, Equatable {
@@ -273,4 +274,22 @@ final class ToneMapper: Sendable {
             } }
         }
     }
+}
+
+/// Thread-safe tally of tone-mapped frames for one `MediaPool` (its decoders run on many queues).
+final class ToneMapCounter: Sendable {
+    enum Path { case gpu, cpu, cpuFallback }
+    private let state = OSAllocatedUnfairLock(initialState: ToneMapStats())
+
+    func count(_ path: Path) {
+        state.withLock {
+            switch path {
+            case .gpu: $0.gpuFrames += 1
+            case .cpu: $0.cpuFrames += 1
+            case .cpuFallback: $0.cpuFallbackFrames += 1
+            }
+        }
+    }
+
+    var stats: ToneMapStats { state.withLock { $0 } }
 }

@@ -194,6 +194,11 @@ byte-identical revert.
   Apple silicon. Per-frame CPU fallback when Metal is missing or a buffer is
   unsupported. 4K60 10-bit HEVC PQ/HLG playback decode + tone map ≈ 480 fps
   (`.gpu`) vs ≈ 30 fps (`.cpu`), release.
+- Tone-map diagnostics (S5, additive, pre-approved): `public struct
+  ToneMapStats { gpuFrames, cpuFrames, cpuFallbackFrames }` and
+  `MediaPool.toneMapStats` (nonisolated). Counts full-size HDR frames only
+  (thumbnails excluded); not reset by `purge()`. `cpuFallbackFrames` = a
+  `.gpu` pool fell back to the CPU (no Metal, unsupported buffer, kernel error).
 
 ## TimelineUI
 
