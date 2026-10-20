@@ -64,34 +64,55 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-20, end of build session 5)
+## Current state (2026-10-20, end of build session 7)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 5 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 7 snapshot, follow-ups,
   user's pending items).
-- Done and merged: M0–M3, M7 recorder, M8 audio (now aligned to Camtasia
-  2026.2.3 AU1/AU2: exact effect names/defaults, fades as volume points,
-  dual-mono loudness at the mix rate), M9 export (ProRes demo 25.7 s in
-  3.0 s), M10 captions (whisper.cpp 1.9.5 live-tested; VAD timing; Bengali
-  via large-v3-turbo; CA1/CA2 caption rules), M11 (Sparkle 2.10.0 wired, off
-  until a feed/key exist; self-signed DMG verified; CI ready for a remote);
-  M4–M6 rendering with all 31 blend modes, matte modes, Border/Reflection,
-  CO3 callouts, Extend Frame held frames, Metal HDR tone map for playback
-  (4K60 HEVC PQ 34 → 478 fps); group/split/trim/ungroup/marker rules from
-  observed Camtasia saves (X3/X5/X7/X8). Automated UI checks of the built app
-  (`scripts/ui-checks/`). 979 tests green (23 known issues =
+- Done and merged: M0–M3, M7 recorder, M8 audio (aligned to Camtasia
+  2026.2.3 AU1/AU2), M9 export (ProRes demo 25.7 s in 2.2 s), M10 captions
+  (whisper.cpp 1.9.5 live-tested; VAD timing; Bengali via large-v3-turbo;
+  CA1/CA2 rules), M11 (Sparkle 2.10.0 wired, off until a feed/key exist;
+  ad-hoc DMG; v0.1.0 release notes), M4–M6 rendering (31 blend modes, matte
+  modes, Border/Reflection, CO3 callouts, Extend Frame, Metal HDR tone map
+  for playback), group/split/trim/ungroup/marker rules from observed
+  Camtasia saves (X3/X5/X7/X8). Automated UI checks of the built app
+  (`scripts/ui-checks/`). **1029 tests green** (23 known issues =
   golden-harness and LoadGate self-tests).
+- Session 7 landed:
+  - **Swift 6.3.3 (CI toolchain, Xcode 26.6) compiles** the package and test
+    targets (slow type-checks split/typed, no CGFloat→Double in tuple
+    returns, typed `withUnsafeBytes`). Local recipe: swiftly 6.3.3 + the
+    Command Line Tools' macOS 26.5 SDK (DECISIONS 2026-10-20).
+  - **CI watchdog** (`scripts/ci/test-with-watchdog.sh`): tests built
+    separately; stall detector; thread stacks (`sample`) of a stuck test
+    process and unfinished tests in start order, published as annotations.
+  - **CI hang root cause:** TestGenKit `MediaWriter` `finishWriting` never
+    returned on the 3-core runner VM with several encodes in flight. Fix: one
+    encode at a time, plus timeouts.
+  - **No AI attribution on GitHub** (user rule): history rewritten to drop AI
+    co-author lines (messages only; trees, dates, authors unchanged) and
+    force-pushed; a local `pre-push` hook refuses such lines.
+  - Workflows on Node 24 action majors; DMGs built and mounted with
+    `diskutil image` (hdiutil fallback); v0.1.0 release notes; RELEASING:
+    verify a draft asset without `gh`.
+  - App: shader background inspector controls
+    (`SetSourceEffectParameters`), `ShaderVidSource`/`RevBackground` for
+    library backgrounds placed into a Rev group (`SetShaderVidSource`), real
+    mouse double-click UI check on library tiles.
+  - QA: Swift 6.3 sweep of test targets; Backgrounds tab, shader drop and
+    shader background edit integration tests.
+- **CI / release:** <<CI/RELEASE STATUS>>
 - Camtasia here is a **trial**: export only offers "with/without watermark",
   so there are still **no reference exports**; golden parity (M1/M4/M5/M6)
-  and every look/timing question stay open. Save-only experiments were
-  automated (researcher, DECISIONS 2026-10-20); the export-only leftovers
-  are listed at the end of `docs/testing/camtasia-session-2.md`.
+  and every look/timing question stay open. The export-only leftovers are
+  listed at the end of `docs/testing/camtasia-session-2.md`.
 - Camtasia rejects WizRec `.tscshadervid` backgrounds (signed files only);
   WizRec warns on save.
-- Remote: `https://github.com/devswizard/wizrec` (public; history rewritten
-  before the first push). No Apple Developer account: ad-hoc DMGs, never
-  notarized.
+- Remote: `https://github.com/devswizard/wizrec` (public). No Apple
+  Developer account: ad-hoc DMGs, never notarized. Never push local
+  `agent/*` branches (pre-rewrite history).
 - Still blocked on the user: licensed reference exports, Sparkle feed host +
-  keys.
+  keys, manual checks ED2–ED4/CA1.
 
 ### M0 (2026-10-19)
 
