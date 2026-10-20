@@ -96,7 +96,9 @@ public struct SourceEffectChange: Sendable, Equatable {
 /// so `ShaderVidSource` travels with the clip (split halves, copies and moves keep it,
 /// ungrouping keeps it on the clip) and `RevBackground` stays with its group (deleting or
 /// moving the background clip leaves it as it is; ungrouping drops it with the group).
-/// Media-bin imports and drops write neither [obs: Camtasia-imported backgrounds have none].
+/// Media-bin imports and drops write neither [obs: Camtasia-imported backgrounds have none];
+/// WizRec calls this only for library backgrounds placed on inner track 0 of a Rev group, the
+/// one case seen on disk (`shader-backgrounds.md` §11) [WizRec].
 @MainActor public final class SetShaderVidSource: EditCommand {
     public let name = "Add Background"
     public let clipID: Int64

@@ -401,14 +401,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     /// Backgrounds library double-click: the background at the playhead (60 s, lowest free
-    /// track), selected. One undo step ("Add Background").
+    /// track), selected. With a group open on the timeline it goes on that group's bottom inner
+    /// track at the playhead instead (a Rev group then records it, `placeBackground(_:inGroup:)`).
+    /// One undo step ("Add Background").
     func placeBackground(_ bg: BackgroundAsset) -> Bool {
         let at = engine.currentTicks
+        let group = timelineModel.openGroups.last
         ui.isImporting = true
         Task {
             defer { ui.isImporting = false }
             do {
-                let clip = try await model.placeBackground(bg, at: at)
+                let clip: Int64
+                if let group {
+                    let inner = try GroupTiming.innerTime(group: group, timeline: at, in: model.project)
+                    let num: Int64 = inner.num, den: Int64 = max(inner.den, 1)
+                    let ticks: Int64 = num >= 0 ? num / den : (num - den + 1) / den   // floor
+                    clip = try await model.placeBackground(bg, inGroup: group, track: 0, at: ticks)
+                } else {
+                    clip = try await model.placeBackground(bg, at: at)
+                }
                 select([clip])
             } catch {
                 ui.show(String(localized: "Could not add \(bg.displayName): \(Self.describe(error))"))
