@@ -33,6 +33,9 @@ codesign --verify --deep --strict "$APP"
 authority=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)
 signature=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Signature=//p' | head -n 1)
 [ -d "$APP/Contents/Frameworks/Sparkle.framework" ] || { echo "error: Sparkle.framework missing" >&2; exit 1; }
+for l in Sparkle/LICENSE MANIFEST.txt WizRec-LICENSE.txt THIRD_PARTY_NOTICES.md; do
+  [ -f "$APP/Contents/Resources/Licenses/$l" ] || { echo "error: Licenses/$l missing" >&2; exit 1; }
+done
 for f in "$APP/Contents/MacOS/WizRec" "$APP"/Contents/Frameworks/*.dylib; do
   if otool -L "$f" | tail -n +2 | grep -qE "/opt/homebrew|/usr/local|/Cellar/"; then
     echo "error: $f links outside the bundle" >&2; exit 1
