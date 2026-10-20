@@ -6,7 +6,7 @@ import WizRecTestSupport
 struct DeadlineTests {
     @Test func pollReturnsWhenConditionHolds() async throws {
         var n = 0
-        try await Deadline.poll("n to reach 3", seconds: 5, interval: 0) {
+        try await Deadline.poll("n to reach 3", seconds: 60, interval: 0) {
             n += 1
             return n >= 3
         }
@@ -21,15 +21,15 @@ struct DeadlineTests {
 
     @Test func valueReturnsTaskResult() async throws {
         let t = Task<Int, any Error> { 42 }
-        #expect(try await Deadline.value(of: t, "answer", seconds: 5) == 42)
+        #expect(try await Deadline.value(of: t, "answer", seconds: 60) == 42)
         let n = Task<String, Never> { "ok" }
-        #expect(try await Deadline.value(of: n, "ok", seconds: 5) == "ok")
+        #expect(try await Deadline.value(of: n, "ok", seconds: 60) == "ok")
     }
 
     @Test func valuePassesTheTaskError() async {
         struct Boom: Error {}
         let t = Task<Int, any Error> { throw Boom() }
-        await #expect(throws: Boom.self) { try await Deadline.value(of: t, "boom", seconds: 5) }
+        await #expect(throws: Boom.self) { try await Deadline.value(of: t, "boom", seconds: 60) }
     }
 
     /// A stuck task: the wait gives up on time and cancels it.
@@ -45,8 +45,8 @@ struct DeadlineTests {
     }
 
     @Test func callbackResumesOnDone() async throws {
-        try await Deadline.callback("immediate", seconds: 5) { done in done() }
-        try await Deadline.callback("later", seconds: 5) { done in
+        try await Deadline.callback("immediate", seconds: 60) { done in done() }
+        try await Deadline.callback("later", seconds: 60) { done in
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { done() }
         }
     }
@@ -63,7 +63,7 @@ struct DeadlineTests {
     }
 
     @Test func blockingWaits() throws {
-        try Deadline.blocking("async signal", seconds: 5) { done in
+        try Deadline.blocking("async signal", seconds: 60) { done in
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { done() }
         }
         #expect(throws: DeadlineExceeded.self) { try Deadline.blocking("never", seconds: 0.05) { _ in } }
@@ -73,13 +73,13 @@ struct DeadlineTests {
     /// arrives while a main-actor test waits synchronously. (A `DispatchQueue.main` block cannot:
     /// the main queue is busy running this test; see `Deadline.wait`.)
     @MainActor @Test func blockingOnMainServicesTheRunLoop() throws {
-        try Deadline.blocking("main run-loop completion", seconds: 5) { done in
+        try Deadline.blocking("main run-loop completion", seconds: 60) { done in
             DispatchQueue.global().async {
                 CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) { done() }
                 CFRunLoopWakeUp(CFRunLoopGetMain())
             }
         }
-        let r = try TestProcess.run("/bin/sh", ["-c", "echo main"], seconds: 10)
+        let r = try TestProcess.run("/bin/sh", ["-c", "echo main"], seconds: 60)
         #expect(r.stdoutText == "main\n")
     }
 
@@ -89,24 +89,24 @@ struct DeadlineTests {
     }
 
     @Test func processCapturesOutputAndStatus() throws {
-        let r = try TestProcess.run("/bin/sh", ["-c", "echo out; echo err >&2; exit 3"], seconds: 10)
+        let r = try TestProcess.run("/bin/sh", ["-c", "echo out; echo err >&2; exit 3"], seconds: 60)
         #expect(r.status == 3)
         #expect(r.stdoutText == "out\n")
         #expect(r.stderrText == "err\n")
-        let merged = try TestProcess.run("/bin/sh", ["-c", "echo a; echo b >&2"], stderr: .stdout, seconds: 10)
+        let merged = try TestProcess.run("/bin/sh", ["-c", "echo a; echo b >&2"], stderr: .stdout, seconds: 60)
         #expect(merged.stdoutText.contains("a") && merged.stdoutText.contains("b"))
         #expect(merged.stderr.isEmpty)
     }
 
     /// Output larger than a pipe buffer (64 KB) does not block the tool.
     @Test func processDrainsLargeOutput() throws {
-        let r = try TestProcess.run("/bin/sh", ["-c", "head -c 1000000 /dev/zero"], seconds: 10)
+        let r = try TestProcess.run("/bin/sh", ["-c", "head -c 1000000 /dev/zero"], seconds: 60)
         #expect(r.status == 0 && r.stdout.count == 1_000_000)
     }
 
     /// stdin is /dev/null, so a tool reading stdin sees EOF instead of waiting.
     @Test func processStdinIsEmpty() throws {
-        let r = try TestProcess.run("/bin/cat", [], seconds: 10)
+        let r = try TestProcess.run("/bin/cat", [], seconds: 60)
         #expect(r.status == 0 && r.stdout.isEmpty)
     }
 

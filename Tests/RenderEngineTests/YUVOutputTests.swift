@@ -4,6 +4,7 @@ import MediaEngine
 import Testing
 import TSCProjKit
 import VideoToolbox
+import WizRecTestSupport
 @testable import RenderEngine
 
 /// GPU BT.709 4:2:0 output (`420v`/`420f`) for export.
@@ -73,7 +74,9 @@ import VideoToolbox
     }
 
     /// Colours match what the encoder made of BT.709-tagged BGRA before (VideoToolbox's conversion).
-    @Test func closeToVideoToolboxConversion() async throws {
+    /// Skipped in VMs: VideoToolbox's software converter there is not the Apple-silicon one.
+    @Test(.disabled(if: TestEnvironment.isVirtualMachine, "VideoToolbox converts differently in a VM"))
+    func closeToVideoToolboxConversion() async throws {
         let (w, h) = (320, 180)
         let r = try renderer()
         nonisolated(unsafe) let bgra = try Buffers.make(w, h)

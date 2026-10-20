@@ -42,9 +42,16 @@ while kill -0 "$pid" 2>/dev/null; do
 done
 wait "$pid"; status=$?
 if (( status != 0 )); then
-  grep -E "(error:|✘)" "$log" | sort -u | head -40 | while IFS= read -r line; do
-    echo "::error title=swift test::${line}"
-  done
+  # GitHub keeps 10 errors per step: every issue line goes into one annotation (details first).
+  python3 - "$log" <<'PY'
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+issues = sorted({l for l in lines if "recorded an issue" in l or "error:" in l})
+failed = sorted({l for l in lines if l.startswith("✘") and "recorded an issue" not in l})
+esc = lambda s: s.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+print("::error title=Test issues (%d)::%s" % (len(issues), esc("\n".join(issues[:120]))))
+print("::error title=Failed tests and suites (%d)::%s" % (len(failed), esc("\n".join(failed[:120]))))
+PY
 fi
 grep -E "Test run with|Executed [0-9]+ tests" "$log" | sort -u | while IFS= read -r line; do echo "::notice title=tests::${line}"; done
 exit $status
