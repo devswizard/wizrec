@@ -286,3 +286,15 @@ Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.s
   (`ApplyTranscription` → `sourceBin[].sourceTracks[].parameters.transcription`
   per captions.md; `AddCaptions`/dynamic-caption callouts). SRT/VTT import and
   export.
+  - CA1/CA2 (2026-10-20, approved API_CHANGE): `ApplyTranscription` writes exact
+    ticks (no frame rounding) and closes speech with `"%GAP"`; readers
+    (`Transcript.words`, `Transcript.endMarkers`) accept `""` and `"%GAP"`.
+    `AddEmptyCaptions(clipID:)` = Add Captions (empty caption every 4 s of
+    media time from `mediaStart`). `AddDynamicCaption(at: playheadSeconds,
+    preset: DynamicCaptionPreset, track:)` adds a 60 s callout at the playhead
+    on a new top track (a second apply adds a second callout); the
+    `init(audioClipID:)` convenience starts at that clip and requires words.
+    `DynamicCaptionPreset` (`.arial2LineDarkBackground`, `.bangersSingleLine`)
+    replaces `DynamicCaptionAppearance`. `CaptionBlockRules.baseFontSize(def:)`:
+    run `fontSize` for `resize-behavior: "resizeCallout"`, else `font.size`.
+    Timeline edits never prune caption keyframes.
