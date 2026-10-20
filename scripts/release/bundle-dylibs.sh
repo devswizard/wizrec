@@ -50,6 +50,12 @@ keg() { echo "$1" | sed -nE 's|^(.*/Cellar/[^/]+/[^/]+)/.*|\1|p'; }
 
 MANIFEST="$LIC/MANIFEST.txt"
 echo "# Libraries bundled in Contents/Frameworks: <file> <formula> <version> <licence>" > "$MANIFEST"
+# Sparkle comes from SwiftPM (make-app.sh copies it and its licence), not from Homebrew.
+if [ -d "$FW/Sparkle.framework" ]; then
+  sv=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$FW/Sparkle.framework/Resources/Info.plist" 2>/dev/null || echo "?")
+  echo "Sparkle.framework sparkle $sv MIT" >> "$MANIFEST"
+  [ -f "$LIC/Sparkle/LICENSE" ] || { echo "error: Sparkle licence missing from $LIC/Sparkle" >&2; exit 1; }
+fi
 
 record_licence() {
   local name=$1 real=$2 k formula version licence

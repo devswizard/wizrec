@@ -27,6 +27,14 @@ SPARKLE_FW="$(dirname "$BIN")/Sparkle.framework"
 if [ -d "$SPARKLE_FW" ]; then
     mkdir -p "$APP/Contents/Frameworks"
     ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
+    # MIT: the licence (with its bsdiff/sais/ed25519 notices) travels with the binary.
+    for l in .build/artifacts/sparkle/Sparkle/LICENSE .build/checkouts/Sparkle/LICENSE; do
+        if [ -f "$l" ]; then
+            mkdir -p "$APP/Contents/Resources/Licenses/Sparkle"
+            cp "$l" "$APP/Contents/Resources/Licenses/Sparkle/LICENSE"
+            break
+        fi
+    done
 fi
 if ! otool -l "$APP/Contents/MacOS/WizRec" | grep -q "@executable_path/../Frameworks"; then
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/WizRec"
