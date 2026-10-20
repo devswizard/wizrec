@@ -129,14 +129,18 @@ struct SceneBuilder {
     /// `attributes`: per-track UI state index-aligned with `tracks` (top level);
     /// nested group tracks carry the same keys inline.
     func tracks(_ tracks: [Track], attributes: [JSONObject] = []) -> [STrack] {
-        let built = tracks.enumerated().map { i, t in
-            let a = i < attributes.count ? attributes[i] : nil
-            func flag(_ k: String) -> Bool { a?[k]?.bool ?? t.object[k]?.bool ?? false }
-            let clips = t.clips.map(node).sorted { $0.start < $1.start }
-            return STrack(index: t.index, videoHidden: flag("videoHidden"), audioMuted: flag("audioMuted"),
-                          clips: clips, transitions: transitions(t.transitions, clips: clips))
+        var built: [STrack] = []
+        built.reserveCapacity(tracks.count)
+        for (i, t) in tracks.enumerated() {
+            let a: JSONObject? = i < attributes.count ? attributes[i] : nil
+            let hidden: Bool = a?["videoHidden"]?.bool ?? t.object["videoHidden"]?.bool ?? false
+            let muted: Bool = a?["audioMuted"]?.bool ?? t.object["audioMuted"]?.bool ?? false
+            var clips: [SNode] = t.clips.map(node)
+            clips.sort { (l: SNode, r: SNode) -> Bool in l.start < r.start }
+            let trs = transitions(t.transitions, clips: clips)
+            built.append(STrack(index: t.index, videoHidden: hidden, audioMuted: muted, clips: clips, transitions: trs))
         }
-        .sorted { $0.index < $1.index }
+        built.sort { (l: STrack, r: STrack) -> Bool in l.index < r.index }
         return Self.pairDynamicCaptions(built)
     }
 
