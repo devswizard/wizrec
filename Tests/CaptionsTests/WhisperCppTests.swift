@@ -369,6 +369,68 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         #expect(!WhisperCppRecognizer.fromDefaults(d).useVAD)
     }
 
+    @Test func prefersLargeMultilingualModelForOtherLanguages() {
+        func models(_ names: [String]) -> [WhisperModel] {
+            names.map { WhisperModel(name: $0, url: URL(fileURLWithPath: "/m/ggml-\($0).bin"), bytes: 1) }
+        }
+        let all = models(["base.en", "large-v3-turbo", "small"])
+        #expect(WhisperCppRecognizer.preferredModel(in: all)?.name == "small")
+        #expect(WhisperCppRecognizer.preferredModel(in: all, language: "en-US")?.name == "small")
+        #expect(WhisperCppRecognizer.preferredModel(in: all, language: "auto")?.name == "small")
+        #expect(WhisperCppRecognizer.preferredModel(in: all, language: "bn-BD")?.name == "large-v3-turbo")
+        #expect(WhisperCppRecognizer.preferredModel(in: all, language: "de")?.name == "large-v3-turbo")
+        #expect(WhisperCppRecognizer.preferredModel(in: models(["small", "large-v3-turbo-q5_0"]), language: "bn")?.name
+                == "large-v3-turbo-q5_0")
+        #expect(WhisperCppRecognizer.preferredModel(in: models(["large-v2", "large-v3", "small"]), language: "bn")?.name
+                == "large-v3")
+        #expect(WhisperCppRecognizer.preferredModel(in: models(["medium", "small"]), language: "bn")?.name == "medium")
+        // English-only models are skipped for other languages while a multilingual one exists.
+        #expect(WhisperCppRecognizer.preferredModel(in: models(["base.en", "tiny"]), language: "bn")?.name == "tiny")
+        #expect(WhisperCppRecognizer.preferredModel(in: models(["base.en"]), language: "bn")?.name == "base.en")
+        #expect(WhisperCppRecognizer.preferredModel(in: [], language: "bn") == nil)
+    }
+
+    @Test func resolvesModelPerLanguageThroughFakeBinary() async throws {
+        let f = try FakeWhisper(body: FakeWhisper.ok, models: ["small", "large-v3-turbo", "silero-v5.1.2"])
+        defer { f.remove() }
+        func modelArg() -> String? { f.args().firstIndex(of: "-m").map { f.args()[$0 + 1] } }
+        #expect(f.recognizer().resolvedModel()?.name == "small")
+        #expect(f.recognizer().resolvedModel(language: "bn")?.name == "large-v3-turbo")
+        #expect(await f.recognizer().status(language: "bn") == .ready)
+        _ = try await f.recognizer().transcribe(tone(seconds: 3), language: "bn-IN")
+        #expect(modelArg()?.hasSuffix("ggml-large-v3-turbo.bin") == true)
+        _ = try await f.recognizer().transcribe(tone(seconds: 3), language: "en")
+        #expect(modelArg()?.hasSuffix("ggml-small.bin") == true)
+        _ = try await f.recognizer().transcribe(tone(seconds: 3), language: nil)
+        #expect(modelArg()?.hasSuffix("ggml-small.bin") == true)
+        // The setting override wins.
+        _ = try await f.recognizer(model: "small").transcribe(tone(seconds: 3), language: "bn")
+        #expect(modelArg()?.hasSuffix("ggml-small.bin") == true)
+        #expect(f.recognizer(model: "small").resolvedModel(language: "bn")?.name == "small")
+    }
+
+    @Test func bengaliScriptFromDevanagari() {
+        #expect(WhisperCppRecognizer.bengaliScript("अमार शोनार बंग्ला,") == "অমার শোনার বংগ্লা,")
+        #expect(WhisperCppRecognizer.bengaliScript("आমার") == "আমার")  // mixed first letter (large-v3-turbo)
+        #expect(WhisperCppRecognizer.bengaliScript("঵িদিয় विडियो") == "বিদিয় বিডিযো")
+        #expect(WhisperCppRecognizer.bengaliScript("ভালোবাসি। OK 12") == "ভালোবাসি। OK 12")
+        #expect(WhisperCppRecognizer.bengaliScript("शुन्दर।") == "শুন্দর।")  // danda kept
+        #expect(WhisperCppRecognizer.bengaliScript("ॐ") == "ॐ")  // no Bengali counterpart: kept
+    }
+
+    @Test func bengaliOutputIsNormalisedOnlyForBengali() async throws {
+        let json = #"{"transcription":[{"offsets":{"from":0,"to":900},"text":" अमार"},"#
+            + #"{"offsets":{"from":900,"to":1800},"text":" शोनार"}]}"#
+        let f = try FakeWhisper(body: FakeWhisper.ok, json: json)
+        defer { f.remove() }
+        let bn = try await f.recognizer().transcribe(tone(seconds: 2), language: "bn")
+        #expect(bn.map(\.text) == ["অমার", "শোনার"])
+        let hi = try await f.recognizer().transcribe(tone(seconds: 2), language: "hi")
+        #expect(hi.map(\.text) == ["अमार", "शोनार"])
+        let auto = try await f.recognizer().transcribe(tone(seconds: 2), language: nil)
+        #expect(auto.map(\.text) == ["अमार", "शोनार"])
+    }
+
     /// Real whisper.cpp. Opt in with `WIZREC_WHISPER_TESTS=1`; needs `whisper-cli` and a model.
     /// `WIZREC_WHISPER_AUDIO` may point at any audio file (default: the `say` voice reading a
     /// sentence), `WIZREC_WHISPER_LANG` sets its language.
@@ -445,9 +507,16 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
                                   to: dir.appendingPathComponent("bn.aiff"))
             let m = try await pool.source(for: bn)
             guard let st = m.info.streams.first(where: { $0.kind == .audio }) else { Issue.record("bn audio"); return }
+            let started = Date()
             let w = try await Transcriber(backend: r).transcribe(m, stream: st.index, language: "bn")
-            print("whisper.cpp bn:", w.map(\.text).joined(separator: " "))
+            let text = w.map(\.text).joined(separator: " ")
+            print("whisper.cpp bn (\(r.resolvedModel(language: "bn")?.name ?? "?"), "
+                  + "\(Date().timeIntervalSince(started)) s):", text)
             #expect(w.count >= 3)
+            // Bengali script, not Devanagari (`bengaliScript`, and a large model when installed).
+            let letters = text.unicodeScalars.filter { $0.properties.isAlphabetic }
+            let bengali = letters.filter { (0x0980...0x09FF).contains($0.value) }.count
+            #expect(Double(bengali) >= 0.9 * Double(letters.count), "\(bengali) of \(letters.count) letters are Bengali")
         }
     }
 

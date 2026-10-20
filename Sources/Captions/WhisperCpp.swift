@@ -162,26 +162,39 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
     /// Multilingual models first, in an accuracy/speed order that suits laptops.
     static let preference = ["small", "large-v3-turbo", "medium", "large-v3", "large-v2", "large", "base", "tiny"]
 
-    /// The model used when none is chosen: the first of `small`, `large-v3-turbo`, `medium`,
-    /// `large-v3`, … that is installed (quantised variants such as `small-q5_1` count), else the
-    /// first installed model.
-    public static func preferredModel(in models: [WhisperModel]) -> WhisperModel? {
-        for p in preference {
-            if let m = models.first(where: { $0.name == p }) ?? models.first(where: { $0.name.hasPrefix(p + "-q") }) {
+    /// Large multilingual models first, for languages other than English. Measured 2026-10-20 on
+    /// Bengali (macOS `say` voice Piya, `-l bn`): `small` writes Devanagari script (0 % Bengali
+    /// letters; 33–54 % character error after `bengaliScript`), `large-v3-turbo` writes Bengali
+    /// script (98–99 %; 17–37 % character error) in 2.8 s for 5–7 s of audio.
+    static let nonEnglishPreference = ["large-v3-turbo", "large-v3", "large-v2", "large", "medium"] + preference
+
+    /// The model used when none is chosen. English, auto-detect (`nil`/`auto`) and unknown
+    /// languages: the first of `small`, `large-v3-turbo`, `medium`, `large-v3`, … that is
+    /// installed. Any other language: multilingual models only, the first of `large-v3-turbo`,
+    /// `large-v3`, `large-v2`, `large`, `medium`, then the same order. Quantised variants such as
+    /// `small-q5_1` count. Else the first installed model.
+    public static func preferredModel(in models: [WhisperModel], language: String? = nil) -> WhisperModel? {
+        let lang = whisperLanguage(language)
+        let english = lang == "en" || lang == "auto"
+        let order = english ? preference : nonEnglishPreference
+        let pool = english ? models : models.filter { !$0.isEnglishOnly }
+        for p in order {
+            if let m = pool.first(where: { $0.name == p }) ?? pool.first(where: { $0.name.hasPrefix(p + "-q") }) {
                 return m
             }
         }
-        return models.first
+        return pool.first ?? models.first
     }
 
     /// The executable that would run, nil when none is found.
     public func resolvedBinary() -> URL? { Self.locateBinary(explicit: binary, in: searchDirectories) }
 
-    /// The model that would load, nil when it (or any model) is missing.
-    public func resolvedModel() -> WhisperModel? {
+    /// The model that would load for `language` (BCP-47 or bare code; nil = auto-detect), nil
+    /// when it (or any model) is missing. A chosen `model` always wins.
+    public func resolvedModel(language: String? = nil) -> WhisperModel? {
         let all = Self.installedModels(in: modelsDirectory)
         if let model { return all.first { $0.name == model } }
-        return Self.preferredModel(in: all)
+        return Self.preferredModel(in: all, language: language)
     }
 
     /// The Silero model `--vad` would use, nil when `useVAD` is off or none is installed.
@@ -207,7 +220,7 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
             if let binary { return .unavailable("\(binary.path) is not an executable") }
             return .unavailable("whisper-cli not found (install whisper.cpp, e.g. `brew install whisper-cpp`)")
         }
-        guard let m = resolvedModel() else {
+        guard let m = resolvedModel(language: language) else {
             if let model { return .modelMissing("ggml-\(model).bin in \(modelsDirectory.path)") }
             return .modelMissing("a ggml model (e.g. ggml-small.bin) in \(modelsDirectory.path)")
         }
@@ -232,7 +245,7 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
         case .unavailable(let m): throw CaptionsError.modelUnavailable(m)
         case .needsPermission, .permissionDenied: throw CaptionsError.permissionDenied
         }
-        guard let exe = resolvedBinary(), let model = resolvedModel() else {
+        guard let exe = resolvedBinary(), let model = resolvedModel(language: language) else {
             throw CaptionsError.modelUnavailable("whisper.cpp")
         }
         try Task.checkCancellation()
@@ -267,6 +280,9 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
         }
         progress?(1)
         var words = try Self.parseJSON(data)
+        if Self.whisperLanguage(language) == "bn" {
+            words = words.map { var w = $0; w.text = Self.bengaliScript(w.text); return w }
+        }
         if let compaction { words = compaction.original(words) }
         return words.map(activity.trim)
     }
@@ -327,6 +343,31 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
             }
         }
         return out
+    }
+
+    /// `text` with Devanagari letters moved to the Bengali block [WizRec]. whisper models often
+    /// write Bengali speech in Devanagari (all of `small`'s output, a word's first letter with
+    /// `large-v3-turbo`); the two blocks share a layout, so U+09xx = U+08xx + 0x80 wherever that
+    /// Bengali code point exists. व (U+0935), and the unassigned U+09B5 whisper sometimes emits,
+    /// become ব (U+09AC). Danda and other unmapped characters are kept. Only for `-l bn`
+    /// (Assamese differs in র/ৰ, ৱ).
+    public static func bengaliScript(_ text: String) -> String {
+        var out = String.UnicodeScalarView()
+        for u in text.unicodeScalars {
+            switch u.value {
+            case 0x0935, 0x09B5:
+                out.append("\u{09AC}")
+            case 0x0900...0x097F:
+                if let b = Unicode.Scalar(u.value + 0x80), b.properties.generalCategory != .unassigned {
+                    out.append(b)
+                } else {
+                    out.append(u)
+                }
+            default:
+                out.append(u)
+            }
+        }
+        return String(out)
     }
 
     static func isAnnotation(_ s: String) -> Bool {
