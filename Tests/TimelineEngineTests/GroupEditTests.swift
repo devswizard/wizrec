@@ -46,7 +46,8 @@ private func newVideo(_ id: Int64, start: Int64) -> String {
     "parameters" : {\(crops.joined(separator: ", "))}, "effects" : [], \
     "start" : \(start), "duration" : 90, "mediaStart" : 0, "mediaDuration" : 90, "scalar" : 1, \
     "metadata" : {"audiateLinkedSession" : "", "clipSpeedAttribute" : {"type" : "bool", "value" : false}, \
-    "colorAttribute" : {"type" : "color", "value" : [0, 0, 0, 0]}, "default-scale" : "1", "effectApplied" : "none"}, \
+    "colorAttribute" : {"type" : "color", "value" : [0, 0, 0, 0]}, "default-scale" : "1", "effectApplied" : "none", \
+    "lockAspectRatio" : {"type" : "bool", "value" : true}}, \
     "animationTracks" : {}}
     """
 }

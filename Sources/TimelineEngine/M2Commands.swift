@@ -13,9 +13,13 @@ import TSCProjKit
 ///   audio stream; `.trec` video becomes `ScreenVMFile`), video only →
 ///   `VMFile`, audio only → `AMFile`, image → `IMFile`. Duration = the
 ///   shortest used stream rounded down to a frame (time-mapping.md §2);
-///   images and open-ended sources (shaders) get 5 s [inf, Camtasia's default
-///   image duration]. `scale0/1` = `metadata.default-scale` = min(1, fit)
-///   (transform.md §3). `start` snaps to the nearest frame; overlap throws.
+///   images get 5 s (`mediaStart` 0, `mediaDuration` 1, `trimStartSum` 0)
+///   and a video+audio `UnifiedMedia` the shorter stream floored to a frame
+///   [obs, edit-semantics.md ED0]; open-ended sources (shaders) get 5 s too
+///   [inf]. `scale0/1` = `metadata.default-scale` = min(1, fit)
+///   (transform.md §3). Visual clips get `metadata.lockAspectRatio` true
+///   [obs, ED0]; audio-only clips do not [?]. `start` snaps to the nearest
+///   frame [obs]; overlap throws.
 /// - **DeleteClips**: clips on any track (top level or in groups);
 ///   transitions that reference a deleted clip are removed. With `ripple`,
 ///   each later clip on the same track moves left by the total duration of
@@ -54,7 +58,7 @@ enum M2 {
 
     // MARK: InsertClip
 
-    /// Default duration for stills and open-ended sources, seconds [inf].
+    /// Default duration for stills [obs, ED0] and open-ended sources [inf], seconds.
     static let stillSeconds: Int64 = 5
 
     static func insertClip(_ c: InsertClip, _ project: Project) throws -> Int64 {
@@ -133,7 +137,7 @@ enum M2 {
         } else if let v = video {
             let s = scale(v)
             clip = MediaJSON.videoClip(id: take(), type: videoType, src: sourceID, stream: v, ident: ident,
-                                       scale: s, timing: timing, metadata: MediaJSON.metadata(defaultScale: s))
+                                       scale: s, timing: timing, metadata: MediaJSON.metadata(defaultScale: s, lockAspect: true))
         } else if let a = audio {
             clip = MediaJSON.audioClip(id: take(), src: sourceID, stream: a, ident: ident,
                                        channels: Int(streams[a].channels), timing: timing,

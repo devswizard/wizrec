@@ -61,7 +61,10 @@ enum MediaJSON {
     /// `metadata.default-scale` text: ≤ 6 significant digits (`"0.714286"`, `"1"`) [obs].
     static func defaultScaleText(_ s: Double) -> String { String(format: "%.6g", s) }
 
-    static func metadata(defaultScale: Double?, image: Bool = false) -> JSON {
+    /// Clip metadata. Visual clips (`lockAspect`) get `lockAspectRatio`
+    /// true in the typed form Camtasia 2026 writes [obs, edit-semantics.md
+    /// ED0; group-edits.md §7]; its position after `effectApplied` is [inf].
+    static func metadata(defaultScale: Double?, lockAspect: Bool = false) -> JSON {
         var pairs: [(String, JSON)] = [
             ("audiateLinkedSession", .string("")),
             ("clipSpeedAttribute", J.typedBool(false)),
@@ -69,7 +72,7 @@ enum MediaJSON {
         ]
         if let s = defaultScale { pairs.append(("default-scale", .string(defaultScaleText(s)))) }
         pairs.append(("effectApplied", .string("none")))
-        if image { pairs.append(("lockAspectRatio", .bool(true))) }  // [obs] format 4–6 images
+        if lockAspect { pairs.append(("lockAspectRatio", J.typedBool(true))) }
         return J.obj(pairs)
     }
 
@@ -138,7 +141,7 @@ enum MediaJSON {
         // Images: mediaStart 0, mediaDuration 1 tick whatever the duration [obs].
         pairs += [("start", J.int(start)), ("duration", J.int(duration)), ("mediaStart", J.int(0)),
                   ("mediaDuration", J.int(1)), ("scalar", J.int(1))]
-        pairs += [("metadata", metadata(defaultScale: scale, image: true)), ("animationTracks", J.emptyObject)]
+        pairs += [("metadata", metadata(defaultScale: scale, lockAspect: true)), ("animationTracks", J.emptyObject)]
         return JSONObject(pairs)
     }
 
@@ -151,7 +154,7 @@ enum MediaJSON {
             ("audio", .object(audio)), ("effects", J.emptyArray),
         ]
         pairs += timingPairs(timing)
-        pairs.append(("metadata", metadata(defaultScale: scale)))
+        pairs.append(("metadata", metadata(defaultScale: scale, lockAspect: true)))
         return JSONObject(pairs)
     }
 }

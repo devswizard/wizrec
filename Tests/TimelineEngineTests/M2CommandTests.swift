@@ -46,9 +46,9 @@ private let geometryCrops = """
 "geometryCrop3" : {"type" : "double", "defaultValue" : 0.0, "interp" : "eioe"}
 """
 
-private func clipMetadata(_ scale: String?, image: Bool = false) -> String {
+private func clipMetadata(_ scale: String?, visual: Bool = true) -> String {
     let s = scale.map { #""default-scale" : "\#($0)", "# } ?? ""
-    let lock = image ? #", "lockAspectRatio" : true"# : ""
+    let lock = visual ? #", "lockAspectRatio" : {"type" : "bool", "value" : true}"# : ""
     return """
     {"audiateLinkedSession" : "", "clipSpeedAttribute" : {"type" : "bool", "value" : false}, \
     "colorAttribute" : {"type" : "color", "value" : [0, 0, 0, 0]}, \(s)"effectApplied" : "none"\(lock)}
@@ -151,7 +151,7 @@ private func clipMetadata(_ scale: String?, image: Bool = false) -> String {
     #expect(image.parameters["scale0"]?.defaultValue?.double == 0.5)
     #expect(image.parameters.names == ["scale0", "scale1", "sourceCrop0", "sourceCrop1", "sourceCrop2", "sourceCrop3",
                                        "geometryCrop0", "geometryCrop1", "geometryCrop2", "geometryCrop3"])
-    #expect(JSON.object(try #require(image.metadata)) == (try JSON.parse(clipMetadata("0.5", image: true))))
+    #expect(JSON.object(try #require(image.metadata)) == (try JSON.parse(clipMetadata("0.5"))))
 
     let rec = try #require(ts[3].clips.first)
     #expect(rec.kind == .unified && rec.video?.kind == .screenVideo && rec.audio?.sourceTrackNumber == 2)
