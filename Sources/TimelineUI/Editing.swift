@@ -553,10 +553,13 @@ public struct TimelineEditor {
     }
 
     /// Default length of library transition `name` (`TransitionPreset.defaultSeconds`, else
-    /// `TimelineLibrary.defaultTransitionSeconds`), at most half of each covered clip,
-    /// frame-rounded, at least one frame. Ticks.
+    /// `TimelineLibrary.defaultTransitionSeconds`) for a one-sided transition (a clip's start or
+    /// end) and **half of it on a cut between two clips** (Camtasia: 1 s and 0.5 s,
+    /// transitions.md TR2 [obs]; halving other presets' lengths [inf]), at most half of each
+    /// covered clip, frame-rounded, at least one frame. Ticks.
     public func transitionDuration(left: Int64?, right: Int64?, name: String? = nil) -> Int64 {
-        let secs = name.flatMap { TimelineLibrary.transition(named: $0)?.defaultSeconds } ?? TimelineLibrary.defaultTransitionSeconds
+        var secs = name.flatMap { TimelineLibrary.transition(named: $0)?.defaultSeconds } ?? TimelineLibrary.defaultTransitionSeconds
+        if left != nil, right != nil { secs /= 2 }
         var d = Int64((secs * Double(snapshot.editRate)).rounded())
         for id in [left, right].compactMap({ $0 }) {
             if let c = snapshot.clip(id)?.clip { d = min(d, c.duration / 2) }

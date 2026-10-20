@@ -46,7 +46,7 @@ struct LibraryTests {
         let (m, _) = try makeView()
         let e = TimelineEditor(model: m, snapshot: TimelineSnapshot(project: m.project))
         #expect(e.transitionDuration(left: nil, right: nil, name: "CubeRotate") == 45)
-        #expect(e.transitionDuration(left: 1, right: 2, name: "CubeRotate") == 45)
+        #expect(e.transitionDuration(left: 1, right: 2, name: "CubeRotate") == 23)   // on a cut: half (22.5)
         #expect(e.transitionDuration(left: 3, right: nil, name: "CubeRotate") == 30)
         #expect(e.transitionDuration(left: nil, right: nil, name: "Unknown") == 30)
     }
@@ -59,9 +59,9 @@ struct LibraryTests {
         #expect(e.transitionTarget(track: 0, at: 80, tolerance: 4)! == (1, nil))
         #expect(e.transitionTarget(track: 0, at: 299, tolerance: 4)! == (3, nil))
         #expect(e.transitionTarget(track: 0, at: 200, tolerance: 4) == nil)
-        #expect(e.transitionDuration(left: 1, right: 2) == 30)
+        #expect(e.transitionDuration(left: 1, right: 2) == 15)    // on a cut: 0.5 s (TR2)
         #expect(e.transitionDuration(left: 3, right: nil) == 30)
-        #expect(e.transitionSpan(left: 1, right: 2)! == (0, 75, 105))
+        #expect(e.transitionSpan(left: 1, right: 2)! == (0, 83, 98))
     }
 
     @Test func dropTransitionOnCutThenRemove() throws {
@@ -77,7 +77,7 @@ struct LibraryTests {
         #expect(canvas.perform(drop))
         #expect(m.undo.undoName == "Add Transition")
         let tr = try #require(view.snapshot.tracks[0].transitions.first)
-        #expect(tr.name == "Fade" && tr.start == 75 && tr.end == 105)
+        #expect(tr.name == "Fade" && tr.start == 83 && tr.end == 98)
         savePNG(render(view), "library-transition")
         // Context menu on the transition offers removal.
         let menu = try #require(canvas.contextMenu(for: .clip(id: 1, track: 0, zone: .body),
