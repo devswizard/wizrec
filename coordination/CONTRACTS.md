@@ -184,6 +184,17 @@ displayWidth: Double? = nil /* scale0/1 = displayWidth / def.width; nil = no sca
 the canvas width. Free-track / magnetic rules as `InsertClip`. The app's
 Annotations library calls it through `PlayerKit.CalloutInsertion`.
 
+`SetSourceEffectDef` (app, approved 2026-10-20; `Sources/TimelineEngine/ShaderSource.swift`):
+`init(sourceID: Int64, entries: [ShaderEffectDefEntry])` writes a shader source's
+`sourceBin` `effectDef` in the SH2 layout (`shader-backgrounds.md` §6), after
+`sourceTracks` (an existing `effectDef` is replaced in place). `ShaderEffectDefEntry`
+is TimelineEngine's own value type (no WizRecAssets dependency); PlayerKit converts
+from `ShaderSourceLayout`. `InsertClip` / `InsertClipInGroup` add a `sourceEffect`
+(after `parameters`, every parameter at its `effectDef` default, numbers copied
+verbatim) only to a video-only clip whose source is a `.tscshadervid` with a
+non-empty `effectDef`; never for ordinary video. Existing clips' `sourceEffect` and
+sources' `effectDef` are never rewritten.
+
 ## MediaEngine M2 (additive)
 
 - `StreamInfo` gains what `SourceDescriptor.Track` needs: stream timescale,

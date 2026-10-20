@@ -95,8 +95,31 @@ private func linr(_ v: String, hints: String? = nil) -> String {
 /// `effectDef` exactly, and a clip inserted from it gets the demo clip's `sourceEffect` values.
 @MainActor @Test func matchesDemoProjectBackground() throws {
     let url = try #require(Bundle.module.url(forResource: "demo", withExtension: "tscproj", subdirectory: "Fixtures"))
-    let demo = try Project(data: Data(contentsOf: url))
-    let src = try #require(demo.source(id: 1)?.object)
+    try expectMatchesCamtasia(try Project(data: Data(contentsOf: url)))
+}
+
+private let userDemo = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Documents/demo project.cmproj")
+
+/// The same check on the user's own project, read in place (never copied).
+@MainActor @Test(.enabled(if: FileManager.default.fileExists(atPath: userDemo.path), "~/Documents/demo project.cmproj not present"))
+func matchesUserDemoProjectInPlace() throws {
+    try expectMatchesCamtasia(try ProjectBundle(url: userDemo).project)
+}
+
+@MainActor @Test func ordinaryVideoNeverGetsSourceEffect() throws {
+    // Even with a (non-empty) effectDef, a non-shader source gets no sourceEffect.
+    let movie = shaderSource.replacingOccurrences(of: "bg.tscshadervid", with: "clip.mp4")
+    let p = try makeProject(tracks: tracks(track(0, [])), sourceBin: "[\(movie)]")
+    try SetSourceEffectDef(sourceID: 2, entries: entries).apply(to: p)
+    try InsertClip(sourceID: 2, track: 0, start: 0).apply(to: p)
+    #expect(p.tracks[0].clips.first?.object["sourceEffect"] == nil)
+}
+
+@MainActor private func expectMatchesCamtasia(_ demo: Project) throws {
+    let shader = try #require(demo.sourceBin.first { $0.src.lowercased().hasSuffix(".tscshadervid") })
+    let src = shader.object
+    let sid = shader.id
     let demoDef = try #require(src["effectDef"])
     @Sendable func n(_ v: JSON?) -> Double { v?.double ?? .nan }
     let typed: [ShaderEffectDefEntry] = (demoDef.array?.items ?? []).compactMap(\.object).map { e in
@@ -118,18 +141,18 @@ private func linr(_ v: String, hints: String? = nil) -> String {
     let stripped = src.copy()
     stripped["effectDef"] = nil
     let p = try makeProject(tracks: tracks(track(0, [])), sourceBin: "[\(String(decoding: JSON.object(stripped).serialized(), as: UTF8.self))]")
-    try SetSourceEffectDef(sourceID: 1, entries: typed).apply(to: p)
+    try SetSourceEffectDef(sourceID: sid, entries: typed).apply(to: p)
     let written = try #require(p.root["sourceBin"]?.array?[0].object)
     #expect(written["effectDef"] == demoDef)
     #expect(written.keys == src.keys)
 
-    let insert = InsertClip(sourceID: 1, track: 0, start: 0)
+    let insert = InsertClip(sourceID: sid, track: 0, start: 0)
     try insert.apply(to: p)
     let mine = try #require(p.tracks[0].clips.first?.object["sourceEffect"]?.object?["parameters"]?.object)
     var theirs: JSONObject?
     func find(_ v: JSON) {
         if let o = v.object {
-            if o["src"]?.int == 1, let se = o["sourceEffect"]?.object?["parameters"]?.object { theirs = se }
+            if o["src"]?.int == sid, let se = o["sourceEffect"]?.object?["parameters"]?.object { theirs = se }
             o.entries.forEach { find($0.value) }
         } else { v.array?.items.forEach(find) }
     }

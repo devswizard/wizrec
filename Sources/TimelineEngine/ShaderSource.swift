@@ -103,10 +103,11 @@ enum ShaderSource {
     /// The clip's `sourceEffect` for a source with an `effectDef` (shader-backgrounds.md §6):
     /// a colour as `<name>-red/-green/-blue/-alpha`, a position as `<name>.x` / `<name>.y`, a
     /// double under its name with `uiHints`, a string entry as a bare string; every number an
-    /// animatable `linr` parameter at its default, numbers copied verbatim. Nil when the source
-    /// has no `effectDef` or it is empty.
+    /// animatable `linr` parameter at its default, numbers copied verbatim. Nil unless the source
+    /// is a `.tscshadervid` with a non-empty `effectDef` (never for ordinary video).
     static func sourceEffect(for source: JSONObject) -> JSON? {
-        guard let def = source["effectDef"]?.array?.items, !def.isEmpty else { return nil }
+        guard source["src"]?.string?.lowercased().hasSuffix(".tscshadervid") == true,
+              let def = source["effectDef"]?.array?.items, !def.isEmpty else { return nil }
         func param(_ v: JSON, hints: JSON? = nil) -> JSON {
             var p: [(String, JSON)] = [("type", .string("double")), ("defaultValue", v), ("interp", .string("linr"))]
             if let hints { p.append(("uiHints", hints)) }
