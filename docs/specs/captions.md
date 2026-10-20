@@ -62,10 +62,24 @@ here, as the content is personal.
 | Captions are a parameter of the **audio clip** they belong to, with one keyframe per caption | [obs] |
 | A caption runs from its `time` to the next keyframe's `time`. The vlog has 7 keyframes at 0, 4, 8, …, 24 s: Camtasia's default 4-s segments, all with empty text | [obs] |
 | `value.text` is plain text. `value.textAttributes` is null here; when present it uses the run format of `callouts.md` §5 | [obs null; inf format] |
-| Time axis: the keyframes start at 0 while the clip's `mediaStart` is 1.117 s, so the axis is **clip-local** (or the segments were made before a trim) | [?] Experiment CA1, which adds a left trim. **WizRec uses the media axis** (`mediaStart + (t − start) / scalar`, like every keyframed parameter), so split/trim/speed need no rewrite [WizRec] |
+| Time axis: **media time** of the audio clip, like every keyframed clip parameter (`mediaStart + (t − start) / scalar`). The vlog's segments were made before its trim | [obs, CA1 2026-10-20: on a clip trimmed to `mediaStart` 1 s, *Add Captions* wrote keyframes at 1, 5, 9 and 13 s. After the clip was moved to timeline 4 s they stayed at 1, 5, 9 and 13] |
 | `captionAttributes` (above) styles every classic caption | [inf] |
 
-Experiment CA1 confirms the time axis and the non-empty form.
+**CA1 results (runtime saves, 2026-10-20)** [obs]:
+
+- *Modify ▸ Closed Captions ▸ Add Captions* on a selected audio clip writes
+  one empty caption (`text` "", `textAttributes` null) every **4 s of media
+  time, starting at the clip's `mediaStart`** and running to the end of the
+  media window: 0, 4, 8 and 12 s on an untrimmed 13.2 s clip; 1, 5, 9 and
+  13 s after a 1 s left trim. The last segment can be very short (13.0 to
+  13.17 s).
+- `timeline.captionAttributes` is unchanged by adding captions.
+- Split, ripple delete and move keep every caption keyframe on each piece.
+  None are pruned or shifted, so a piece can carry captions outside its
+  media window (`edit-semantics.md` X7 #4 has the same rule).
+- Typing caption text, bold runs and font-size changes require the caption
+  editor, which the automation doesn't reach. The non-empty form stays as in
+  the run format above [inf].
 
 ## 2. Transcription (the words)
 
