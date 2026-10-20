@@ -81,6 +81,7 @@ private struct PlaybackSettings: View {
 private struct CaptionSettings: View {
     @AppStorage(WhisperSettings.backendKey) private var backend = AppleSpeechRecognizer().id
     @AppStorage(WhisperSettings.modelKey) private var model = ""
+    @AppStorage(AppPreferences.Key.captionLanguage) private var language = ""
     @AppStorage(WhisperSettings.binaryPathKey) private var binaryPath = ""
     /// Default on, matching `WhisperCppRecognizer.fromDefaults` (a missing key means on).
     @AppStorage(WhisperSettings.vadKey) private var vad = true
@@ -105,6 +106,14 @@ private struct CaptionSettings: View {
             // The radio buttons of a SwiftUI radio-group picker expose neither a label nor the
             // selection to accessibility (both read 0); the group carries the chosen engine.
             .accessibilityValue(backend == Self.whisperID ? "whisper.cpp" : "Apple Speech")
+            Picker("Spoken language", selection: $language) {
+                ForEach(AppPreferences.captionLanguages, id: \.self) { code in
+                    Text(code.isEmpty ? String(localized: "Detect automatically")
+                         : Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                }
+                if !AppPreferences.captionLanguages.contains(language) { Text(language).tag(language) }
+            }
+            .accessibilityIdentifier("settings.captions.language")
             Text("Apple Speech needs no setup. whisper.cpp runs on this Mac too and knows many more languages; install it with `brew install whisper-cpp` and add a model below.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
@@ -152,6 +161,7 @@ private struct CaptionSettings: View {
         .formStyle(.grouped)
         .onAppear(perform: refresh)
         .onChange(of: model) { _, _ in refresh() }
+        .onChange(of: language) { _, _ in refresh() }
         .onChange(of: binaryPath) { _, _ in refresh() }
     }
 
@@ -161,10 +171,11 @@ private struct CaptionSettings: View {
         let w = WhisperCppRecognizer.fromDefaults()
         var automatic = w
         automatic.model = nil
-        autoModel = automatic.resolvedModel()?.name
+        let lang = AppPreferences.load(from: .standard).transcriptionLanguage
+        autoModel = automatic.resolvedModel(language: lang)?.name
         found = w.resolvedBinary()
         Task { @MainActor in
-            let s = await w.status(language: nil)
+            let s = await w.status(language: lang)
             ready = s == .ready
             status = EditorWindowController.describe(s, backend: Self.whisperID)
         }

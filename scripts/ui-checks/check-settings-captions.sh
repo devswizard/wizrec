@@ -17,7 +17,7 @@ MODEL_NAME=${MODEL%.bin}; MODEL_NAME=${MODEL_NAME#ggml-}   # the app lists model
 
 make_work
 gui_lock
-open_project -captions.backend whisper.cpp -captions.whisper.model "" -captions.whisper.binaryPath "" -captions.whisper.vad YES || exit 1
+open_project -captions.backend whisper.cpp -captions.whisper.model "" -captions.whisper.binaryPath "" -captions.whisper.vad YES -captions.language "" || exit 1
 ax keys , cmd >/dev/null
 wait_until 10 'has_window Settings' && pass "Settings window opened" || fail "no Settings window"
 ax click Captions >/dev/null

@@ -266,6 +266,9 @@
     "Deselect All" : {
 
     },
+    "Detect automatically" : {
+
+    },
     "Done" : {
 
     },
@@ -665,6 +668,9 @@
 
     },
     "Split at Playhead  (S)" : {
+
+    },
+    "Spoken language" : {
 
     },
     "Start a new block at each sentence" : {
