@@ -206,3 +206,12 @@ Dated log. Newest last.
   SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swiftly run
   swift build --build-tests --scratch-path <tmp> +6.3.3`; ~80 s clean). The
   macOS 27 SDK does not work with 6.3.3 (Foundation fails to import).
+- **2026-10-20 · Copy/paste inside groups [WizRec] (timeline, approved):**
+  a copy must come from one container (top level, or the inner tracks of one
+  group); a nested clip keeps its own duration and `scalar` (the group's
+  speed/transform is not baked in); paste into an open group maps the playhead
+  to inner time, must land inside the group's visible window, puts overlaps on
+  a new inner track and grows the group; group keys (`RevBackground`,
+  `RevLook`) never travel with a nested clip, `ShaderVidSource` does, and a
+  pasted background sets no `RevBackground`. Open for a save-only researcher
+  experiment: what Camtasia does in each case.
