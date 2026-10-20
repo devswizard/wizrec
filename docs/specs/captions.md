@@ -104,8 +104,8 @@ A dynamic caption is a `Callout` with [obs, CP1]:
 - `modifier` = `"dynamicCaption"`;
 - `dynamic-caption-style` = `"block"`;
 - a placeholder `def.text` ("ABC");
-- the clip spans the whole audio clip (0 to the audio duration);
-- `mediaStart` = 164640000 (0.2333 s) in every sample. Its meaning is [?].
+- in CP1 the clip spans the whole audio clip, with `mediaStart` 164640000
+  (0.2333 s). Camtasia's own default differs: see "CA2 results" below.
 
 **Linking.** No key links the callout to the audio clip or source [obs]. The
 callout shows the transcription of the audio playing at the same timeline
@@ -146,6 +146,86 @@ the meanings are [inf] from the key names.
 | `width`, `height` | 1804.3 × 387.4 | Caption box in callout px. With `scale0/1` 0.9577 it is 1728 × 371 canvas px |
 
 Every style key is a plain constant inside `def`. None is animatable [obs].
+
+### CA2 results: what Camtasia 2026.2.3 writes (runtime saves, 2026-10-20)
+
+Setup: a WizRec-generated project with a 13.2 s synthetic speech WAV
+(`AMFile`, track 1) and a 10 s video (track 2). The automation chose
+*Modify ▸ Add Dynamic Caption Style ▸ "Arial 2 Line Dark Background"* with
+the playhead at 1 s, then *"Bangers Single Line"* at 4 s. Saves only; no
+export was made (trial gate).
+
+**Transcription is created on the source** [obs]. Applying a style ran
+speech recognition and added `transcriptionSet: true` and
+`parameters.transcription` to the WAV's source track, in the §2 format.
+
+- Times are in project ticks on the source's media axis and are not
+  frame-rounded (for example 2776800600).
+- The recognised text had 21 word tokens. Any token can contain a sentence
+  break with no space ("timing.The"), so a reader must not assume that one
+  token is one word [obs].
+- The list ends with a keyframe whose `value` is **`%GAP`** at 7.101 s,
+  where speech stops. `%GAP` is a reserved marker meaning "no word from here
+  on". It is never displayed [inf]. This is the second end-marker form,
+  alongside the empty string of CP1. WizRec must treat both as "nothing is
+  spoken".
+- The words were identical in both saves. Applying a second style did not
+  transcribe again [obs].
+
+**The callout** [obs]:
+
+| Property | Value |
+|---|---|
+| Placement on the timeline | A **new track** above the others. `start` = the playhead (1 s, then 4 s), `duration` **60 s**, whatever the audio's length (13.2 s). `mediaStart` 0, `mediaDuration` 60 s |
+| A second style | Applying another style with the first callout unselected **adds a second callout** on a new track. It does not restyle the first one |
+| `parameters` | Only `translation1` (vertical position) and the four `geometryCrop*` (0). No scale is written (default-scale "1") |
+| Vertical position | `translation1` −396 for the 2-line preset (box `height` 288) and −457 for the single-line preset (`height` 150). Both sit in the lower part of the canvas; the exact rule is [?] |
+| Box | `width` 1280 for both presets; `height` 288 (2 lines) or 150 (1 line). The box height carries the line count [inf] |
+| `resize-behavior` | `"resizeCallout"` (CP1 had `"resizeText"`) |
+
+So CP1's "spans the whole audio clip" and its `mediaStart` 0.2333 s came
+from the way those sample projects were built. Camtasia's own default is
+60 s from the playhead with `mediaStart` 0 [obs].
+
+**`def` keys new since CP1** [obs]:
+
+| Key | Arial 2 Line Dark Background | Bangers Single Line | Meaning |
+|---|---|---|---|
+| `dynamic-caption-display-name` | "Arial 2 Line Dark Background" | "Bangers Single Line" | Gallery name of the preset |
+| `dynamic-caption-preset-ID` | "blockPreset8" | "blockPreset1" | Preset identifier |
+| `enable-ligatures` | 1.0 | 1.0 | Font ligatures on |
+| `hasDropShadow` | 0.0 | absent | Text shadow flag |
+| `word-wrap` | 1.0 | 1.0 | Wrap lines inside the box |
+| `tracking`, `line-spacing` | 0.0, 0.0 | 0.0, 0.0 | Letter and line spacing |
+| `horizontal-alignment`, `vertical-alignment` | "center", "center" | same | Text alignment in the box |
+
+**Preset values that differ** [obs]:
+
+| Key | Arial 2 Line Dark Bg | Bangers Single Line |
+|---|---|---|
+| text font (`textAttributes` `fontName`, `fontSize`, `fontWeight`, `kerning`) | Arial, 96, 400, −0.02 | Bangers, 96, 400, 0.0 |
+| `font` (name / size / weight) | Bebas Neue / 128 / Regular | Bebas Neue / 128 / Regular |
+| `dynamic-caption-background-fill-color` (alpha) | black, **0.6** | black, 0.0 |
+| `dynamic-caption-background-corner-radius` | 24.0 | 25.6 |
+| `dynamic-caption-current-word-enabled` | 0 | 0 |
+| `dynamic-caption-future-word-opacity` | **0.0** (words appear as they are spoken) | 1.0 |
+| `dynamic-caption-word-rectangle-color` | white, alpha 0 | (0, 0.333, 0.98), alpha **1** |
+| `dynamic-caption-current-word-stroke-color` alpha | 0 | 1 |
+| `text-stroke-width` / stroke alpha | 0.0 / 0.4 | 8.0 / 1.0 (black) |
+| `dynamic-caption-word-rectangle-corner-radius` | 6.0 | 6.0 (CP1: 20.0) |
+
+- **The font comes from `textAttributes`.** `def.font` stayed "Bebas Neue
+  128" in both presets, while the visible font of each preset (Arial,
+  Bangers) appears only in the `textAttributes` runs. `def.font` is a
+  leftover default, and the runs decide the font, size and colour [inf,
+  strong].
+- The word rectangle is drawn behind the **current** word. It is visible in
+  the Bangers preset even though `current-word-enabled` is 0. So the
+  rectangle does not depend on `current-word-enabled`, which controls only
+  the current word's own colour, stroke, scale and glow [inf].
+
+Still open, since they need an export: block breaking, the fitted text size,
+and the exact vertical placement rule [?].
 
 ## 4. Rendering model (provisional)
 
