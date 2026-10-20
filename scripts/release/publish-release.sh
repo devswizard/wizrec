@@ -127,6 +127,7 @@ if [ "${DRY_RUN:-0}" = 1 ]; then
 fi
 
 # 6. Publish and read back.
-printf '{"draft":false,"make_latest":"true"}' | api -X PATCH --data-binary @- -o "$REL" "$API/releases/$id"
+# (stdin carries the curl config, so the body goes on the command line; it holds no secret.)
+api -X PATCH --data '{"draft":false,"make_latest":"true"}' -o "$REL" "$API/releases/$id"
 [ "$(field draft)" = false ] || { echo "error: GitHub still reports $TAG as a draft" >&2; exit 1; }
 echo "Published $TAG: $(field html_url)"
