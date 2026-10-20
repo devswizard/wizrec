@@ -143,9 +143,115 @@ a single clip [obs]:
   So a frozen frame is an **image clip that reads one frame of a video
   source**. WizRec must accept an `IMFile` whose source is a video and
   decode the frame at `mediaStart` [obs form; inf rendering].
-- **ED2–ED4** (clip speed 1.5×, magnetic track, ripple trim with Shift)
-  need drags or Properties fields. The automation can't do them reliably
-  yet (bin-to-timeline drags only sometimes land), so they stay [?].
+- **ED2–ED4** were done in session 8 (below).
+
+## Part J, ED2–ED4 (runtime saves, session 8, 2026-10-20, RT-020)
+
+Base: a copy of `format/video-photo-base`: a 10 s video (`VMFile`, no audio)
+on track 1 and a 1600×900 photo (`IMFile`, 5 s) on track 2. The setup was
+1920×1080 at 30 fps. Inputs and saves are in
+`camtasia_rea_refs/research/timeline/ed11/`.
+
+How the steps were automated:
+
+- **Drags** were synthetic mouse events. The helper waits 25 ms between steps
+  and holds 0.8 s before releasing.
+- **Media-bin drops** landed every time once the timeline pane had been
+  enlarged. The earlier failures came from the 186 px timeline pane.
+- **Fields** were set by focusing the AX text field, then typing the value
+  and Return.
+
+### ED2: Clip Speed 1.5× from the Properties field
+
+*Modify ▸ Add Effects ▸ Visual Effects ▸ Clip Speed* adds a "Clip Speed"
+section to Properties. Its fields are *Speed* (shows `1.00x`) and *Duration*
+(minutes, seconds, frames). Typing `1.5` into *Speed* gave `1.50x`, and the
+project became 6;20 long (`ed2-speed`).
+
+| Field | Before | After | Tag |
+|---|---|---|---|
+| `scalar` | 1 | `"2/3"`: a rational **string**, = 1 / speed | [obs] |
+| `duration` | 10 s | 6.6667 s (4704000000 ticks = 200 frames, exactly 10 / 1.5) | [obs] |
+| `mediaStart` / `mediaDuration` | 0 / 10 s | unchanged | [obs] |
+| `metadata.clipSpeedAttribute.value` | false | true | [obs] |
+| `metadata.effectApplied` | "none" | "Clip Speed" | [obs] |
+| `effects` | [] | still [] (no effect entry for Clip Speed) | [obs] |
+| Other clips | — | untouched (the video was alone on its track) | [obs] |
+
+**WizRec (`SetSpeed`, `RetimeCommands.swift`): matches.** It uses
+`scalar = 1/speed`, keeps the media range, floors `duration` to a frame,
+and sets the same two metadata keys without adding an effect. Here
+10 / 1.5 is a whole number of frames, so the flooring and the
+`mediaDuration` recompute were not exercised. When `duration` is not
+frame-exact, whether Camtasia floors it or rounds it is [?].
+
+### ED3: magnetic track drops
+
+The *Enable Magnetic Track* item in the track-header context menu sets
+`trackAttributes[i].magnetic` to true [obs]. The photo and the video were
+dragged from the media bin onto the new empty magnetic track 3.
+
+| Step | Drop point (cursor) | Result | Save | Tag |
+|---|---|---|---|---|
+| 1 | photo at ≈ 3 s on the empty track | photo at **0 s** | `ed3a-magnetic-two` | [obs] |
+| 2 | video at ≈ 20 s | video at **5 s**, touching the photo | `ed3a-magnetic-two` | [obs] |
+| 3 | photo exactly on the 5 s boundary | **inserted** at 5 s; the video was pushed to 10 s | `ed3-magnetic` | [obs] |
+| 4 | photo at ≈ 23.6 s, past the end | appended at 20 s | `ed3b-magnetic-append` | [obs] |
+| 5 | photo inside the video (≈ 11.9, 15.4 and 15.7 s, video at 10–20 s) | **nothing added**, three times | — | [obs] for these synthetic drags |
+| 5′ | control: photo at ≈ 2 s on non-magnetic track 2, over the existing photo | nothing added | — | [obs] |
+| 6 | first clip selected, then the Delete key | the gap closed: 5→0, 10→5, 20→15 | `ed3c-magnetic-delete` | [obs] |
+
+- **Packing.** A magnetic track is kept packed from 0 with no gaps. Drops
+  into empty space go to the end, and plain Delete behaves as a ripple
+  delete [obs].
+- **Drops onto a clip.** A drop whose point lies inside a clip is refused,
+  as on a normal track, and a drop at a boundary inserts there. This is
+  [inf]: the hover feedback was not visible to the automation, and a
+  slower drag with a 1.5 s hold made no difference.
+- **Defaults.** Dropped clips get the ED0 insert defaults:
+  `lockAspectRatio` true, `default-scale` "1", and `effectApplied` "none"
+  [obs].
+
+**WizRec (`Magnetic.swift`):**
+
+- **Matches:** packing from 0, appending, inserting at a boundary, and
+  closing the gap after a delete.
+- **Differs:** a requested start inside a clip. WizRec never refuses: it
+  inserts before the first clip whose midpoint lies after the requested
+  start. Camtasia refused these drops [inf, see above]. This only matters
+  for drag-and-drop UI. API callers that pass a boundary get the same
+  result.
+
+### ED4: Shift-drag of a start edge
+
+Setup on a new track 4 (`ed4a-before`): the video at 0–10 s and the photo
+at 10–15 s, touching. Then the video's **left edge was dragged right by
+2 s while Shift was held**. The Shift key-down/up events were posted
+around the drag, and every mouse event carried the Shift flag.
+
+| Case | Result | Save | Tag |
+|---|---|---|---|
+| Nothing selected before the drag | Video `start` 0→**2 s**, `mediaStart` 0→2 s, `duration` 10→8 s. The photo **did not move** (still at 10 s). The gap is now at 0–2 s | `ed4-shift-trim` | [obs] |
+| The photo was still selected from its drop | Shift-press added the video to the selection, and the drag trimmed **both** clips' start edges by 2 s. Video as above; photo `start` 12 s, `duration` 3 s, `trimStartSum` 2 s (`mediaStart` 0, `mediaDuration` 1 unchanged) | `ed4-ripple-try1` | [obs] |
+
+- **Shift-drag is a plain trim.** It does not ripple in Camtasia 2026.2.3
+  [obs]. Shift was delivered, because it extended the selection in the
+  second case. Shift therefore acts as *add to selection*, and an edge drag
+  trims the same edge of every selected clip by the same amount [obs].
+- **Video trim-start** moves `mediaStart` and writes no `trimStartSum`.
+  Image trim-start adds to `trimStartSum` (as X7 #5) [obs].
+- **Which gesture ripple-trims is [?].** Not tried: Command-drag; Shift on
+  the end edge; Option-drag. The Option-drag attempt coincided with the
+  screen locking, so it gave no result.
+
+**WizRec (`RippleTrim`):**
+
+- **Different command.** `RippleTrim` keeps the clip's `start` and shifts
+  later clips left. That is not what Shift-drag does in Camtasia.
+- **The plain trim matches.** WizRec's plain `TrimClip` gives the same
+  result as Camtasia's Shift-drag for one selected clip.
+- **Multi-clip trim.** Trimming every selected clip's edge together is not
+  a WizRec command [WizRec gap; app-level].
 
 ## X7 — one project, four saves (about 10 minutes)
 
