@@ -248,14 +248,14 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | id | owner | status | acceptance |
 |---|---|---|---|
 | S5-RES-1 | researcher | blocked (trial watermark gate on export; needs activated Camtasia or user exports) | Automated Camtasia exports of the 15 golden cases + 11 sheets into `camtasia_rea_refs/<case>/reference.mp4` (+ ProRes `reference.mov` where possible); `scripts/golden.sh --status` shows them; watermark check |
-| S5-RES-2 | researcher | batch 1 published (group edits, effect catalog, animation, behaviours, transform) | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
+| S5-RES-2 | researcher | done (all save-only experiments published; export-only list in camtasia-session-2.md) | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
 | S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
 | S5-MED-1 | media | done (4K ProRes 4444 23.9→57–63 fps, 422 HQ ≥ 112 fps) | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
 | S5-MED-2 | media+render | done (Metal tone map byte-identical; 4K60 HEVC PQ 34→478 fps; playback pool .gpu) | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
 | S5-REN-1 | render | spec alignment merged (Border/Reflection, catalog defaults, rotation X/Y, shear); parity blocked (no references) | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
 | S5-CAP-1 | captions | done (live whisper, timing, Bengali via large model, CA1/CA2) | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
 | S5-SHIP-1 | ship | done (Sparkle 2.10.0 off when unconfigured, self-signed DMG verified) | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
-| S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
+| S5-APP-1 | app | click-through automated + passing; captions/audio wiring in progress | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
 | S5-TL-1 | timeline | done (observed group + X7 rules) | Replace [inf] group-edit rules with X5 results |
 | S5-AUD-1 | audio | done (AU1/AU2 names, mix-rate loudness, panel commands) | Replace [inf]/[WizRec] audio rules with AU1/AU2 spec |
 
@@ -277,3 +277,5 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - researcher7: captions.md CA1/CA2, markers.md X8 (no clip markers in 2026.2.3; ripple keeps toc), shader-backgrounds SH2 effectDef table.
 - timeline7 X8: ripple keeps toc, default marker name. audio6: AU1/AU2 effects + mix-rate loudness + audio panel commands. render6 SH2: dot keys, colour rule, ShaderSourceLayout, 60 s backgrounds. researcher7: BlendMode/MediaMatte enums, transitions catalog. captions6 CA1/CA2: AddEmptyCaptions, dynamic caption presets at playhead, %GAP. 922 green.
 - researcher7: audio §3.3 (DFN3 without blob OK), callouts CO3, Part J ED0/ED1 (insert defaults, Extend Frame), UnifiedMedia split.
+- app7: automated UI checks (export confirm 12/12, Settings captions 7/7, group drop 5/5), VAD toggle, WizRec background save notice. 929 green.
+- researcher7 done: export-only leftovers listed in docs/testing/camtasia-session-2.md.
