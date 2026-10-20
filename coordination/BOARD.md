@@ -316,3 +316,27 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | QA10-3 | qa | done | Swift 6.3.3 slow expressions listed; RGBAImage, TimelineLayout fixed |
 | DOC10-1 | docs | done | session-7 CLAUDE.md / HANDOFF / next prompt drafted |
 | S7-CI | main | done | CI green (run 17); media suites serial; VM-specific test gates |
+
+# Session 8 — bounded waits, rpath, release publish, open [?] rules (2026-10-20)
+
+User at start: nothing delivered (v0.1.0 still a draft, no licensed exports,
+no Sparkle keys, manual checks not done); "do everything yourself". Local
+GitHub token use and keychain writes are blocked by the permission
+classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| S8-CI | main | todo | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
+| EXP11-1 | export | todo | `MovieExport.finish`, `MediaFileWriter.finishWriting`, `AudioExport` ready loop bounded; a stuck writer ends with an error the UI shows; injected-stuck-writer tests |
+| APP11-1 | app | todo | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
+| APP11-2 | app | todo | `--quit-after` with several unsaved documents: test + UI check |
+| APP11-3 | app | todo | Swift 6.3 slow spots > 50 ms fixed (measured with the 6.3.3 recipe) |
+| APP11-4 | app | todo | automated accessibility audit of library tiles (stands in for the manual VoiceOver pass) |
+| QA11-1 | qa | todo | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
+| QA11-2 | qa | todo | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
+| QA11-3 | qa | todo | integration tests for every session-8 merge; flaky watch (3 runs) |
+| SHIP11-1 | ship | todo | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
+| SHIP11-2 | ship | todo | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
+| SHIP11-3 | ship | todo | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
+| RES11-1 | researcher | todo | save-only experiments: copy/paste inside groups (4 items), shader origin metadata (3 items) |
+| RES11-2 | researcher | todo | automate the former manual checks ED2–ED4 and CA1 text/bold runs (save-only) |
