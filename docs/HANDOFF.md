@@ -10,7 +10,11 @@ This is for the **lead session** that continues the WizRec build. Read
 
 - **`main` is green locally: 1058 tests** (23 known issues = 21
   golden-harness + 2 LoadGate self-tests). Sections 0a–2 are history.
-- **CI / release:** <<CI/RELEASE STATUS>>
+- **CI / release:** CI green on GitHub (run 17, `37b384c`: 629 parallel +
+  429 serial media tests, 23 known issues, Swift 6.3.3 / Xcode 26.6). Tag
+  `v0.1.0` on `37b384c`; Release run 39450575632 built the ad-hoc DMG
+  (FFmpeg + Sparkle inside, VERIFY mount+launch) and attached it with
+  `SHA256SUMS.txt` to a **draft** GitHub Release — the user publishes it.
 - **Session 6 (short, no snapshot):** remote `devswizard/wizrec` pushed
   after the first history rewrite; DMG-only install, tags publish a draft
   Release; CI annotations for toolchain and errors; first Swift 6.3 fixes;

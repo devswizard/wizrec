@@ -291,11 +291,11 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| S7-CI | main | claimed | CI green on GitHub (Xcode 26.6 / Swift 6.3.3) |
+| S7-CI | main | done | CI green on GitHub (Xcode 26.6 / Swift 6.3.3), run 17 |
 | SHIP9-1 | ship | done | actions/checkout, cache, upload-artifact on current majors (no Node 20) |
 | SHIP9-2 | ship | done | `diskutil image` when available, hdiutil fallback; local DMG mounts + launches |
 | SHIP9-3 | ship | done | v0.1.0 release notes (What's new, install, known limits) |
-| SHIP9-4 | ship | todo | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
+| SHIP9-4 | ship | claimed | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
 | APP9-1 | app | done | inspector controls for a shader background's `sourceEffect` params |
 | APP9-2 | app | done | `ShaderVidSource` / group `RevBackground` metadata + timeline rules |
 | APP9-3 | app | done | scripted mouse double-click UI check on library tiles |
@@ -315,4 +315,4 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | QA10-2 | qa | done | load / strict-pool runs measured; export suites' time limits raised to 6 min |
 | QA10-3 | qa | done | Swift 6.3.3 slow expressions listed; RGBAImage, TimelineLayout fixed |
 | DOC10-1 | docs | done | session-7 CLAUDE.md / HANDOFF / next prompt drafted |
-| S7-CI | main | in progress | CI: media suites serial; VM-specific test gates |
+| S7-CI | main | done | CI green (run 17); media suites serial; VM-specific test gates |

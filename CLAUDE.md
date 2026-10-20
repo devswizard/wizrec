@@ -105,7 +105,11 @@ continue here.
     mouse double-click UI check on library tiles.
   - QA: Swift 6.3 sweep of test targets; Backgrounds tab, shader drop and
     shader background edit integration tests.
-- **CI / release:** <<CI/RELEASE STATUS>>
+- **CI / release:** CI green on GitHub (run 17, `37b384c`: 629 parallel +
+  429 serial media tests, 23 known issues, Swift 6.3.3 / Xcode 26.6). Tag
+  `v0.1.0` on `37b384c`; Release run 39450575632 built the ad-hoc DMG
+  (FFmpeg + Sparkle inside, VERIFY mount+launch) and attached it with
+  `SHA256SUMS.txt` to a **draft** GitHub Release — the user publishes it.
 - Camtasia here is a **trial**: export only offers "with/without watermark",
   so there are still **no reference exports**; golden parity (M1/M4/M5/M6)
   and every look/timing question stay open. The export-only leftovers are
