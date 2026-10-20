@@ -33,8 +33,13 @@ macOS screen recorder and editor by Devs Wizard that opens and saves Camtasia
 - **Projects** are read and written only through TSCProjKit and TimelineEngine
   commands. Never `Codable`/`JSONSerialization` on a project.
 - **Never put "Camtasia" in a product, module, bundle or type identifier.**
-- Swift 6 language mode, strict concurrency, Swift 6.0-toolchain compatible.
-  Swift Testing. Doc comment on every public type with units. No force-unwraps
+- Swift 6 language mode, strict concurrency, **Swift 6.3 compatible** (CI
+  runs Xcode 26.6 / Swift 6.3.3; local is 6.4). 6.3 type-checks some lines
+  20–50× slower: keep expressions small, annotate literal/closure types, no
+  implicit CGFloat→Double in tuple returns, explicit `withUnsafeBytes`
+  closure types. Check new code with
+  `swift build -Xswiftc -Xfrontend -Xswiftc -warn-long-expression-type-checking=40`
+  and, when installed, `swiftly run swift build +6.3.3`. Swift Testing. Doc comment on every public type with units. No force-unwraps
   on file data. `@unchecked Sendable` only with a justifying comment.
 - New dependencies must be GPL-3.0-compatible; ask the lead first.
 
