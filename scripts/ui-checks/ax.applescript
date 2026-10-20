@@ -6,6 +6,7 @@
 --
 --   keys <pid> <key> [mods]   keystroke (or "esc"/"return"); mods: any of "cmd,shift,opt,ctrl"
 --   windows <pid>             window titles, one per line
+--   raise <pid> <text>        app to front, the first window whose title contains <text> raised (main)
 --   dump <pid>                every element: role | title | value | description | identifier
 --   has <pid> <key>           "yes" when an element matches <key>
 --   click <pid> <key>         press the first element matching <key>
@@ -52,6 +53,19 @@ on run argv
 				set out to out & (name of w as text) & linefeed
 			end repeat
 			return out
+		else if cmd is "raise" then
+			set frontmost of p to true
+			repeat with w in (windows of p)
+				if (name of w as text) contains (item 3 of argv) then
+					perform action "AXRaise" of w
+					try
+						set value of attribute "AXMain" of w to true
+					end try
+					delay 0.3
+					return "ok"
+				end if
+			end repeat
+			return "missing"
 		else if cmd is "dump" then
 			set out to ""
 			repeat with w in (windows of p)
