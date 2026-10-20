@@ -11,6 +11,8 @@
 --   click <pid> <key>         press the first element matching <key>
 --   check <pid> <key>         tick the checkbox matching <key> (no-op when ticked)
 --   popup-items <pid> <key>   open the pop-up button matching <key>, list its items, close it
+--   frame <pid> <key>         "x y w h" (screen points, top-left origin) of the element; app to front
+--   set <pid> <key> <text>    focus the text field matching <key>, set its text, press Return
 --
 -- <key> matches an element's title (AXTitle), its description (AXDescription) or its
 -- accessibility identifier. SwiftUI controls here expose no title to System Events, so the app
@@ -88,6 +90,20 @@ on run argv
 			return "ok"
 		else if cmd is "check" then
 			if (value of e as integer) is 0 then perform action "AXPress" of e
+			return "ok"
+		else if cmd is "frame" then
+			-- Brings the app to the front: the caller is about to send real mouse events there.
+			set frontmost of p to true
+			set {x, y} to position of e
+			set {w, h} to size of e
+			return (x as text) & " " & (y as text) & " " & (w as text) & " " & (h as text)
+		else if cmd is "set" then
+			set frontmost of p to true
+			set focused of e to true
+			delay 0.2
+			set value of e to (item 4 of argv)
+			delay 0.2
+			key code 36
 			return "ok"
 		else if cmd is "popup-items" then
 			set frontmost of p to true

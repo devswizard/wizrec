@@ -111,6 +111,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
+        // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
+        // into a Rev group are written (UI checks keep them out of Application Support).
+        if let root = UserDefaults.standard.string(forKey: "WizRec.BackgroundLibraryRoot"), !root.isEmpty {
+            model.backgroundLibraryRoot = URL(fileURLWithPath: (root as NSString).expandingTildeInPath, isDirectory: true)
+        }
         inspector.timebase = model.project.timebase
 
         engine.highSpeedPolicyEnabled = options.framePolicy != "exact"
@@ -222,6 +227,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             engine.play()
         }
         if options.showsRelinkAtOpen(missing: model.missing.count) { showRelink(nil) }
+        if options.openGroup, let g = model.project.tracks.flatMap(\.clips).first(where: { $0.kind == .group }) {
+            timelineModel.openGroups = [g.id]
+            print("WizRec: opened group \(g.id) for editing")
+            fflush(stdout)
+        }
     }
 
     override func windowTitle(forDocumentDisplayName displayName: String) -> String {

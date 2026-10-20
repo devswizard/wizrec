@@ -117,6 +117,13 @@ private let tb = Timebase.camtasia
         #expect(!o.isScripted)
     }
 
+    @Test func openGroupIsNotAScriptedStep() {
+        let o = LaunchOptions(arguments: ["p.cmproj", "--open-group", "-WizRec.BackgroundLibraryRoot", "/tmp/lib"])
+        #expect(o.openGroup && o.paths == ["p.cmproj"])
+        #expect(!o.runsScript && !o.isScripted)
+        #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+    }
+
     @Test func groupDropIsAScriptedStep() {
         let o = LaunchOptions(arguments: ["p.cmproj", "--group-drop", "a.mp4", "--group-drop", "b.png"])
         #expect(o.groupDropPaths == ["a.mp4", "b.png"] && o.paths == ["p.cmproj"])
