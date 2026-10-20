@@ -99,7 +99,7 @@ drags, so they were **not** done.
 | 5 | **Images.** `mediaStart` 0 and `mediaDuration` 1 (tick) never change. **A split gives the right half `trimStartSum` = the split offset** (2 s for a split 2 s into the image). Trim-start adds the trimmed amount to `trimStartSum` (2 s, then 3 s after a further 1 s). Extending past the original start was not tested (drag). | [obs] `x7p-b-split`, `x7p-c-trimstart`, `x6-image-trim` |
 | 6 | Trim limits (right edge) | [?] not automated (drag) |
 | 8 | **Move keeps one-sided transitions with their clip.** After Cut/Paste of the right image half (3 → 6 s), its end fade still names it as `leftMedia`. **Two-sided:** moving the incoming clip away splits the transition into an end transition on the clip that stayed and a start transition on the moved clip, both with the same name and duration (`transitions.md` §2, RT-016). | [obs] |
-| 9 | `UnifiedMedia` | [?] the synthetic test cards have no audio stream; to be repeated with a speech+video source |
+| 9 | **`UnifiedMedia` split** (repeated with our own video+speech MP4, RT-018): the parent and both children (`video`, `audio`) of each half carry **identical** `start`/`duration`/`mediaStart`/`mediaDuration`. A split at 25 s of a clip starting at 22.033 s gives a left half of 2.967 s and a right half with `mediaStart` 2.967 s, with new ids for the parent and both children. Trims are assumed to follow the same rule | [obs] split; [inf] trim |
 
 Transition entries written by *Transitions ▸ Fade ▸ Add to Selected Media* on
 a single clip [obs]:
@@ -112,6 +112,40 @@ a single clip [obs]:
 - **Name.** Whether the panel's "Fade" item is the one Camtasia calls
   `LuminanceFadeIn` is [inf]: the search matched the item labelled exactly
   "Fade".
+
+## Part J results (runtime saves, 2026-10-20, RT-018)
+
+- **ED0, insert defaults** [obs]. Media dragged from the bin onto the
+  timeline:
+  - **Image:** 5 s, with `mediaStart` 0, `mediaDuration` 1 and
+    `trimStartSum` 0.
+  - **Video:** its full length (10 s).
+  - **Video with audio:** one `UnifiedMedia` whose length is the **shorter**
+    stream, floored to a whole frame. Video 10 s and audio 9.984 s gave
+    9.9667 s (299 frames). The audio is not padded to the video's length.
+  - **Start:** the drop position, snapped to a frame.
+  - **Metadata:** every inserted clip gets `lockAspectRatio` true and
+    `default-scale` "1".
+- **ED1, Extend Frame to Playhead** [obs]. A 10 s video at 39.633 s was
+  extended to the playhead at 52 s. Camtasia turned the clip into a
+  **`StitchedMedia`** (`minMediaStart` 0.0; stitched `attributes` with gain
+  1, `mixToMono` false, `loudnessNormalization` true, `sourceFileOffset` 0;
+  parameters with plain-number crops and `smoothCursorAcrossEditDuration` 0)
+  holding two segments:
+  1. the original `VMFile`, 0–10 s;
+  2. an **`IMFile` that points at the video source** (same `src`), with
+     `ident` "Frame of <original ident>", `mediaStart` = the time of the
+     last frame (9.9667 s), `mediaDuration` 1 (the image convention),
+     `trimStartSum` 0, and a segment `duration` of 3602.37 s, far longer
+     than needed. The outer clip's `duration` (12.367 s = 10 s + the 2.367 s
+     extension) is what limits it.
+
+  So a frozen frame is an **image clip that reads one frame of a video
+  source**. WizRec must accept an `IMFile` whose source is a video and
+  decode the frame at `mediaStart` [obs form; inf rendering].
+- **ED2–ED4** (clip speed 1.5×, magnetic track, ripple trim with Shift)
+  need drags or Properties fields. The automation can't do them reliably
+  yet (bin-to-timeline drags only sometimes land), so they stay [?].
 
 ## X7 — one project, four saves (about 10 minutes)
 
