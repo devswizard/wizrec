@@ -193,8 +193,8 @@ public final class SetClipSpeed: EditCommand {
 /// `mediaStart` is the media time of the clip's last output frame,
 /// `mediaDuration` 1 (the image convention), `trimStartSum` 0 and
 /// `attributes.ident` "Frame of <ident>". The frame segment's `duration` is
-/// the hold [inf; Camtasia wrote a much longer segment that the outer
-/// duration cuts]. Its crops are copied from the clip [inf].
+/// the hold [inf]; Camtasia wrote 3600 s + the hold (3602.37 s for a
+/// 2.367 s hold), which the outer duration cuts to the same picture. Its crops are copied from the clip [inf].
 ///
 /// - `VMFile`/`ScreenVMFile` [obs]; `UnifiedMedia` [inf]: the frame comes
 ///   from the `video` child, the whole clip is the first segment.

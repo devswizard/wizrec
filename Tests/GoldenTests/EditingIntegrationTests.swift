@@ -88,6 +88,7 @@ import TimelineEngine
         #expect(b2clip.duration == frames(45))
         let freeze = try chain.run(ExtendFrame(clipID: b2, duration: frames(15)))
         #expect(freeze.freezeID != nil)
+        let b2s = try #require(freeze.stitchedID)  // ED1: b2 is now a segment of this StitchedMedia
 
         // Structure: group (with an inner edit), ungroup, stitch, unstitch, detach audio.
         try chain.run(RemoveTransition(leftClipID: a1, rightClipID: a1r))
@@ -107,7 +108,7 @@ import TimelineEngine
         // Ripple edits, delete, magnetic, track removal.
         try chain.run(RippleTrim(clipID: b1, edge: .end, to: frames(150)))
         try chain.run(RippleMove(clipID: b1, toTrack: 1, start: 0))
-        try chain.run(DeleteClips(clipIDs: [b2], ripple: true))
+        try chain.run(DeleteClips(clipIDs: [b2s], ripple: true))
         try chain.run(SetTrackFlag(track: 1, .magnetic, true))
         #expect(chain.project.tracks[1].clips.first?.start == 0)
         try chain.run(DeleteClips(clipIDs: [img]))
