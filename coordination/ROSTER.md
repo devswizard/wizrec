@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 4 agents all finished and their branches are merged; none is live.
+Session 5 agents are live (table below).
 
 ## Session 3 (2026-10-19)
 
@@ -31,3 +31,18 @@ Not spawned (inputs not delivered): researcher, audio, recorder, ship.
 
 Not spawned (inputs not delivered): researcher, render, timeline, audio,
 captions, app.
+
+## Session 5 (2026-10-20)
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` |
+| researcher | a6879ff36181cea8d | `agent/researcher6` |
+| qa | a3b5355b400e41f76 | `agent/qa6` |
+| media | a9ac0a99beba87a9b | `agent/media6` |
+| render | a5fac92c06082ebec | `agent/render6` |
+| captions | af316ccda71a0a936 | `agent/captions6` |
+| ship | a5ee05d5f4a6cf8fc | `agent/ship6` |
+| app | a77d60dc311613a18 | `agent/app6` |
+
+Spawn later (waiting on specs): timeline, audio.
