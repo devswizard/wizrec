@@ -102,13 +102,53 @@ Callout {
 | `TypeWinHighlighter` | Highlighter | Translucent highlight: fill colour, `fill-color-opacity` (0.25–0.75), `fill-invert` |
 | `TypeWinSpotlight` | Spotlight | Darkens everything except a region: `intensity` (0.5), with `width`/`height` animatable |
 | `MacKey` | Keystroke | Keystroke callout: `keys`, `name`, `keyStyle` (0–4), `showKeyBackg`, `showKeyHint` |
-| `MacSVG`, `TypeWinSVG` | SketchMotion | Animated hand-drawn strokes. Their project form is [?] |
+| `MacSVG`, `TypeWinSVG` | SketchMotion | Animated hand-drawn strokes. Project form in §3.1 (CO3) |
 
 - **Region kinds.** `TypeWin*` kinds work on the pixels **below** the
   callout inside its box, like an adjustment layer [inf]: blur, pixelate,
   highlight, or spotlight (inverted).
 - **Shared keys.** Non-remix kinds still carry `shape: ""` and `style: ""`
   [obs].
+
+### 3.1 CO3: region, keystroke and sketch callouts as Camtasia writes them
+
+Runtime saves of 2026-10-20 (RT-017). Tiles from the Annotations tabs
+*Blur and Highlight*, *Sketch Motion* and *Keystroke Callout* were dropped
+on the canvas over a 1920×1080 test card with the playhead at 1 s [obs]:
+
+| Tile | `kind` | `def` keys and defaults | Placement |
+|---|---|---|---|
+| Highlighter (two tiles) | `TypeWinHighlighter` | `fillColorRed/Green/Blue` (magenta 1,0,1 or yellow 1,1,0), `fill-color-opacity` 0.75 or 0.5, `fill-invert` 0, `corner-radius` 6, box 400×200 | `scale0/1` 1.6 (on canvas 640×320) |
+| Spotlight | `TypeWinSpotlight` | `intensity` 0.5, `corner-radius` 6, box 480×270 | `scale0/1` 1.3333 (on canvas 640×360) |
+| Blur, inverted tile | `TypeWinBlur` | `blur-invert` **1**, `intensity` 0.8125, box 400×200 | scale 1.6 |
+| Blur | `TypeWinBlur` | `blur-invert` 0, `intensity` 0.8125, box 400×200 | scale 1.6 |
+| Pixelate | `TypeWinPixelate` | `intensity` 0.33, box 400×200 | scale 1.6 |
+| Sketch Motion (first tile) | `TypeWinSVG` | `DrawTime` 1.0, `borderColorRed/Green/Blue` (1,1,0), `borderWidth` 3.0, `corner-radius` 6, box 393.6×117.8, **`xmlContent`**: the full SVG document of the drawing as a string (1,796 characters, 8 paths, 420×420 viewBox) | scale 1.626 |
+| Keystroke (first tile) | `MacKey` | `keys` and `name` "⌘ A", `keyStyle` 2, `showKeyBackg` 1, `showKeyHint` 0, box 128×64 | no scale written |
+
+- **Every region and keystroke callout gets `start` = playhead and
+  `duration` 5 s** [obs]. The sketch callout landed at 0 s, not at the
+  playhead. Why is [?].
+- **Common keys** [obs]: `shape` "" and `style` "", `corner-radius` 6.0. The
+  clip's `metadata` records the drop geometry as `default-width`,
+  `default-height`, `default-translation0/1/2` and `default-scale` "1".
+  These are informational and do not change rendering [inf].
+- **Default on-canvas size.** Region boxes are authored at 400×200 (or
+  480×270) and scaled to a width of 640 px, a third of the canvas width
+  [obs values; inf rule].
+- **Sketch Motion draw-on.** The clip carries `leftEdgeMods`: `[{group:
+  "DrawPercentageFade", duration: 1 s, parameters: [{name: "DrawTime",
+  func: "FadeInFunc"}]}]`. The strokes draw in over the first second; it is
+  the same edge-modifier mechanism as `effects/README.md` §1 [obs form; inf
+  meaning]. Camtasia also added a one-sided **`Fade`** transition (classic
+  name, 1 s, `useAudioPreRoll` **false**) at the clip's end [obs].
+- **`xmlContent` is TechSmith artwork** embedded in the user's project.
+  WizRec preserves it verbatim and may render it for that project only (the
+  strokes as paths, coloured by `borderColor*` at `borderWidth`, revealed
+  by `DrawTime`). It must never copy the string into WizRec's own assets or
+  tests [CLAUDE.md rule 3].
+- Inverted blur (`blur-invert` 1) blurs everything **outside** the box
+  [inf from the name].
 
 ### `shape` values (kind `remix`)
 
@@ -221,4 +261,5 @@ Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/callouts/`.
 - **CO3: region callouts (UI).** In Camtasia, drag a Blur, a Pixelate, a
   Highlighter, a Spotlight, a Keystroke and one SketchMotion item over the
   M-card test card. Save as `co3-regions.cmproj` with the playhead over
-  them. This gives their project form, which is [?] for SketchMotion.
+  them. **Done by automation 2026-10-20 (§3.1).** The look of each callout
+  still needs a render [?].
