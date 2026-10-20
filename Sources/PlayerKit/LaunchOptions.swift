@@ -78,8 +78,8 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
     }
 
-    /// Parses `arguments` (without the executable path). Cocoa's own `-NSKey value`
-    /// / `-AppleKey value` pairs and `-psn_…` are skipped.
+    /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
+    /// argument-domain pairs (`-NSKey value`, `-WizRec.ExportFolder <dir>`, …) are skipped.
     public init(arguments: [String]) { self.init(arguments: arguments, base: LaunchOptions()) }
 
     /// Parses `arguments` on top of `base` (e.g. values from `AppPreferences`).
@@ -116,7 +116,9 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--export-preset": if let v = value() { exportPresets.append(v) }
             default:
                 if a.hasPrefix("-psn_") { break }
-                if a.hasPrefix("-NS") || a.hasPrefix("-Apple") { i += 1; break }
+                // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,
+                // `-WizRec.ExportFolder /tmp/x`); its value is not a project path.
+                if a.count > 1, a.hasPrefix("-"), !a.hasPrefix("--") { i += 1; break }
                 if a.hasPrefix("-") { break }
                 paths.append(a)
             }
