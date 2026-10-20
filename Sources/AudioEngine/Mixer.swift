@@ -25,23 +25,45 @@ struct BlockKey: Hashable, Sendable {
     var pitched = false
 }
 
-/// A ducking window from an `emphasize` clip on track `track`: other tracks drop to `gain` over
-/// `[lo, hi)` (parent ticks), ramping linearly over `ramp` ticks on each side [inf, until AU1].
+/// A ducking window from an `Emphasize` clip on track `track`: other tracks drop to `gain` while
+/// the clip sounds over `[lo, hi)` (parent ticks), ramping linearly over `rampIn` / `rampOut`
+/// ticks (`emphasizeRampInTime` / `emphasizeRampOutTime`, 1 s default) [obs keys, AU1]. With
+/// `inside` (`emphasizeRampPosition` 0) the ramps sit inside the clip [inf]; otherwise outside [?].
 struct Duck: Sendable {
     var track: Int
     var lo: Double
     var hi: Double
     var gain: Double
+    var rampIn: Double
+    var rampOut: Double
+    var inside: Bool
 
-    /// 0.25 s at editRate 705600000 (ticks).
-    static let ramp = 176_400_000.0
+    init(track: Int, lo: Double, hi: Double, gain: Double, rampIn: Double, rampOut: Double, inside: Bool) {
+        self.track = track; self.lo = lo; self.hi = hi; self.gain = gain
+        self.inside = inside
+        // Inside ramps longer than the clip share it in proportion.
+        let span = max(0, hi - lo)
+        if inside, rampIn + rampOut > span, rampIn + rampOut > 0 {
+            let k = span / (rampIn + rampOut)
+            self.rampIn = rampIn * k; self.rampOut = rampOut * k
+        } else {
+            self.rampIn = rampIn; self.rampOut = rampOut
+        }
+    }
+
+    /// Parent-tick span the duck affects.
+    var extentLo: Double { inside ? lo : lo - rampIn }
+    var extentHi: Double { inside ? hi : hi + rampOut }
 
     func factor(at t: Double) -> Double {
+        guard t >= extentLo, t < extentHi else { return 1 }
+        // Full duck over [a, b]; linear ramps over [extentLo, a] and [b, extentHi].
+        let a = inside ? lo + rampIn : lo, b = inside ? hi - rampOut : hi
         let x: Double
-        if t >= lo && t < hi { x = 1 }
-        else if t < lo { x = max(0, 1 - (lo - t) / Self.ramp) }
-        else { x = max(0, 1 - (t - hi) / Self.ramp) }
-        return 1 - (1 - gain) * x
+        if t < a { x = rampIn > 0 ? (t - extentLo) / rampIn : 1 }
+        else if t > b { x = rampOut > 0 ? (extentHi - t) / rampOut : 1 }
+        else { x = 1 }
+        return 1 - (1 - gain) * min(max(x, 0), 1)
     }
 }
 
@@ -123,14 +145,17 @@ extension AudioMixer {
         let audible = tracks.indices.filter { !tracks[$0].muted && (!anySolo || tracks[$0].solo) }
         let emphasis = audible.flatMap { i in
             tracks[i].clips.compactMap { c in
-                c.effects.first { $0.kind == .emphasize }.map { Duck(track: i, lo: c.activeLo, hi: c.activeHi, gain: $0.duckGain) }
+                c.effects.first { $0.kind == .emphasize }.map {
+                    Duck(track: i, lo: c.activeLo, hi: c.activeHi, gain: $0.duckGain,
+                         rampIn: $0.emphasizeRampIn, rampOut: $0.emphasizeRampOut, inside: $0.emphasizeRampsInside)
+                }
             }
         }
         for i in audible {
             let t = tracks[i]
             let clips = t.clips.filter { $0.activeLo < hi && $0.activeHi > lo }
             guard !clips.isEmpty else { continue }
-            let ducks = emphasis.filter { $0.track != i && $0.lo - Duck.ramp < hi && $0.hi + Duck.ramp > lo }
+            let ducks = emphasis.filter { $0.track != i && $0.extentLo < hi && $0.extentHi > lo }
             if ducks.isEmpty {
                 for c in clips { try await place(c, into: &acc, from: from) }
             } else {
@@ -149,7 +174,17 @@ extension AudioMixer {
 
     // MARK: Placement on the parent axis
 
+    /// Places `n`; a pitch shift with `effectBlend` < 100 % also places the unshifted copy
+    /// (wet/dry mix, audio.md §3.2 [inf]).
     func place(_ n: ANode, into acc: inout Signal, from: Int64) async throws {
+        guard n.pitchBlend < 1, let dk = n.dryKey else { return try await place(n, into: &acc, from: from, weight: 1) }
+        var dry = n
+        dry.key = dk; dry.pitch = 1; dry.pitchBlend = 1; dry.dryKey = nil
+        try await place(dry, into: &acc, from: from, weight: 1 - n.pitchBlend)
+        try await place(n, into: &acc, from: from, weight: n.pitchBlend)
+    }
+
+    func place(_ n: ANode, into acc: inout Signal, from: Int64, weight: Double) async throws {
         let a = max(from, grid.sampleCeil(n.activeLo))
         let b = min(from + Int64(acc.count), grid.sampleCeil(n.activeHi))
         guard a < b else { return }
@@ -161,10 +196,11 @@ extension AudioMixer {
         } else {
             sig = try await stretched(n, from: a, count: count)
         }
-        if let env = envelope(n, from: a, count: count) {
+        if var env = envelope(n, from: a, count: count) {
+            if weight != 1 { for i in env.indices { env[i] *= Float(weight) } }
             acc.add(sig, at: Int(a - from), gain: env)
         } else {
-            acc.add(sig, at: Int(a - from), scale: Float(n.gain * (n.volume?.constant ?? 1)))
+            acc.add(sig, at: Int(a - from), scale: Float(weight * n.gain * (n.volume?.constant ?? 1)))
         }
     }
 

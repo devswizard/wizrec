@@ -1,12 +1,16 @@
-// Loudness normalisation per clip (AUD-2, docs/specs/audio.md §2 working rule [inf]):
+// Loudness normalisation per clip (AUD-2, docs/specs/audio.md §2.2 working rule [inf]):
 //
 //   when project `shouldApplyLoudnessNormalization` × source `loudnessNormalization` ×
 //   clip `attributes.loudnessNormalization` are all on:
 //   gain = 10^((targetLoudness − integratedLUFS) / 20), capped so that peakLevel · gain ≤ 1.0.
 //
+// Peak cap vs limiter on output is still [?] (needs a licensed export, audio.md §2.2); WizRec keeps
+// the peak cap and no limiter until then.
+//
 // `integratedLUFS` / `peakLevel` come from `sourceTracks[trackNumber]`; when missing (or the
-// 100.0 / −1.0 sentinels) WizRec measures the whole stream: BS.1770-4 with mono as dual mono
-// (matching the values Camtasia stores [obs, media]) and the linear sample peak.
+// 100.0 / −1.0 sentinels) WizRec measures the whole stream the way Camtasia does (audio.md §2.1,
+// AU2): resampled to the mix rate (`audioFormatSampleRate`, 44100 when absent), BS.1770-4 with a
+// mono source as dual mono (+3 LU), and `peakLevel` = linear sample peak after resampling.
 // Silence (−Infinity LUFS) → gain 1. The whole policy lives in `normalisationGain`.
 
 import CoreMedia
@@ -36,17 +40,48 @@ extension AudioMixer {
         return g
     }
 
-    /// Integrated loudness (mono as dual mono) and linear sample peak of a whole source stream
-    /// at its native rate; nil when the file is missing or unsupported.
+    /// Integrated loudness and linear sample peak of a whole source stream, measured like the
+    /// stored `integratedLUFS` / `peakLevel` (`SourceLoudness.measure`); nil when the file is
+    /// missing or unsupported.
     func measure(url: URL, stream: Int) async throws -> (lufs: Double, peak: Double)? {
         let key = StreamKey(url: url, stream: stream)
         if let v = measured[key] { return v }
+        guard let m = try await SourceLoudness.measure(pool: pool, url: url, stream: stream,
+                                                       mixRate: scene.sampleRate ?? SourceLoudness.defaultMixRate)
+        else { return nil }
+        let v = (lufs: m.integratedLUFS, peak: m.peakLevel)
+        measured[key] = v
+        return v
+    }
+}
+
+/// How Camtasia measures a source's `sourceTracks[i].integratedLUFS` and `peakLevel` (audio.md
+/// §2.1, AU2): the stream resampled to the project's mix rate, BS.1770-4 integrated loudness with
+/// a mono source counted as dual mono (+3 LU), and the linear sample peak after resampling.
+public struct SourceLoudness: Sendable, Equatable {
+    /// Integrated loudness, LUFS; `-.infinity` for silence.
+    public var integratedLUFS: Double
+    /// Linear sample peak (1.0 = 0 dBFS; may exceed 1 after resampling).
+    public var peakLevel: Double
+
+    public init(integratedLUFS: Double, peakLevel: Double) {
+        self.integratedLUFS = integratedLUFS; self.peakLevel = peakLevel
+    }
+
+    /// Mix rate used when the project has no `audioFormatSampleRate`, Hz [obs: 44100 everywhere].
+    public static let defaultMixRate = 44_100.0
+
+    /// Measures stream `stream` of `url` at `mixRate` Hz. Nil when the file is missing,
+    /// unsupported or has no such audio stream; other decode failures throw
+    /// `AudioError.decodeFailed`.
+    public static func measure(pool: MediaPool, url: URL, stream: Int,
+                               mixRate: Double = defaultMixRate) async throws -> SourceLoudness? {
         do {
             let src = try await pool.source(for: url)
             guard let info = src.info.streams.first(where: { $0.index == stream && $0.kind == .audio }) else {
                 throw MediaError.noSuchStream(stream)
             }
-            let rate = info.sampleRate > 0 ? info.sampleRate.rounded() : Double(grid.rate)
+            let rate = mixRate.isFinite && mixRate >= 8_000 ? mixRate.rounded() : defaultMixRate
             let ch = max(1, info.channelCount)
             var meter = LoudnessMeter(sampleRate: rate, channels: ch, dualMono: ch == 1)
             var peak: Float = 0
@@ -64,9 +99,7 @@ extension AudioMixer {
                 for c in pcm.channels { for x in c { peak = max(peak, abs(x)) } }
                 t += len
             }
-            let v = (lufs: meter.integrated, peak: Double(peak))
-            measured[key] = v
-            return v
+            return SourceLoudness(integratedLUFS: meter.integrated, peakLevel: Double(peak))
         } catch let e as MediaError {
             switch e {
             case .fileNotFound, .unsupported, .noSuchStream: return nil

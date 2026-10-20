@@ -20,8 +20,23 @@ struct AParam: Sendable, Equatable {
 
     var base: Double?
     var keys: [Key]
+    /// Point envelope (audio volume, audio.md §4): every key is a point (`endTime == time`) and the
+    /// value moves linearly from point to point, holding the first value before the first point
+    /// and the last after the last [obs layout; inf linear]. Otherwise the window rule above.
+    var points = false
 
     init(base: Double?, keys: [Key] = []) { self.base = base; self.keys = keys }
+
+    /// `parameters.volume`: point envelope when every keyframe has zero length (fades and audio
+    /// points as Camtasia writes them, no `interp` key) [obs, AU1]; window keyframes otherwise.
+    static func volume(_ raw: JSON) -> AParam? {
+        guard var p = AParam(raw) else { return nil }
+        if !p.keys.isEmpty, p.keys.allSatisfy({ $0.endTime == $0.time }) {
+            p.points = true
+            p.keys.sort { $0.time < $1.time }
+        }
+        return p
+    }
 
     /// Keyframe `interp` when neither the keyframe nor the parameter names one [?] (time-mapping.md §8).
     static let defaultInterp = "eioe"
@@ -58,6 +73,14 @@ struct AParam: Sendable, Equatable {
 
     func value(at t: Double) -> Double? {
         guard !keys.isEmpty else { return base }
+        if points {
+            if t <= keys[0].time { return keys[0].value }
+            for i in 1..<keys.count where t < keys[i].time {
+                let a = keys[i - 1], b = keys[i]
+                return a.value + (b.value - a.value) * (t - a.time) / (b.time - a.time)
+            }
+            return keys[keys.count - 1].value
+        }
         var current = base ?? keys[0].value
         for k in keys {
             if t < k.time { return current }
@@ -120,6 +143,10 @@ struct ANode: Sendable {
     var effects: [AEffect]
     /// Frequency factor from a `pitch` effect (2^(semitones/12)); 1 = none.
     var pitch: Double = 1
+    /// Wet share of a pitch shift (`effectBlend` / 100); the rest plays unshifted.
+    var pitchBlend: Double = 1
+    /// Cache key of the unshifted (dry) copy when `pitchBlend` < 1.
+    var dryKey: Int?
     var fades: [AFade] = []
     /// Pre-roll before `start` / post-roll after `end` from centred transitions, ticks.
     var extendBefore: Double = 0
@@ -293,11 +320,17 @@ struct AudioSceneBuilder {
         var n = ANode(key: key(), clipID: c.id, start: c.start, duration: max(0, c.duration),
                       mediaStart: c.mediaStart, scalar: scalar,
                       gain: c.attributes?["gain"]?.double ?? 1,
-                      volume: o["parameters"]?.object?["volume"].flatMap(AParam.init),
+                      volume: o["parameters"]?.object?["volume"].flatMap(AParam.volume),
                       mixToMono: c.attributes?["mixToMono"]?.bool ?? false,
                       effects: effects, body: body)
         if let p = effects.first(where: { $0.kind == .pitch }) {
-            n.pitch = pow(2, min(max(p.semitones, -24), 24) / 12)
+            n.pitch = pow(2, p.semitones / 12)
+            n.pitchBlend = p.pitchBlend
+            if n.pitch == 1 || n.pitchBlend == 0 {
+                n.pitch = 1; n.pitchBlend = 1
+            } else if n.pitchBlend < 1 {
+                n.dryKey = key()
+            }
         }
         return n.isSilent || n.duration == 0 ? nil : n
     }

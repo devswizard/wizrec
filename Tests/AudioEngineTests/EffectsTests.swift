@@ -31,6 +31,7 @@ private func renderOne(_ u: URL, seconds: Double, effects: [[String: Any]]) asyn
 @Test func effectNamesMapToKinds() {
     #expect(AudioEffectKind(effectName: "VSTEffect-DFN3NoiseRemoval") == .noiseRemoval)
     #expect(AudioEffectKind(effectName: "NoiseReduction") == .noiseRemoval)
+    #expect(AudioEffectKind(effectName: "WinCompression") == .compression)
     #expect(AudioEffectKind(effectName: "VolumeLeveling") == .leveling)
     #expect(AudioEffectKind(effectName: "DynamicsProcessor") == .leveling)
     #expect(AudioEffectKind(effectName: "Emphasize") == .emphasize)
@@ -121,12 +122,14 @@ private func renderOne(_ u: URL, seconds: Double, effects: [[String: Any]]) asyn
     let u = dir.appendingPathComponent("p.wav")
     try Synth.wav(u, rate: 48_000, channels: 1, frames: 48_000 * 4, Synth.sine(freq: 440, amp: 0.5, rate: 48_000))
     // Short clips: the band-limited resampler is slow in debug builds.
-    for (semis, want) in [(12.0, 880.0), (-12.0, 220.0), (7.0, 440 * pow(2, 7.0 / 12))] {
+    // `pitch` is in cents (AU1 default −200 = two semitones down).
+    for (cents, want) in [(1200.0, 880.0), (-1200.0, 220.0), (-200.0, 440 * pow(2, -2.0 / 12))] {
         let p = try P.project(tracks: [P.track(0, [P.clip("AMFile", id: 1, src: 1, start: sec(0.25), duration: sec(1),
-                                                          effects: [effect("Pitch", ["pitch": semis])])])],
+                                                          effects: [effect("Pitch", ["pitch": cents, "effectBlend": 100.0,
+                                                                                     "smoothness": 50.0, "tightness": 50.0])])])],
                               sources: [P.source(1, u)])
         let x = try await P.mixer(p).render(0 ..< sec(1.5)).channels[0]
-        #expect(abs(frequency(x[idx(0.35) ..< idx(1.15)], rate: 48_000) - want) < want * 0.01, "\(semis) st")
+        #expect(abs(frequency(x[idx(0.35) ..< idx(1.15)], rate: 48_000) - want) < want * 0.01, "\(cents) cents")
         #expect(x[0 ..< idx(0.25)].allSatisfy { $0 == 0 })
         #expect(x[idx(1.25)...].allSatisfy { $0 == 0 })
         #expect(rms(x[idx(0.35) ..< idx(1.15)]) > 0.2)
@@ -138,23 +141,102 @@ private func renderOne(_ u: URL, seconds: Double, effects: [[String: Any]]) asyn
     let a = dir.appendingPathComponent("a.wav"), b = dir.appendingPathComponent("b.wav")
     try Synth.wav(a, rate: 48_000, channels: 1, frames: 48_000 * 5, Synth.sine(freq: 440, amp: 0.4, rate: 48_000))
     try Synth.wav(b, rate: 48_000, channels: 1, frames: 48_000 * 5, Synth.sine(freq: 1000, amp: 0.2, rate: 48_000))
+    // AU1 shape: emphasizeAmount, ramp position 0 (inside the clip), ramp times in ticks (0.25 s).
     let p = try P.project(tracks: [
         P.track(0, [P.clip("AMFile", id: 1, src: 1, start: 0, duration: sec(4))]),
         P.track(1, [P.clip("AMFile", id: 2, src: 2, start: sec(1.5), duration: sec(1),
-                           effects: [effect("Emphasize", ["Amount": 0.5])])]),
+                           effects: [effect("Emphasize", ["emphasizeAmount": 0.5, "emphasizeRampPosition": 0,
+                                                          "emphasizeRampInTime": sec(0.25),
+                                                          "emphasizeRampOutTime": sec(0.25)])])]),
     ], sources: [P.source(1, a), P.source(2, b)])
     let x = try await P.mixer(p).render(0 ..< sec(4)).channels[0]
     let music = { (i: Int) in Float(0.4 * sin(2 * Double.pi * 440 * Double(i) / 48_000)) }
     let voice = { (i: Int) in Float(0.2 * sin(2 * Double.pi * 1000 * Double(i - idx(1.5)) / 48_000)) }
-    // Before the ramp: untouched. Inside: track 0 at −12 dB, the emphasised clip at full level.
-    #expect(x[idx(1)] == music(idx(1)))
-    let duck = Float(pow(10, -12.0 / 20))
-    for i in stride(from: idx(1.6), to: idx(2.4), by: 997) {
+    // Before the clip: untouched. Fully ducked (1 − 0.5) between the inside ramps.
+    #expect(x[idx(1.4)] == music(idx(1.4)))
+    let duck: Float = 0.5
+    for i in stride(from: idx(1.76), to: idx(2.24), by: 997) {
         #expect(abs(x[i] - (music(i) * duck + voice(i))) < 1e-5)
     }
-    // Ramp back up over 0.25 s after the clip.
-    #expect(abs(x[idx(2.625)] - music(idx(2.625)) * (1 - (1 - duck) * 0.5)) < 1e-4)
-    #expect(x[idx(3)] == music(idx(3)))
+    // Halfway through the ramp in and the ramp out (inside the clip).
+    #expect(abs(x[idx(1.625)] - (music(idx(1.625)) * 0.75 + voice(idx(1.625)))) < 1e-4)
+    #expect(abs(x[idx(2.375)] - (music(idx(2.375)) * 0.75 + voice(idx(2.375)))) < 1e-4)
+    // After the clip: untouched again.
+    #expect(x[idx(2.6)] == music(idx(2.6)))
+}
+
+@Test func emphasizeDefaultRampsShareAShortClip() {
+    // Two 1 s default ramps inside a 1 s clip share it: 0.5 s each.
+    let d = Duck(track: 0, lo: 0, hi: Double(sec(1)), gain: 0.2, rampIn: Double(sec(1)), rampOut: Double(sec(1)), inside: true)
+    #expect(abs(d.factor(at: Double(sec(0.25))) - 0.6) < 1e-9)
+    #expect(abs(d.factor(at: Double(sec(0.5))) - 0.2) < 1e-9)
+    #expect(d.factor(at: Double(sec(1))) == 1)
+    let e = AEffect(name: "Emphasize", parameters: [:])
+    #expect(abs(e.duckGain - 0.2) < 1e-12)
+    #expect(e.emphasizeRampIn == 705_600_000 && e.emphasizeRampOut == 705_600_000 && e.emphasizeRampsInside)
+}
+
+/// Amplitude of the `freq` component of `x` (single-bin DFT).
+private func amplitude(_ x: ArraySlice<Float>, freq: Double, rate: Double = 48_000) -> Double {
+    var re = 0.0, im = 0.0
+    for (k, v) in x.enumerated() {
+        let ph = 2 * Double.pi * freq * Double(k) / rate
+        re += Double(v) * cos(ph); im -= Double(v) * sin(ph)
+    }
+    return 2 * (re * re + im * im).squareRoot() / Double(x.count)
+}
+
+@Test func pitchEffectBlendMixesDryAndShifted() async throws {
+    let dir = try Synth.tempDir()
+    let u = dir.appendingPathComponent("pb.wav")
+    try Synth.wav(u, rate: 48_000, channels: 1, frames: 48_000 * 2, Synth.sine(freq: 440, amp: 0.5, rate: 48_000))
+    func render(_ blend: Double) async throws -> [Float] {
+        let p = try P.project(tracks: [P.track(0, [P.clip("AMFile", id: 1, src: 1, start: 0, duration: sec(1),
+                                                          effects: [effect("Pitch", ["pitch": 1200.0, "effectBlend": blend])])])],
+                              sources: [P.source(1, u)])
+        return try await P.mixer(p).render(0 ..< sec(1)).channels[0]
+    }
+    let half = try await render(50)
+    let win = half[idx(0.2) ..< idx(0.8)]
+    #expect(abs(amplitude(win, freq: 440) - 0.25) < 0.02)
+    #expect(abs(amplitude(win, freq: 880) - 0.25) < 0.03)
+    // Blend 0 = the dry signal, sample for sample.
+    let dry = try await render(0)
+    #expect(dry[idx(0.1) ..< idx(0.9)].indices.allSatisfy { i in
+        abs(dry[i] - Float(0.5 * sin(2 * Double.pi * 440 * Double(i) / 48_000))) < 1e-4 })
+}
+
+@Test func compressionUsesWinCompressionDefaults() async throws {
+    let dir = try Synth.tempDir()
+    // AU1 defaults: ratio 10, threshold −20 dBFS, gain (make-up) +9 dB, attack 0, release 3500 ms.
+    let params: [String: Any] = ["ratio": 10.0, "threshold": -20.0, "gain": 9.0, "attack": 0.0, "release": 3500.0, "preset": 1]
+    // Loud sine, peak −6 dBFS: (−6 + 20) × 0.9 = 12.6 dB reduction, + 9 dB → −3.6 dB.
+    // Quiet sine, peak −26 dBFS (under the threshold): + 9 dB.
+    for (peakDB, wantDB) in [(-6.0, -3.6), (-26.0, 9.0)] {
+        let amp = pow(10, peakDB / 20)
+        let u = dir.appendingPathComponent("c\(Int(-peakDB)).wav")
+        try Synth.wav(u, rate: 48_000, channels: 1, frames: 48_000 * 2, Synth.sine(freq: 500, amp: amp, rate: 48_000))
+        let x = try await renderOne(u, seconds: 2, effects: [effect("WinCompression", params)])
+        let got = 20 * log10(rms(x[idx(0.5) ..< idx(1.5)]) / (amp / 2.squareRoot()))
+        #expect(abs(got - wantDB) < 0.15, "peak \(peakDB): \(got) dB")
+    }
+}
+
+@Test func compressionReleasesLinearly() {
+    // Release 1000 ms at 1 kHz: 20 dB per 1000 samples. One loud sample (peak 0 dBFS, threshold −20,
+    // ratio ∞-ish 1000 → ≈ 20 dB) then silence: reduction falls 2 dB per 100 samples.
+    let c = Compressor(sampleRate: 1_000, thresholdDB: -20, ratio: 1_000, makeupDB: 0, attackMS: 0, releaseMS: 1_000)
+    let h = c.history
+    var input = Signal.zeros(channels: 1, count: h + 1_200)
+    input.channels[0][h] = 1
+    for k in stride(from: 100, to: 1_200, by: 100) { input.channels[0][h + k] = 1e-3 }   // probes (−60 dBFS)
+    let out = c.process(input, outputStart: Int64(h), count: 1_200)
+    for k in stride(from: 100, to: 1_000, by: 100) {
+        let grDB = -20 * log10(Double(out.channels[0][k]) / 1e-3)
+        let want = 20 * (1 - 1.0 / 1_000) - 2 * Double(k) / 100
+        #expect(abs(grDB - want) < 0.01, "k \(k): \(grDB)")
+    }
+    #expect(abs(Double(out.channels[0][1_100]) - 1e-3) < 1e-9)
 }
 
 @Test func clippingIsCountedNotLimited() async throws {
