@@ -229,4 +229,31 @@ No Apple Developer account: releases are ad-hoc signed and never notarized.
 2. The Release workflow builds the DMG (FFmpeg and Sparkle inside, so users install
    nothing else), runs the DMG smoke test, and attaches `WizRec-<version>.dmg` and
    `SHA256SUMS.txt` to a **draft** GitHub Release using `docs/release-notes-template.md`.
-3. Fill in "What's new" on the draft and publish it.
+3. Verify the draft's DMG (below), review the notes (prefilled from the template; update
+   "What's new" for releases after 0.1.0) and publish it.
+
+### Verifying a downloaded release asset (no `gh`)
+
+Draft assets are private: listing a draft and downloading its assets needs a token with
+push access (`GH_TOKEN`, e.g. a fine-grained token with Contents: read). Published
+releases need none: `curl -LO` each asset's `browser_download_url`.
+
+```sh
+R=devswizard/wizrec TAG=v0.1.0 D=$(mktemp -d) && cd "$D"
+auth=(-H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28")
+# Drafts have no tag URL yet: find the release by tag in the list.
+curl -fsS "${auth[@]}" "https://api.github.com/repos/$R/releases?per_page=20" \
+  | python3 -c 'import json,sys; t=sys.argv[1]; r=[x for x in json.load(sys.stdin) if x["tag_name"]==t][0]
+for a in r["assets"]: print(a["id"], a["name"])' "$TAG" \
+  | while read -r id name; do
+      curl -fsSL "${auth[@]}" -H "Accept: application/octet-stream" -o "$name" \
+        "https://api.github.com/repos/$R/releases/assets/$id"
+    done
+shasum -a 256 -c SHA256SUMS.txt
+"$OLDPWD/scripts/release/verify-dmg.sh" WizRec-*.dmg   # mount, checks, --quit-after 5
+```
+
+Without a token, download the same DMG from the Release run's workflow artifact (also needs
+sign-in) or rebuild from the tag (check out `v0.1.0`, then `VERIFY=1 scripts/release.sh`).
+`curl` sets no quarantine flag, so this does not exercise the Gatekeeper first-launch
+prompt; for that, download in a browser and open it from Finder.
