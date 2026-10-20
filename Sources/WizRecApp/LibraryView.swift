@@ -64,6 +64,32 @@ struct SidebarView: View {
         }
     }
 
+    /// The tab's title as the picker shows it (plain string, for logs and UI checks).
+    static func label(of tab: Tab) -> String {
+        switch tab {
+        case .media: String(localized: "Media")
+        case .backgrounds: String(localized: "Backgrounds")
+        case .annotations: String(localized: "Annotations")
+        case .effects: String(localized: "Effects")
+        case .audio: String(localized: "Audio")
+        case .transitions: String(localized: "Transitions")
+        }
+    }
+
+    /// Every library tile by tab (Media excluded: its items are the project's sources), with the
+    /// accessibility identifier its tile carries (`library.<name>`).
+    static func libraryManifest() -> [(tab: String, identifier: String)] {
+        let lists: [(Tab, [LibraryItem])] = [(.backgrounds, backgroundItems()), (.annotations, calloutItems()),
+                                             (.effects, effectItems()), (.audio, audioItems()),
+                                             (.transitions, transitionItems())]
+        var out: [(tab: String, identifier: String)] = []
+        for (tab, items) in lists {
+            let name = label(of: tab)
+            for item in items { out.append((tab: name, identifier: "library.\(item.name)")) }
+        }
+        return out
+    }
+
     static func effectItems() -> [LibraryItem] {
         TimelineLibrary.effects.map {
             LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
