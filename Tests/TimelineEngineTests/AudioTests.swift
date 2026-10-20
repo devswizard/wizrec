@@ -151,3 +151,49 @@ private func points(_ p: [(Int64, String)]) -> String {
     #expect(String(decoding: p.serialized(), as: UTF8.self).contains("-Infinity"))
     #expect(throws: EditError.self) { try SetSourceLoudness(sourceID: 9, track: 0, integratedLUFS: -20, peakLevel: 1).apply(to: p) }
 }
+
+// MARK: AI Noise Removal plug-in state (audio.md §3.3)
+
+@MainActor @Test func noiseRemovalBlobIsPreservedVerbatimOnEdits() throws {
+    // An existing entry with Camtasia's opaque plug-in state (a stand-in string here) plus a
+    // second effect so reordering has something to move.
+    let dfn = #"{"effectName" : "VSTEffect-DFN3NoiseRemoval", "bypassed" : false, "category" : "categoryAudioEffects", "parameters" : {"Amount" : 0.8, "Bypass" : 0.0}, "metadata" : {"ExtandableEffectData" : "opaque+/state==\u0000x"}}"#
+    let pitch = #"{"effectName" : "Pitch", "bypassed" : false, "category" : "categoryAudioEffects", "parameters" : {"pitch" : -200.0, "effectBlend" : 100.0, "smoothness" : 50.0, "tightness" : 50.0}}"#
+    let blobText = #""ExtandableEffectData" : "opaque+/state==\u0000x""#
+    let p = try makeProject(tracks: tracks(track(0, [withClip(amClip(), effects: "[\(dfn), \(pitch)]",
+                                                               effectApplied: "Pitch")])))
+    let edits: [any EditCommand] = [
+        SetEffectParameter(clipID: 3, effectIndex: 0, parameter: "Amount", value: 0.5),
+        SetEffectBypassed(clipID: 3, effectIndex: 0, bypassed: true),
+        MoveEffect(clipID: 3, from: 0, to: 1),
+        AudioFade(clipID: 3, .fadeIn),
+        AddAudioPoint(clipID: 3, at: 120),
+        RemoveEffect(clipID: 3, index: 0),   // Pitch, after the reorder
+    ]
+    for e in edits {
+        try e.apply(to: p)
+        let text = String(decoding: p.serialized(), as: UTF8.self)
+        #expect(text.contains(blobText), "blob changed by \(e.name)")
+    }
+}
+
+@MainActor @Test func changingAmountRecordsThePriorValueInClipMetadata() throws {
+    let dfn = #"{"effectName" : "VSTEffect-DFN3NoiseRemoval", "bypassed" : false, "category" : "categoryAudioEffects", "parameters" : {"Amount" : 0.8, "Bypass" : 0.0}}"#
+    let p = try makeProject(tracks: tracks(track(0, [withClip(amClip(), effects: "[\(dfn)]",
+                                                               effectApplied: "VSTEffect-DFN3NoiseRemoval")])))
+    let c = SetEffectParameter(clipID: 3, effectIndex: 0, parameter: "Amount", value: 0.5)
+    try expectReversible(c, on: p)
+    try c.apply(to: p)
+    let changed = dfn.replacingOccurrences(of: #""Amount" : 0.8"#, with: #""Amount" : 0.5"#)
+    let clip = withClip(amClip(), effects: "[\(changed)]", effectApplied: "VSTEffect-DFN3NoiseRemoval")
+        .replacingOccurrences(of: #""effectApplied" : "VSTEffect-DFN3NoiseRemoval"}"#,
+                              with: #""effectApplied" : "VSTEffect-DFN3NoiseRemoval", "default-VSTEffect-DFN3NoiseRemoval-Amount" : "0.8"}"#)
+    try expectTracks(p, tracks(track(0, [clip])))
+    // A later change keeps the recorded default.
+    try SetEffectParameter(clipID: 3, effectIndex: 0, parameter: "Amount", value: 0.3).apply(to: p)
+    #expect(String(decoding: p.serialized(), as: UTF8.self).contains(#""default-VSTEffect-DFN3NoiseRemoval-Amount" : "0.8""#))
+    // Non-plug-in effects record nothing.
+    let q = try makeProject(tracks: tracks(track(0, [withClip(amClip(), effects: #"[{"effectName" : "Pitch", "parameters" : {"pitch" : -200.0}}]"#)])))
+    try SetEffectParameter(clipID: 3, effectIndex: 0, parameter: "pitch", value: 100).apply(to: q)
+    #expect(!String(decoding: q.serialized(), as: UTF8.self).contains("default-"))
+}

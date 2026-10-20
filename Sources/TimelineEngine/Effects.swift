@@ -186,12 +186,27 @@ public enum Effects {
                     : Exact.floor(Rational(owner["mediaStart"]) ?? Rational(0))
                 ParamWriter.setKeyframe(params, parameter, value, at: m, visibleStart: visible)
             } else {
+                Self.recordPluginDefault(clip, effect, params, parameter, value)
                 ParamWriter.setConstant(params, parameter, value)
             }
             AnimationSync.sync(owner)
         }
     }
     public func revert(on project: Project) throws { try swap.restore(in: project) }
+
+    /// Changing a plug-in effect's bare-number parameter (`VSTEffect-*`, e.g. AI Noise Removal's
+    /// `Amount`) records the value before the change in the clip's `metadata` as the string
+    /// `default-<effectName>-<parameter>` [obs, audio.md §3.3]. An existing record is kept: it
+    /// names the default, so later changes don't overwrite it [inf]. The effect's opaque
+    /// `metadata.ExtandableEffectData` is never touched.
+    static func recordPluginDefault(_ clip: JSONObject, _ effect: JSONObject, _ params: JSONObject,
+                                    _ parameter: String, _ value: Double) {
+        guard let ename = effect["effectName"]?.string, ename.hasPrefix("VSTEffect-"),
+              let old = params[parameter]?.number, old.double != value,
+              let md = clip["metadata"]?.object else { return }
+        let key = "default-\(ename)-\(parameter)"
+        if md[key] == nil { md[key] = .string(old.lexeme) }
+    }
 }
 
 /// Turns an effect on or off (`bypassed`).

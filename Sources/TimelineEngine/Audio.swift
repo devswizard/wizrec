@@ -41,7 +41,8 @@ public enum AudioPanelItem: String, CaseIterable, Sendable {
     /// false, `category` "categoryAudioEffects", `parameters` as plain numbers (integers where
     /// Camtasia writes integers), no `start`/`duration` [obs, AU1]. Ramp times are ticks at
     /// `editRate` (1 s). AI Noise Removal gets no `metadata.ExtandableEffectData`: that is the
-    /// vendor plug-in's opaque state, which WizRec never writes (an existing one is preserved).
+    /// vendor plug-in's opaque state, which WizRec never writes; Camtasia accepts the entry
+    /// without it and regenerates it on save (audio.md §3.3) [obs]. An existing one is preserved.
     public func effectJSON(editRate: Int64 = 705_600_000) -> JSONObject? {
         guard let name = effectName else { return nil }
         let params: [(String, JSON)]
