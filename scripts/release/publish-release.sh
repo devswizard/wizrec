@@ -36,10 +36,13 @@ case "$TAG" in v[0-9]*) ;; *) echo "error: tag must look like v1.2.3 (got '$TAG'
 [ -n "${GH_TOKEN:-}" ] || { echo "error: GH_TOKEN is not set (drafts are visible only with push access)" >&2; exit 2; }
 
 # curl config on stdin keeps the token off the command line (ps) and out of the log.
+# ACCEPT overrides the media type: exactly one Accept header goes out, because with both
+# JSON and octet-stream an asset request returns the JSON description, not the file.
+# On a redirect to another host (asset downloads) curl drops the Authorization header.
 api() {
   printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" \
     | curl -fsSL --retry 3 --retry-delay 5 -K - \
-        -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+        -H "Accept: ${ACCEPT:-application/vnd.github+json}" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
 }
 
 WORK=${WORK_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/wizrec-publish.XXXXXX")}
@@ -104,7 +107,7 @@ python3 -I -c 'import json,sys
 for a in json.load(open(sys.argv[1]))["assets"]: print(a["id"], a["name"])' "$REL" \
   | while read -r aid name; do
       case "$name" in */*|.*|"") echo "error: unexpected asset name '$name'" >&2; exit 1;; esac
-      api -H "Accept: application/octet-stream" -o "$ASSETS/$name" "$API/releases/assets/$aid"
+      ACCEPT=application/octet-stream api -o "$ASSETS/$name" "$API/releases/assets/$aid"
       echo "downloaded $name ($(du -h "$ASSETS/$name" | cut -f1))"
     done
 
