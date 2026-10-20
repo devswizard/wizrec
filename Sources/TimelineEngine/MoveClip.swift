@@ -23,8 +23,11 @@ import TSCProjKit
 ///   is this clip) travel with the clip [obs, edit-semantics.md X7 #8]; a destination track without a
 ///   `transitions` key gets one appended;
 /// - two-sided ones stay only if the move is within the same track and the
-///   clip still touches the other clip on that side; otherwise they are
-///   removed [?, X7 #8 two-sided not yet observed].
+///   clip still touches the other clip on that side; otherwise each is
+///   split into two one-sided copies (same name, duration, attributes): the
+///   other clip keeps its half in place and this clip's half is appended to
+///   the destination's `transitions` [obs for the incoming clip,
+///   transitions.md TR2; inf for the outgoing one].
 @MainActor
 public final class MoveClip: EditCommand {
     public let clipID: Int64
@@ -87,20 +90,28 @@ public final class MoveClip: EditCommand {
 
         if let transitions = source["transitions"]?.array {
             var travelling: [JSON] = []
-            transitions.items = transitions.items.filter { tr in
-                guard let o = tr.object else { return true }
+            transitions.items = transitions.items.compactMap { tr in
+                guard let o = tr.object else { return tr }
                 let l = o["leftMedia"]?.int, r = o["rightMedia"]?.int
-                guard l == clipID || r == clipID else { return true }
+                guard l == clipID || r == clipID else { return tr }
                 if l == nil || r == nil {
-                    if sameTrack { return true }
+                    if sameTrack { return tr }
                     travelling.append(tr)
-                    return false
+                    return nil
                 }
-                guard sameTrack else { return false }
-                let otherID = l == clipID ? r : l
-                guard let other = destClips.first(where: { $0.clipID == otherID }) else { return false }
-                let os = other["start"]?.int ?? 0, oe = os + (other["duration"]?.int ?? 0)
-                return l == clipID ? end == os : oe == start
+                if sameTrack {
+                    let otherID = l == clipID ? r : l
+                    if let other = destClips.first(where: { $0.clipID == otherID }) {
+                        let os = other["start"]?.int ?? 0, oe = os + (other["duration"]?.int ?? 0)
+                        if l == clipID ? end == os : oe == start { return tr }
+                    }
+                }
+                // Apart: split into one-sided halves [obs, transitions.md TR2].
+                let stays = o.copy(), moves = o.copy()
+                stays[l == clipID ? "leftMedia" : "rightMedia"] = nil
+                moves[l == clipID ? "rightMedia" : "leftMedia"] = nil
+                travelling.append(.object(moves))
+                return .object(stays)
             }
             if !travelling.isEmpty {
                 if dest["transitions"]?.array == nil { dest["transitions"] = .array(JSONArray()) }

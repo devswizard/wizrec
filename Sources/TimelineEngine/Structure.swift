@@ -371,7 +371,32 @@ public final class StitchClips: EditCommand {
         guard let medias = track["medias"]?.array else { throw EditError.trackNotFound(ti) }
         let first = clips[0].clipID ?? -1, last = clips[clips.count - 1].clipID ?? -1
         let pos = medias.items.firstIndex { $0.object?.clipID == first } ?? 0
-        let start = clips[0]["start"]?.int ?? 0
+        let id = project.maxID + 1
+        let stitched = Self.parent(id: id, segments: clips)
+        medias.items.removeAll { seen.contains($0.object?.clipID ?? -1) }
+        medias.items.insert(.object(stitched), at: min(pos, medias.count))
+        if let tr = track["transitions"]?.array {
+            tr.items.removeAll { t in
+                guard let o = t.object else { return false }
+                let l = o["leftMedia"]?.int, r = o["rightMedia"]?.int
+                if let l, seen.contains(l), l != last { return true }
+                if let r, seen.contains(r), r != first { return true }
+                if l == last { o["leftMedia"] = J.int(id) }
+                if r == first { o["rightMedia"] = J.int(id) }
+                return false
+            }
+        }
+        try edits.commit(&swap)
+        stitchedID = id
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project); stitchedID = nil }
+
+    /// A new `StitchedMedia` `id` at the first clip's start holding copies of
+    /// `clips` laid end to end from 0 (the shape in the type's doc comment).
+    /// `extraParameters` go after `volume`.
+    static func parent(id: Int64, segments clips: [JSONObject], extraParameters: [(String, JSON)] = []) -> JSONObject {
+        let start = clips.first?["start"]?.int ?? 0
         var segs: [JSON] = []
         var moved: [(String, JSON)] = []
         var total: Int64 = 0
@@ -392,40 +417,24 @@ public final class StitchClips: EditCommand {
             total += seg["duration"]?.int ?? 0
             segs.append(.object(seg))
         }
-        let audioAttrs = (type == "UnifiedMedia" ? clips[0]["audio"]?.object : clips[0])?["attributes"]?.object
-        let id = project.maxID + 1
-        let stitched = JSONObject([
+        let first = clips.first ?? JSONObject()
+        let audioAttrs = (first.clipType == "UnifiedMedia" ? first["audio"]?.object : first)?["attributes"]?.object
+        return JSONObject([
             ("id", J.int(id)), ("_type", .string("StitchedMedia")), ("minMediaStart", J.dbl(0)),
             ("attributes", J.obj([
-                ("ident", .string(Clip(clips[0]).name ?? Clip(clips[0]).video?.name ?? "")),
+                ("ident", .string(Clip(first).name ?? Clip(first).video?.name ?? "")),
                 ("gain", audioAttrs?["gain"] ?? J.dbl(1)), ("mixToMono", .bool(false)),
                 ("loudnessNormalization", .bool(true)), ("sourceFileOffset", J.int(0)),
             ])),
-            ("parameters", J.obj(moved + (0..<4).map { ("geometryCrop\($0)", J.dbl(0)) } + [("volume", J.dbl(1))])),
+            ("parameters", J.obj(moved + (0..<4).map { ("geometryCrop\($0)", J.dbl(0)) } + [("volume", J.dbl(1))]
+                                 + extraParameters)),
             ("medias", J.arr(segs)), ("effects", J.emptyArray),
             ("start", J.int(start)), ("duration", J.int(total)), ("mediaStart", J.int(0)),
             ("mediaDuration", J.int(total)), ("scalar", J.int(1)),
-            ("metadata", clips[0]["metadata"]?.copy() ?? MediaJSON.metadata(defaultScale: nil)),
+            ("metadata", first["metadata"]?.copy() ?? MediaJSON.metadata(defaultScale: nil)),
             ("animationTracks", J.emptyObject),
         ])
-        medias.items.removeAll { seen.contains($0.object?.clipID ?? -1) }
-        medias.items.insert(.object(stitched), at: min(pos, medias.count))
-        if let tr = track["transitions"]?.array {
-            tr.items.removeAll { t in
-                guard let o = t.object else { return false }
-                let l = o["leftMedia"]?.int, r = o["rightMedia"]?.int
-                if let l, seen.contains(l), l != last { return true }
-                if let r, seen.contains(r), r != first { return true }
-                if l == last { o["leftMedia"] = J.int(id) }
-                if r == first { o["rightMedia"] = J.int(id) }
-                return false
-            }
-        }
-        try edits.commit(&swap)
-        stitchedID = id
     }
-
-    public func revert(on project: Project) throws { try swap.restore(in: project); stitchedID = nil }
 }
 
 /// Splits a top-level `StitchedMedia` back into separate clips: each

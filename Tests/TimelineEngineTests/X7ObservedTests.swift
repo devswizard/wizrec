@@ -53,6 +53,24 @@ private func fades(start: Int64, end: Int64) -> String {
                                      transitions: fades(start: 20, end: 21))))
 }
 
+@MainActor @Test func x7UnifiedSplitGivesParentAndChildrenIdenticalTimes() throws {
+    // X7 #9 [obs]: clip at 22.033 s (661 ticks), split at 25 s (750).
+    func unified(_ id: Int64, start: Int64, dur: Int64, ms: Int64) -> String {
+        let t = #""start" : \#(start), "duration" : \#(dur), "mediaStart" : \#(ms), "mediaDuration" : \#(dur), "scalar" : 1"#
+        return """
+        {"id" : \(id), "_type" : "UnifiedMedia", \
+        "video" : {"id" : \(id + 1), "_type" : "VMFile", "src" : 2, "trackNumber" : 0, \(t)}, \
+        "audio" : {"id" : \(id + 2), "_type" : "AMFile", "src" : 2, "trackNumber" : 1, \(t)}, \
+        "effects" : [], \(t)}
+        """
+    }
+    let p = try makeProject(tracks: tracks(track(0, [unified(20, start: 661, dur: 300, ms: 0)])))
+    let split = SplitClip(clipID: 20, at: 750)
+    try expectReversible(split, on: p)
+    try split.apply(to: p)
+    try expectTracks(p, tracks(track(0, [unified(20, start: 661, dur: 89, ms: 0), unified(23, start: 750, dur: 211, ms: 89)])))
+}
+
 @MainActor @Test func x7StitchedSplitKeepsKeyframesTheRightHalfNeverReaches() throws {
     // Scale keyframes at media 1–2 s on a stitched clip of segments 0–4 s and
     // 4–6 s (source 0–4 s and 8–10 s), split at 5 s [obs #1, #4].

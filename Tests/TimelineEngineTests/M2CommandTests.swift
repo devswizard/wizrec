@@ -46,9 +46,9 @@ private let geometryCrops = """
 "geometryCrop3" : {"type" : "double", "defaultValue" : 0.0, "interp" : "eioe"}
 """
 
-private func clipMetadata(_ scale: String?, image: Bool = false) -> String {
+private func clipMetadata(_ scale: String?, visual: Bool = true) -> String {
     let s = scale.map { #""default-scale" : "\#($0)", "# } ?? ""
-    let lock = image ? #", "lockAspectRatio" : true"# : ""
+    let lock = visual ? #", "lockAspectRatio" : {"type" : "bool", "value" : true}"# : ""
     return """
     {"audiateLinkedSession" : "", "clipSpeedAttribute" : {"type" : "bool", "value" : false}, \
     "colorAttribute" : {"type" : "color", "value" : [0, 0, 0, 0]}, \(s)"effectApplied" : "none"\(lock)}
@@ -119,6 +119,20 @@ private func clipMetadata(_ scale: String?, image: Bool = false) -> String {
     try expectTracks(p, tracks(track(0, [leaf(10, start: 0, dur: 50), unified])))
 }
 
+@MainActor @Test func insertShaderBackgroundLastsSixtySeconds() throws {
+    // An endless video stream (shader background) is placed for 60 s [obs, shader-backgrounds.md SH2].
+    let bin = "[" + source(id: 2, src: "./media/1/bg.tscshadervid", rect: (1920, 1080),
+                           tracks: [(0, 30, Int.max, 1920, 1080, 0)]) + "]"
+    let p = try makeProject(tracks: tracks(track(0, [])), sourceBin: bin)
+    let insert = InsertClip(sourceID: 2, track: 0, start: 15)
+    try expectReversible(insert, on: p)
+    try insert.apply(to: p)
+    let c = try #require(p.tracks[0].clips.first)
+    #expect(c.kind == .video && [c.start, c.duration] == [15, 1800])
+    #expect(c.object["mediaDuration"]?.int == 1800 && c.metadata?["default-scale"]?.string == "1")
+    #expect(c.metadata?["lockAspectRatio"] == (try JSON.parse(#"{"type" : "bool", "value" : true}"#)))
+}
+
 @MainActor @Test func insertPicksClipTypeFromStreams() throws {
     let bin = "[" + [
         source(id: 2, src: "./media/1/v.mov", rect: (1280, 720), tracks: [(0, 30, 90, 1280, 720, 0)]),
@@ -151,7 +165,7 @@ private func clipMetadata(_ scale: String?, image: Bool = false) -> String {
     #expect(image.parameters["scale0"]?.defaultValue?.double == 0.5)
     #expect(image.parameters.names == ["scale0", "scale1", "sourceCrop0", "sourceCrop1", "sourceCrop2", "sourceCrop3",
                                        "geometryCrop0", "geometryCrop1", "geometryCrop2", "geometryCrop3"])
-    #expect(JSON.object(try #require(image.metadata)) == (try JSON.parse(clipMetadata("0.5", image: true))))
+    #expect(JSON.object(try #require(image.metadata)) == (try JSON.parse(clipMetadata("0.5"))))
 
     let rec = try #require(ts[3].clips.first)
     #expect(rec.kind == .unified && rec.video?.kind == .screenVideo && rec.audio?.sourceTrackNumber == 2)

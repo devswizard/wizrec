@@ -116,7 +116,8 @@ struct MarkerAndClipActionTests {
         view.extendFrame(item)
         #expect(model.undo.undoName == "Extend Frame")
         let clips = model.project.tracks[0].clips
-        #expect(clips.count == 3)
-        #expect(clips.last?.start == 210 && clips.last?.duration == 30)
+        // ED1 [obs]: the clip becomes a StitchedMedia of itself + a frame image.
+        #expect(clips.count == 2)
+        #expect(clips.last?.kind == .stitched && clips.last?.start == 120 && clips.last?.duration == 120)
     }
 }

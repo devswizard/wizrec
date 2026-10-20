@@ -56,9 +56,10 @@ import TSCProjKit
     try expectReversible(move, on: p)
     try move.apply(to: p)
     try expectTracks(p, tracks(
-        track(0, [leaf(10, start: 0, dur: 100), leaf(12, start: 100, dur: 50)], transitions: "[]"),
+        track(0, [leaf(10, start: 0, dur: 100), leaf(12, start: 100, dur: 50)],
+              transitions: #"[{"name" : "Cube", "duration" : 5, "rightMedia" : 12}]"#),
         track(1, [leaf(20, start: 0, dur: 30), leaf(11, start: 30, dur: 50), leaf(21, start: 80, dur: 30)],
-              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}]"#)))
+              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}, {"name" : "Cube", "duration" : 5, "leftMedia" : 11}]"#)))
     try move.revert(on: p)
     expectRejected(RippleMove(clipID: 11, toTrack: 1, start: 10), on: p, .invalid(""))  // inside clip 20
     // Same track: start is read after the gap closes.
@@ -108,19 +109,61 @@ import TSCProjKit
 
 // MARK: - Extend frame
 
-@MainActor @Test func extendFrameInsertsSlowedLastFrame() throws {
-    let p = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100, ms: "20", md: "100"),
-                                                 leaf(11, start: 100, dur: 10)])])
+@MainActor @Test func extendFrameStitchesAFrameImageOfTheVideo() throws {
+    // ED1 [obs]: the clip becomes a StitchedMedia of itself + an IMFile on the
+    // same video source showing its last frame (media 119 of 20…120).
+    let params = #"{"translation0" : 5.0, "geometryCrop0" : 0.1}"#
+    let p = try projectWithAttributes([track(0, [leaf(10, start: 0, dur: 100, ms: "20", md: "100", parameters: params),
+                                                 leaf(11, start: 100, dur: 10)],
+                                             transitions: #"[{"name" : "Fade", "duration" : 5, "leftMedia" : 10}]"#)])
     let hold = ExtendFrame(clipID: 10, duration: 60)
     try expectReversible(hold, on: p)
     try hold.apply(to: p)
-    #expect(hold.freezeID == 12)
-    try expectTracks(p, tracks(track(0, [
-        leaf(10, start: 0, dur: 100, ms: "20", md: "100"),
-        leaf(12, start: 100, dur: 60, ms: "119", md: "1", scalar: "60"),
-        leaf(11, start: 160, dur: 10),
-    ])))
+    #expect(hold.freezeID == 12 && hold.stitchedID == 13)
+    let stitched = """
+    {"id" : 13, "_type" : "StitchedMedia", "minMediaStart" : 0.0, \
+    "attributes" : {"ident" : "", "gain" : 1.0, "mixToMono" : false, "loudnessNormalization" : true, "sourceFileOffset" : 0}, \
+    "parameters" : {"translation0" : 5.0, "geometryCrop0" : 0.0, "geometryCrop1" : 0.0, "geometryCrop2" : 0.0, \
+    "geometryCrop3" : 0.0, "volume" : 1.0, "smoothCursorAcrossEditDuration" : 0}, \
+    "medias" : [\(leaf(10, start: 0, dur: 100, ms: "20", md: "100", parameters: #"{"geometryCrop0" : 0.1}"#)), \
+    {"id" : 12, "_type" : "IMFile", "src" : 1, "trackNumber" : 0, "trimStartSum" : 0, "attributes" : {"ident" : "Frame of "}, \
+    "parameters" : {"geometryCrop0" : 0.1}, "effects" : [], "start" : 100, "duration" : 60, "mediaStart" : 119, \
+    "mediaDuration" : 1, "scalar" : 1, "animationTracks" : {}}], \
+    "effects" : [], "start" : 0, "duration" : 160, "mediaStart" : 0, "mediaDuration" : 160, "scalar" : 1, \
+    "metadata" : {"note" : "kept"}, "animationTracks" : {}}
+    """
+    try expectTracks(p, tracks(track(0, [stitched, leaf(11, start: 160, dur: 10)],
+                                     transitions: #"[{"name" : "Fade", "duration" : 5, "leftMedia" : 13}]"#)))
+
+    // Extending again grows the trailing frame segment [inf].
+    let more = ExtendFrame(clipID: 13, duration: 30)
+    try expectReversible(more, on: p)
+    try more.apply(to: p)
+    #expect(more.freezeID == 12 && more.stitchedID == 13)
+    let s = try #require(p.tracks[0].clips.first)
+    #expect([s.duration, s.segments.last?.duration] == [190, 90] && p.tracks[0].clips[1].start == 190)
     expectRejected(ExtendFrame(clipID: 10, duration: 0), on: p, .invalid(""))
     let audio = try projectWithAttributes([track(0, [leaf(10, type: "AMFile", start: 0, dur: 100)])])
     expectRejected(ExtendFrame(clipID: 10, duration: 10), on: audio, .invalid(""))
+}
+
+@MainActor @Test func extendFrameOnUnifiedMediaTakesTheVideoChild() throws {
+    let unified = """
+    {"id" : 20, "_type" : "UnifiedMedia", \
+    "video" : {"id" : 21, "_type" : "VMFile", "src" : 3, "trackNumber" : 0, "attributes" : {"ident" : "talk"}, \
+    "parameters" : {}, "start" : 0, "duration" : 90, "mediaStart" : 0, "mediaDuration" : 90, "scalar" : 1}, \
+    "audio" : {"id" : 22, "_type" : "AMFile", "src" : 3, "trackNumber" : 1, \
+    "start" : 0, "duration" : 90, "mediaStart" : 0, "mediaDuration" : 90, "scalar" : 1}, \
+    "effects" : [], "start" : 0, "duration" : 90, "mediaStart" : 0, "mediaDuration" : 90, "scalar" : 1}
+    """
+    let p = try projectWithAttributes([track(0, [unified])])
+    let hold = ExtendFrame(clipID: 20, duration: 30)
+    try expectReversible(hold, on: p)
+    try hold.apply(to: p)
+    let s = try #require(p.tracks[0].clips.first)
+    #expect(s.kind == .stitched && s.duration == 120 && s.segments.map(\.id) == [20, 23])
+    let f = try #require(s.segments.last?.object)
+    #expect(f["_type"]?.string == "IMFile" && f["src"]?.int == 3 && f["trackNumber"]?.int == 0)
+    let ident = try JSON.parse(#"{"ident" : "Frame of talk"}"#)
+    #expect(f["mediaStart"]?.int == 89 && f["attributes"] == ident)
 }
