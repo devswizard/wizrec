@@ -7,6 +7,9 @@
 #   copies (e.g. one running from a mounted DMG) are never touched.
 # - Defaults the checks depend on are passed as `-Key value` argument-domain pairs, so the
 #   user's stored preferences are neither read nor changed.
+# - The first launch of a freshly built app is slow (the system assesses the new binary, caches
+#   are cold). Window waits poll up to FIRST_LAUNCH_TIMEOUT s until a launch of this exact
+#   binary has shown its project once (a stamp next to the app), then up to LAUNCH_TIMEOUT s.
 
 UI_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$UI_DIR/../.." && pwd)
@@ -16,6 +19,9 @@ DEMO=${DEMO_PROJECT:-$HOME/Documents/demo project.cmproj}
 GUI_LOCK=${GUI_LOCK:-$HOME/WorkDir/vibe_coding/camtasia_rea_refs/.gui.lock}
 GUI_OWNER=${GUI_OWNER:-app}
 WATCHDOG=${WATCHDOG:-180}
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-45}
+FIRST_LAUNCH_TIMEOUT=${FIRST_LAUNCH_TIMEOUT:-150}
+WARM_STAMP="$(dirname "$APP")/.$(basename "$APP").ui-warm"
 
 APP_PID=""
 WATCH_PID=""
@@ -48,12 +54,23 @@ make_work() {
     mkdir -p "$WORK/exports"
 }
 
-# launch_app [args…]: starts the app and a watchdog; sets APP_PID.
+# Identity of the built binary (mtime, inode, size): a rebuild changes it.
+bin_id() { stat -f '%m %i %z' "$BIN" 2>/dev/null; }
+# A launch of this binary has already shown its project.
+app_warm() { [ -f "$WARM_STAMP" ] && [ "$(cat "$WARM_STAMP" 2>/dev/null)" = "$(bin_id)" ]; }
+mark_warm() { bin_id > "$WARM_STAMP" 2>/dev/null || true; }
+# Seconds to allow a launch to show its project: longer for the first launch of a new build.
+launch_timeout() { if app_warm; then echo "$LAUNCH_TIMEOUT"; else echo "$FIRST_LAUNCH_TIMEOUT"; fi; }
+
+# launch_app [args…]: starts the app and a watchdog; sets APP_PID. The watchdog adds the
+# first-launch allowance for a new build.
 launch_app() {
     [ -x "$BIN" ] || { log "no app at $APP (run scripts/make-app.sh)"; exit 2; }
+    local limit=$WATCHDOG
+    app_warm || limit=$((WATCHDOG + FIRST_LAUNCH_TIMEOUT))
     "$BIN" "$@" > "$WORK/app.log" 2>&1 &
     APP_PID=$!
-    ( sleep "$WATCHDOG"; kill -9 "$APP_PID" 2>/dev/null && echo "watchdog killed $APP_PID" >> "$WORK/app.log" ) &
+    ( sleep "$limit"; kill -9 "$APP_PID" 2>/dev/null && echo "watchdog killed $APP_PID" >> "$WORK/app.log" ) &
     WATCH_PID=$!
     log "launched WizRec pid $APP_PID"
 }
@@ -102,14 +119,36 @@ dump_value() {
 }
 has_window() { ax windows 2>/dev/null | grep -q "$1"; }
 
+# project_opened: the app logged its project window ("WizRec: opened …", printed once the
+# window has loaded) and System Events lists that window.
+project_opened() { grep -q "^WizRec: opened " "$WORK/app.log" 2>/dev/null && has_window demo; }
+
+# wait_for_project [seconds]: polls until the project window is up (default: launch_timeout);
+# gives up early when the app exits. Marks this build warm on success.
+wait_for_project() {
+    local t=${1:-$(launch_timeout)} started
+    started=$(date +%s)
+    wait_until "$t" 'project_opened || ! app_alive'
+    if app_alive && project_opened; then
+        log "project window up after $(( $(date +%s) - started )) s"
+        mark_warm
+        return 0
+    fi
+    if app_alive; then log "no project window after $t s"; else log "app exited before its window opened"; fi
+    tail -5 "$WORK/app.log" 2>/dev/null
+    return 1
+}
+
 # Opens the project copy and waits for its window.
-# Passes --quit-after (QUIT_AFTER s, default 150), so an abandoned app quits by itself before
-# the watchdog kills it. QUIT_AFTER=0 leaves it out, for checks of behaviour a scripted run
-# turns off (the export close/quit confirmation); the watchdog still ends those.
+# Passes --quit-after (QUIT_AFTER s, default 150, plus the first-launch allowance for a new
+# build), so an abandoned app quits by itself before the watchdog kills it. QUIT_AFTER=0 leaves
+# it out, for checks of behaviour a scripted run turns off (the export close/quit
+# confirmation); the watchdog still ends those.
 open_project() {
-    local q=()
-    [ "${QUIT_AFTER:-150}" != 0 ] && q=(--quit-after "${QUIT_AFTER:-150}")
+    local q=() quit=${QUIT_AFTER:-150}
+    if [ "$quit" != 0 ] && ! app_warm; then quit=$((quit + FIRST_LAUNCH_TIMEOUT)); fi
+    [ "$quit" != 0 ] && q=(--quit-after "$quit")
     launch_app "$PROJECT" ${q[@]+"${q[@]}"} "$@"
-    wait_until 30 'has_window demo' || { fail "project window did not open"; return 1; }
+    wait_for_project || { fail "project window did not open"; return 1; }
     sleep 2
 }

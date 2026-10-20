@@ -15,8 +15,12 @@ TSCPROJ=${TSCPROJ:-$ROOT/.build/release/tscproj}
 before=$("$TSCPROJ" info "$PROJECT")
 
 gui_lock
-launch_app "$PROJECT" --group-drop "$WORK/dropped.mp4" --save --quit-after 20
-wait_until 40 '! app_alive' || fail "app did not quit after the scripted drop"
+# The timed quit starts at launch: a new build's slow first launch gets longer.
+quit=20
+app_warm || quit=60
+launch_app "$PROJECT" --group-drop "$WORK/dropped.mp4" --save --quit-after "$quit"
+wait_until $((quit + $(launch_timeout))) '! app_alive' || fail "app did not quit after the scripted drop"
+grep -q "^WizRec: opened " "$WORK/app.log" && mark_warm
 gui_unlock
 
 grep "script:" "$WORK/app.log"
