@@ -19,6 +19,9 @@ public struct Marker: Sendable, Equatable {
 ///   (the parent for a `UnifiedMedia`), on its media-time axis.
 @MainActor
 public enum Markers {
+    /// Name Camtasia gives a new marker [obs, markers.md X8].
+    public static let defaultName = "Marker"
+
     public static func timeline(_ project: Project) -> [Marker] {
         read(project.timeline?.object["parameters"]?.object)
     }
@@ -111,8 +114,10 @@ public enum Markers {
 }
 
 /// Adds a marker at `time` (timeline ticks, or clip media time with
-/// `clipID`), snapped to the frame grid. A marker already at that tick is
-/// renamed instead [inf].
+/// `clipID`), snapped to the frame grid. The default name is "Marker" [obs,
+/// markers.md X8]. A marker already at that tick is renamed instead [inf].
+/// Camtasia 2026.2.3 has no clip-marker UI [obs]; `clipID` stays for editing
+/// clip markers that older projects already carry.
 @MainActor public final class AddMarker: EditCommand {
     public let name = "Add Marker"
     public let time: Int64
@@ -120,7 +125,7 @@ public enum Markers {
     public let clipID: Int64?
     private var values = ValueSwap()
     private var tracks = TrackSwap()
-    public init(at time: Int64, name: String, clipID: Int64? = nil) {
+    public init(at time: Int64, name: String = Markers.defaultName, clipID: Int64? = nil) {
         self.time = time; label = name; self.clipID = clipID
     }
     public func apply(to project: Project) throws {
