@@ -276,3 +276,4 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - captions6 slice 2: large multilingual whisper model for explicit non-English, Bengali script normalisation (turbo: 98–99 % Bengali script). 885 green.
 - researcher7: captions.md CA1/CA2, markers.md X8 (no clip markers in 2026.2.3; ripple keeps toc), shader-backgrounds SH2 effectDef table.
 - timeline7 X8: ripple keeps toc, default marker name. audio6: AU1/AU2 effects + mix-rate loudness + audio panel commands. render6 SH2: dot keys, colour rule, ShaderSourceLayout, 60 s backgrounds. researcher7: BlendMode/MediaMatte enums, transitions catalog. captions6 CA1/CA2: AddEmptyCaptions, dynamic caption presets at playhead, %GAP. 922 green.
+- researcher7: audio §3.3 (DFN3 without blob OK), callouts CO3, Part J ED0/ED1 (insert defaults, Extend Frame), UnifiedMedia split.
