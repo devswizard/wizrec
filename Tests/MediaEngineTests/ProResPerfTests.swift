@@ -62,7 +62,10 @@ struct ProResPerfTests {
         let cpu = (s(ru1.ru_utime) - s(ru0.ru_utime)) + (s(ru1.ru_stime) - s(ru0.ru_stime))
         let fps = Double(n) / secs
         print("PERF 4K \(clip.name): \(String(format: "%.1f", fps)) fps sequential (\(String(format: "%.1f", secs / Double(n) * 1000)) ms/frame, \(String(format: "%.1f", cpu / secs)) cores busy), load avg \(Self.loadAverage)")
-        LoadGate.expect(fps >= 30, "4K30 \(clip.name): ≥ 30 fps, got \(String(format: "%.1f", fps))")
+        // 4K60 real time for 422 HQ; 4444 (12-bit + alpha, swscale) must hold 4K30 and is
+        // reported against 4K60 (≈ 60–100 fps on an M3 Pro depending on load).
+        let target = clip.profile == 4 ? 30.0 : 60.0
+        LoadGate.expect(fps >= target, "4K \(clip.name): ≥ \(Int(target)) fps, got \(String(format: "%.1f", fps))")
     }
 
     /// BGRA conversion alone of a 4K ProRes 4444 picture (yuva444p12), banded vs one pass.
@@ -82,7 +85,7 @@ struct ProResPerfTests {
         }
     }
 
-    /// Where the time goes: libav decode only vs the full pipeline, per picture.
+    /// Decode + convert per picture on the bare decoder core (no actor hops, no pool).
     @Test(arguments: clips)
     func decodeVsConvert(clip: Clip) throws {
         let url = try Self.clipURL(clip)
