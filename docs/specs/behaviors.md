@@ -133,3 +133,67 @@ Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/behaviors/`.
   1. Put an image (any photo) at 0–5 s and apply **Fly In**.
   2. Change *In ▸ Movement* to a different value and *Speed* to the maximum.
   3. Save as `bh2-image.cmproj` and export `bh2-image.mp4`.
+
+## Menu defaults (runtime save, 2026-10-20)
+
+Source: automated runtime observation (DECISIONS 2026-10-20). Each behaviour
+in *Modify ▸ Add Behavior* was added to its own 5 s grey still, and Camtasia
+saved the project. Every value is **[obs]**.
+
+- **Window.** Each behaviour is one `GenericBehaviorEffect` with `start` 0 and
+  `duration` equal to the whole clip (5 s here).
+- **Clip metadata.** The clip's `metadata.effectApplied` is set to the
+  behaviour's `effectName`.
+- **Phase attributes.**
+  - The in and out phases carry `name`, `type` (0), `characterOrder`,
+    `offsetBetweenCharacters` (ticks), `suggestedDurationPerCharacter`
+    (ticks), `overlapProportion` (a number or an exact fraction string such
+    as `"23/60"`), `movement`, `springDamping`, `springStiffness` and
+    `bounceBounciness`.
+  - The centre phase carries `name`, `type`, `characterOrder`,
+    `offsetBetweenCharacters`, `secondsPerLoop` (a number or a fraction
+    string), `numberOfLoops` (−1 means for the whole clip) and
+    `delayBetweenLoops` (ticks).
+- **Phase parameters.** A phase may also have `parameters`. These are
+  either:
+  - int enums with `valueBounds` and `uiHints`, plus one keyframe at time 0
+    holding the value; or
+  - doubles with `defaultValue`, `valueBounds` and `uiHints`. Here
+    `unitType` 1 is a percentage or factor, and 3 is radians [inf from the
+    values].
+- **Spring and bounce.** The spring values are 5.0 / 50.0 / 0.45 for every
+  behaviour except: Shifting-in uses damping 7.0, and Jump & Fall-in uses
+  bounciness 0.4.
+- **Values in the table.**
+  - "per-char" and "offset" are converted to seconds.
+  - "order" is `characterOrder`.
+  - Parameter values follow the phase.
+
+| Menu | `effectName` | In phase | Centre phase | Out phase |
+|---|---|---|---|---|
+| Drifting | `drifting` | `drifting`: movement 17, per-char 1.25 s, overlap 0, order 6, offset 0.05 s; direction 3 | `drifting`: loop 4 s, delay 0 s, order 6, offset 0.03333 s; movement 17 | `drifting`: movement 7, per-char 1 s, overlap 23/60, order 6, offset 0.03333 s; direction 1 |
+| Explode | `explode` | `implode`: movement 0, per-char 0.7333 s, overlap 0, order 4, offset 0 s | `none`: loop 1 s, delay 0 s, order 6, offset 0 s | `explode`: movement 0, per-char 0.7333 s, overlap 0, order 4, offset 0 s |
+| Fade | `fade` | `fadeIn`: movement 0, per-char 1 s, overlap 0, order 6, offset 0.05 s | `none`: loop 1 s, delay 0 s, order 6, offset 0 s | `fadeOut`: movement 0, per-char 1 s, overlap 0, order 6, offset 0.05 s |
+| Fly In | `flyIn` | `flyIn`: movement 0, per-char 0.6 s, overlap 1/4, order 6, offset 0.06667 s | `none`: loop 1 s, delay 0 s, order 6, offset 0 s | `flyOut`: movement 0, per-char 0.4833 s, overlap 1/4, order 6, offset 0.06667 s |
+| Jump & Fall | `jumpAndFall` | `bounceIn`: movement 29, per-char 0.75 s, overlap -1/5, order 6, offset 0.08333 s; direction 1 | `jump`: loop 1 s, delay 1.667 s, order 6, offset 0.08 s; jump 60.0 | `drop`: movement 7, per-char 0.5 s, overlap 1/5, order 6, offset 0.08333 s; direction 3 |
+| Pop Up | `popUp` | `hinge`: movement 30, per-char 2.45 s, overlap 1/3, order 6, offset 0.05 s; direction 3 | `popUp`: loop 1 s, delay 0 s, order 6, offset 0.17 s; direction 3, movement 27, rotation 0.279252680319093 | `hinge`: movement 7, per-char 0.6667 s, overlap 1/2, order 6, offset 0.05 s; direction 3 |
+| Pulsating | `pulsating` | `grow`: movement 30, per-char 0.6 s, overlap 3/4, order 6, offset 0.03333 s | `pulsate`: loop 1 s, delay 0 s, order 6, offset 0.07 s; movement 27, scale 1.08 | `shrink`: movement 11, per-char 0.4833 s, overlap 1/10, order 6, offset 0.03333 s |
+| Reveal | `reveal` | `reveal`: movement 16, per-char 0.7333 s, overlap 0, order 7, offset 0.05 s; direction 0 | `reveal`: loop 233/100 s, delay 0.5 s, order 2, offset 0.17 s; movement 0, opacity 0.45 | `reveal`: movement 6, per-char 0.5667 s, overlap 1/2, order 7, offset 0.05 s; direction 2 |
+| Scale | `scale` | `grow`: movement 30, per-char 0.6 s, overlap 3/4, order 6, offset 0.03333 s | `none`: loop 1 s, delay 0 s, order 6, offset 0 s | `shrink`: movement 11, per-char 0.4833 s, overlap 1/10, order 6, offset 0.03333 s |
+| Shifting | `shifting` | `shifting`: movement 30, per-char 1.517 s, overlap 0, order 4, offset 0.02 s | `shifting`: loop 317/100 s, delay 0 s, order 3, offset 0 s; movement 12, shift 5.0 | `shifting`: movement 14, per-char 0.4333 s, overlap 1/2, order 4, offset 0.03333 s |
+| Sliding | `sliding` | `sliding`: movement 16, per-char 1 s, overlap 11/20, order 7, offset 0.05 s; direction 0 | `fading`: loop 2 s, delay 0 s, order 6, offset 0.08 s; movement 0, opacity 0.65 | `sliding`: movement 8, per-char 1 s, overlap 11/20, order 7, offset 0.05 s; direction 2 |
+| Tremble | `tremble` | `none`: movement -1, per-char 0 s, overlap 0, order 6, offset 0 s | `tremble`: loop 4/5 s, delay 0 s, order 0, offset 0 s; horizontal 6.0, rotation 0.0174, vertical 2.0 | `none`: movement -1, per-char 0 s, overlap 0, order 6, offset 0 s |
+| Wiggle | `wiggle` | `none`: movement -1, per-char 0 s, overlap 0, order 6, offset 0 s | `wiggle`: loop 100000 s, delay 0 s, order 0, offset 0 s; frequency 1.0, nuance 1.0, offsetX 10.0, offsetY 10.0, rotation 0.0, scale 0.0 | `none`: movement -1, per-char 0 s, overlap 0, order 6, offset 0 s |
+
+Notes:
+
+- **Name ≠ menu text.** The menu item *Scale* writes `effectName` `scale`
+  with `grow`/`shrink` phases. *Pop Up* writes `popUp` with `hinge` phases,
+  not bounce [obs].
+- **"Nothing" phases.** Tremble and Wiggle have in and out phases named
+  `none`, with `movement` −1 [obs]. Explode, Fade, Fly In and Scale have a
+  centre named `none`, with loop 1 s [obs].
+- **Wiggle loop.** Wiggle's centre has `secondsPerLoop` 100000, so in
+  practice it never loops [obs].
+- **Durations.** The rendered in/out duration of each phase on a still is
+  [?]. It needs a render, and exports are blocked by the trial watermark.

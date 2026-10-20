@@ -11,22 +11,28 @@ Tags: **[obs]** observed in files, **[inf]** inferred, **[?]** unknown.
   only a `dummy` placeholder (`start` 20, `duration` 80 frames) [obs].
 - The bundle has `Reflection.mp4` and `iconReflection.png` (names only)
   [obs].
-- The project `effectName` is assumed to be `"Reflection"` [inf].
+- The project `effectName` is `"Reflection"` [obs, EF0 runtime save].
 
-## Parameters
+## Parameters (EF0, runtime save, 2026-10-20)
 
-All are [?] until **EF0**. The expected kinds are:
+Camtasia 2026.2.3 wrote these defaults when Reflection was added from the
+menu to a 400×400 grey still [obs]:
 
-- reflection opacity (0–1);
-- distance or gap below the layer;
-- fade length or "size", as a fraction of the layer height;
-- possibly a blur amount.
+| Key | Default | Meaning |
+|---|---|---|
+| `distance` | 20.0 | gap between the layer's bottom edge and the mirrored copy [obs]. Units are [?], probably px [inf] |
+| `opacity` | 0.4 | strength of the reflection, 0–1 [obs] |
+
+- The effect name is `"Reflection"` [obs].
+- There is no fade-length, size or blur key [obs], so the fade-out ramp
+  along the reflection is fixed by Camtasia. Its shape is [?]; EF9 measures
+  it.
 
 ## Model (provisional)
 
 ```
-R = the layer flipped vertically about its bottom edge, shifted down by gap
-R.alpha *= opacity · ramp(1 → 0 over fadeLength from the flip line)
+R = the layer flipped vertically about its bottom edge, shifted down by distance
+R.alpha *= opacity · ramp(1 → 0 over a fixed fade length [?] from the flip line)
 draw R under the layer
 ```
 

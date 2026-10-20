@@ -112,7 +112,10 @@ audio-only files) [obs].
 | `rotation2` is rotation about the screen-normal (Z) axis, **in radians**. | [obs] | MotionBlurPreview keyframes `rotation2` 0 → **−6.28318530717959** (exactly −2π: one full turn) |
 | Sign: negative = clockwise as seen on screen (i.e. positive = counter-clockwise, the maths convention for +y up). | [inf, weak] | The same clip moves right (`translation0` −465 → 458) while rotating to −2π, like a ball rolling right, which turns clockwise. Needs experiment X2. |
 | Pivot is the layer centre. | [inf] | Natural for a centre-origin translation; no rotated sample to check. Experiment X2. |
-| `rotation0`/`rotation1` (X/Y, 3-D) never observed; `default-scale2` hints at a 3-D transform model. | [?] | |
+| The Properties *Rotation Z* field shows degrees and writes `rotation2` in radians with the **same sign**: entering +30 writes +0.523598775598299 (π/6) [obs, RT-007]. On-screen direction of positive values is still [inf, weak] (needs a render). | [obs] value / [inf] direction | RT-007 `x2-rot30` |
+| *Rotation Y* writes `rotation1` (+30° → +π/6); *Rotation X* is the third field (presumably `rotation0`). The menu animations *Tilt Left/Right* animate `rotation1` to ±π/6 together with x ±480 and scale [obs, RT-004]. Rendering of X/Y rotation (perspective or orthographic) is [?]. | [obs] keys | RT-007 `x2d-rotY30` |
+| *Skew* writes `shear0` with the number shown (10 → 10.0); its unit (degrees?) and axis are [?]. | [obs] key | RT-007 `x2b-skew10` |
+| The *Size* width field is display only: setting width 800 on a 1600-wide still writes `scale0`/`scale1` 0.5 (aspect locked) [obs]. | [obs] | RT-007 `x2c-width800` |
 | Missing → 0. | [inf] | |
 
 ## 5. Transform order
@@ -204,8 +207,9 @@ the playhead, so most need only "edit, park playhead, save".
   **only the left side** by roughly a quarter, park the playhead on the clip,
   *File ▸ Save As* `x1-left.cmproj`. Undo, crop **only the top**, save
   `x1-top.cmproj`. Send both project bundles.
-- **X2 — rotation sign and pivot.** Same image, set *Rotation Z* to **+30°**
-  in Properties, playhead on the clip, save `x2-rot30.cmproj`.
+- **X2 — rotation sign and pivot.** Done by automation 2026-10-20 (RT-007): the
+  value sign is settled (above). The on-screen direction and pivot still need a
+  render, which waits on reference exports.
 - **X3 — group composition.** Two images side by side, group them, move the
   group right by ~200 px and set the group scale to 50 %, save
   `x3-group.cmproj`.
