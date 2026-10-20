@@ -270,8 +270,15 @@ final class CalloutRasterizer {
                 }
             }
         case "TypeWinHighlighter":
-            // Translucent fill over the box [callouts.md §3; blend mode ?].
-            ctx.setFillColor(cg(c.fill)); ctx.fill(CalloutGeometry.box(c))
+            // Translucent fill over the box, rounded by `corner-radius` [callouts.md §3.1; blend mode ?].
+            let b = CalloutGeometry.box(c)
+            let r = min(max(c.cornerRadius, 0), min(b.width, b.height) / 2)
+            ctx.setFillColor(cg(c.fill))
+            ctx.addPath(CGPath(roundedRect: b, cornerWidth: r, cornerHeight: r, transform: nil)); ctx.fillPath()
+        case CalloutKinds.keystroke:
+            CalloutKinds.drawKey(c, in: ctx)
+        case let k where CalloutKinds.sketch.contains(k):
+            CalloutKinds.drawSketch(c, in: ctx)
         default:
             break
         }

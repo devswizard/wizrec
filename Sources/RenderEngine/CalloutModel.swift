@@ -56,6 +56,9 @@ struct SCallout: Sendable {
     var runKeys: [(time: Double, runs: [CalloutTextRun])]
     /// Set when the `def` is a dynamic caption; its audio is paired by `SceneBuilder`.
     var caption: SDynamicCaption?
+    /// The clip's `leftEdgeMods` / `rightEdgeMods` on `def` numbers (Sketch Motion's `DrawTime`
+    /// draw-on) [obs form CO3; inf meaning, effects/README.md §1].
+    var ramps: [SEffect.EdgeRamp] = []
 
     init(_ def: JSONObject) {
         caption = DynamicCaptionStyle.isDynamicCaption(def)
@@ -120,8 +123,14 @@ struct SCallout: Sendable {
     }
 
     /// The `def` at keyframe time `kt`, with box `size` (from the clip) as fallback for width/height.
-    func content(at kt: Double, size: CGSize) -> CalloutContent {
-        let p = numbers.evaluated(at: kt)
+    /// `span`: the clip's extent on the keyframe axis, for edge ramps.
+    func content(at kt: Double, size: CGSize, span: (lo: Double, hi: Double)? = nil) -> CalloutContent {
+        var p = numbers.evaluated(at: kt)
+        for r in ramps {
+            guard let v = p[r.parameter] ?? (r.parameter == "DrawTime" ? 1 : nil) else { continue }
+            let k = r.fadeIn ? (kt - (span?.lo ?? -.infinity)) / r.duration : ((span?.hi ?? .infinity) - kt) / r.duration
+            p[r.parameter] = v * Conventions.clamp01(k)
+        }
         func n(_ k: String, _ d: Double) -> Double { p[k] ?? d }
         func color(_ prefix: String, alphaKey: String, _ d: RGBA) -> RGBA {
             if p["\(prefix)-red"] != nil || p["\(prefix)-green"] != nil || p["\(prefix)-blue"] != nil {
@@ -132,16 +141,36 @@ struct SCallout: Sendable {
         }
         let runs = runKeys.last { $0.time <= kt }?.runs ?? runKeys.first?.runs ?? []
         let w = n("width", size.width), h = n("height", size.height)
-        return CalloutContent(
-            kind: strings["kind"] ?? "remix", shape: strings["shape"] ?? "", style: strings["style"] ?? "",
+        let kind = strings["kind"] ?? "remix"
+        // CO3 keys [obs, callouts.md §3.1]: Highlighter `fillColorRed/Green/Blue` + `fill-color-opacity`;
+        // Sketch Motion `borderColorRed/Green/Blue`, `borderWidth`, `DrawTime`, `xmlContent`.
+        var fill = color("fill-color", alphaKey: "opacity", RGBA(1, 1, 1, 0))
+        if p["fillColorRed"] != nil || p["fillColorGreen"] != nil || p["fillColorBlue"] != nil {
+            fill = RGBA(Conventions.clamp01(n("fillColorRed", 0)), Conventions.clamp01(n("fillColorGreen", 0)),
+                        Conventions.clamp01(n("fillColorBlue", 0)), Conventions.clamp01(n("fill-color-opacity", 1)))
+        }
+        let sketch = CalloutKinds.sketch.contains(kind)
+        var stroke = color("stroke-color", alphaKey: "opacity", RGBA(0, 0, 0, 1))
+        var strokeWidth = max(n("stroke-width", 0), 0)
+        if sketch {
+            stroke = RGBA(Conventions.clamp01(n("borderColorRed", 1)), Conventions.clamp01(n("borderColorGreen", 1)),
+                          Conventions.clamp01(n("borderColorBlue", 0)), 1)
+            strokeWidth = max(n("borderWidth", 3), 0)
+        }
+        var text = self.text, fontSize = font.size
+        if kind == CalloutKinds.keystroke {
+            text = strings["keys"] ?? strings["name"] ?? text
+            fontSize = CalloutKinds.keystrokeFontFraction * h
+        }
+        var c = CalloutContent(
+            kind: kind, shape: strings["shape"] ?? "", style: strings["style"] ?? "",
             size: CGSize(width: max(w, 0), height: max(h, 0)),
-            fill: color("fill-color", alphaKey: "opacity", RGBA(1, 1, 1, 0)),
-            stroke: color("stroke-color", alphaKey: "opacity", RGBA(0, 0, 0, 1)),
-            strokeWidth: max(n("stroke-width", 0), 0), strokeStyle: strings["stroke-style"] ?? "solid",
+            fill: fill, stroke: stroke, strokeWidth: strokeWidth, strokeStyle: strings["stroke-style"] ?? "solid",
             cornerRadius: max(n("corner-radius", 0), 0),
             tail: CGPoint(x: n("tail-x", 0), y: n("tail-y", 0)),
             anchorCap: strings["shape-anchor"] ?? "none", tailCap: strings["shape-tail"] ?? "arrow",
-            text: text, runs: runs, fontName: font.name, fontWeight: font.weight, fontSize: font.size,
+            text: text, runs: kind == CalloutKinds.keystroke ? [] : runs, fontName: font.name, fontWeight: font.weight,
+            fontSize: fontSize,
             textColor: font.color,
             horizontalAlignment: strings["horizontal-alignment"] ?? "center",
             verticalAlignment: strings["vertical-alignment"] ?? "center",
@@ -151,5 +180,16 @@ struct SCallout: Sendable {
             textStrokeColor: color("text-stroke-color", alphaKey: "alpha", RGBA(0, 0, 0, 1)),
             intensity: n("intensity", 0.5),
             invert: n("blur-invert", 0) != 0 || n("fill-invert", 0) != 0)
+        if sketch {
+            c.svg = strings["xmlContent"]
+            c.drawProgress = Conventions.clamp01(n("DrawTime", 1))
+        }
+        if kind == CalloutKinds.keystroke {
+            c.keyStyle = Int(n("keyStyle", 0).rounded())
+            c.showKeyBackground = n("showKeyBackg", 1) != 0
+            c.textColor = CalloutKinds.keyColors(c.keyStyle).text
+            c.horizontalAlignment = "center"; c.verticalAlignment = "center"
+        }
+        return c
     }
 }
