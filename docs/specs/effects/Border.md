@@ -13,18 +13,26 @@ Tags: **[obs]** observed in files, **[inf]** inferred, **[?]** unknown.
 - The bundle has `Border.mp4` and `iconBorder.png` (preview assets, names
   only) [obs]. It also has a `Base.lproj/Border.nib`, which suggests the
   effect has its own custom inspector panel [inf].
-- The project `effectName` is assumed to be `"Border"`, after the resource
-  names and the pattern of other effects [inf].
+- The project `effectName` is `"Border"` [obs, EF0 runtime save].
 
-## Parameters
+## Parameters (EF0, runtime save, 2026-10-20)
 
-All are [?] until **EF0** (README §3), which adds Border with its defaults
-to a clip. By analogy with `DropShadow`, the expected keys are:
+Camtasia 2026.2.3 wrote these defaults when Border was added from
+*Modify ▸ Add Effects ▸ Visual Effects ▸ Border* to a 400×400 grey still
+[obs]:
 
-- `color-red`, `color-green`, `color-blue` and `color-alpha` (0–1);
-- `thickness` or `width` [?], in layer px or canvas px;
-- possibly `corner-radius` and `style`, and whether the border sits inside,
-  centred on or outside the edge [?].
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | 1 | on/off flag, int [obs] |
+| `color-red`, `color-green`, `color-blue`, `color-alpha` | 1.0 each | border colour, 0–1: opaque white [obs] |
+| `width` | 1.0 | thickness [obs]. Units are [?]: canvas px or layer px, to be settled by EF8 cells 1 and 2 |
+| `type` | 0 | border style enum [obs]. The other values and their looks are [?] |
+
+- The effect name is `"Border"` [obs].
+- `metadata.effectApplied` on the clip becomes `"Border"` [obs].
+- The parameters are written as bare numbers [obs]. Other effects use the
+  same form when nothing is keyframed.
+- There is no corner-radius or inside/outside key [obs].
 
 ## Model (provisional)
 
@@ -37,8 +45,8 @@ to a clip. By analogy with `DropShadow`, the expected keys are:
 
 | Cell | Media | Border settings |
 |---|---|---|
-| 1 | M-grey, scale 0.5 | thickness 20 |
-| 2 | M-grey, scale 0.25 | thickness 20 (units) |
-| 3 | M-disc | thickness 20 (silhouette or box) |
-| 4 | M-grey + RoundCorners radius 80 | thickness 20 (follows the rounding?) |
+| 1 | M-grey, scale 0.5 | `width` 20 |
+| 2 | M-grey, scale 0.25 | `width` 20 (units) |
+| 3 | M-disc | `width` 20 (silhouette or box) |
+| 4 | M-grey + RoundCorners radius 80 | `width` 20 (follows the rounding?) |
 | 5 | M-grey | colour (0, 0, 1), alpha 0.5 |
