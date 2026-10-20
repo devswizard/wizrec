@@ -43,20 +43,12 @@ public enum MediaWriter {
     public static func writeH264(to url: URL, width: Int, height: Int, fps: Int, frameCount: Int,
                                  bitsPerSecond: Int? = nil,
                                  draw: (Int, CGContext) -> Void) throws -> MovieInfo {
-        try? FileManager.default.removeItem(at: url)
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let timescale = Int32(fps * 1000)
-        writer.movieTimeScale = CMTimeScale(timescale)
         let bitrate = bitsPerSecond ?? max(500_000, width * height * fps / 6)
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
-            AVVideoColorPropertiesKey: [
-                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
-            ],
+            AVVideoColorPropertiesKey: rec709,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
                 AVVideoMaxKeyFrameIntervalKey: fps,
@@ -65,6 +57,39 @@ public enum MediaWriter {
                 AVVideoExpectedSourceFrameRateKey: fps,
             ],
         ]
+        return try writeMovie(to: url, fileType: .mp4, settings: settings, width: width, height: height, fps: fps,
+                              frameCount: frameCount, draw: draw)
+    }
+
+    /// Encodes `frameCount` frames of `width`×`height` ProRes 422 HQ (BT.709 tags) at a constant
+    /// `fps` into a `.mov` at `url`, replacing any file there: the stand-in for a Camtasia
+    /// ProRes reference export. `draw` as in `writeH264`.
+    @discardableResult
+    public static func writeProRes(to url: URL, width: Int, height: Int, fps: Int, frameCount: Int,
+                                   draw: (Int, CGContext) -> Void) throws -> MovieInfo {
+        let settings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.proRes422HQ,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
+            AVVideoColorPropertiesKey: rec709,
+        ]
+        return try writeMovie(to: url, fileType: .mov, settings: settings, width: width, height: height, fps: fps,
+                              frameCount: frameCount, draw: draw)
+    }
+
+    private static var rec709: [String: Any] { [
+        AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+        AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+        AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+    ] }
+
+    private static func writeMovie(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,
+                                   height: Int, fps: Int, frameCount: Int,
+                                   draw: (Int, CGContext) -> Void) throws -> MovieInfo {
+        try? FileManager.default.removeItem(at: url)
+        let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
+        let timescale = Int32(fps * 1000)
+        writer.movieTimeScale = CMTimeScale(timescale)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
         input.mediaTimeScale = CMTimeScale(timescale)

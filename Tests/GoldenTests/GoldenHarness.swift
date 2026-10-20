@@ -41,20 +41,49 @@ enum Golden {
 
     /// Per-case calibration record (`GOLDEN_CALIBRATE=1`). `suggestedPsnrMin` is the lowest
     /// PSNR over the compared frames minus a 1 dB margin, floored to 0.5 dB; dB.
+    /// `reference` is the file compared (`reference.mov` …); `minCellSSIM` is set for sheets;
+    /// `swift` is the paste-ready `TestGen.psnrMinByCase` / `sheetThresholds` entry.
     struct Calibration: Codable, Equatable {
         var caseName: String
         var frames: Int
         var minSSIM: Double
         var minPSNR: Double
         var suggestedPsnrMin: Double?
+        var reference: String? = nil
+        var minCellSSIM: Double? = nil
+        var swift: String? = nil
+    }
+
+    /// PSNR floor for a worst-frame PSNR: 1 dB under it, floored to 0.5 dB; nil for ∞/NaN.
+    static func suggestedFloor(minPSNR: Double) -> Double? {
+        minPSNR.isFinite ? ((minPSNR - 1) * 2).rounded(.down) / 2 : nil
     }
 
     /// Builds the calibration record from scores; `nil` when no frame was compared.
-    static func calibration(case name: String, scores: [FrameScore]) -> Calibration? {
+    static func calibration(case name: String, scores: [FrameScore], reference: String? = nil) -> Calibration? {
         guard let minSSIM = scores.map(\.ssim).min(), let minPSNR = scores.map(\.psnr).min() else { return nil }
-        let suggested = minPSNR.isFinite ? ((minPSNR - 1) * 2).rounded(.down) / 2 : nil
-        return Calibration(caseName: name, frames: scores.count, minSSIM: minSSIM, minPSNR: minPSNR,
-                           suggestedPsnrMin: suggested)
+        let suggested = suggestedFloor(minPSNR: minPSNR)
+        var c = Calibration(caseName: name, frames: scores.count, minSSIM: minSSIM, minPSNR: minPSNR,
+                            suggestedPsnrMin: suggested, reference: reference)
+        if let suggested, let reference {
+            c.swift = "\"\(name)\": PSNRFloor(dB: \(suggested), reference: \"\(reference)\"),"
+        }
+        return c
+    }
+
+    /// Sheet calibration: worst whole-frame colour SSIM, worst cell, worst PSNR. Key `group/case`.
+    static func sheetCalibration(sheet key: String, scores: [SheetScore], reference: String?) -> Calibration? {
+        guard let minSSIM = scores.map(\.whole).min() else { return nil }
+        let psnrs = scores.compactMap(\.psnr)
+        let minPSNR = psnrs.min() ?? .nan
+        let suggested = suggestedFloor(minPSNR: minPSNR)
+        var c = Calibration(caseName: key.replacingOccurrences(of: "/", with: "-"), frames: scores.count,
+                            minSSIM: minSSIM, minPSNR: minPSNR, suggestedPsnrMin: suggested, reference: reference,
+                            minCellSSIM: scores.flatMap { $0.cells.map(\.ssim) }.min())
+        if let suggested, let reference {
+            c.swift = "\"\(key)\": SheetThreshold(psnr: PSNRFloor(dB: \(suggested), reference: \"\(reference)\")),"
+        }
+        return c
     }
 
     /// Writes `<dir>/calibration/<case>.json`; returns the file.
@@ -141,11 +170,13 @@ struct FrameScore: CustomStringConvertible {
 @MainActor
 func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
     let m = try c.manifest()
-    let refURL = c.url(m.reference)
-    guard FileManager.default.fileExists(atPath: refURL.path) else {
-        print("golden \(m.caseName): no \(m.reference) yet, skipped")
+    guard let refURL = ReferenceFile.resolve(in: c.directory, declared: m.reference) else {
+        print("golden \(m.caseName): no \(m.reference) (or .mov) yet, skipped")
         return nil
     }
+    let psnrFloor = ReferenceFile.floorApplies(calibratedOn: m.psnrReference, used: refURL) ? m.psnrMin : nil
+    print("golden \(m.caseName): comparing against \(refURL.lastPathComponent)"
+          + (m.psnrMin != nil && psnrFloor == nil ? " (psnrMin calibrated on \(m.psnrReference ?? "?"), not enforced)" : ""))
     let info = try await MovieFrameReader.info(refURL)
     #expect(info.width == m.width && info.height == m.height,
             "\(m.caseName): reference is \(info.width)×\(info.height), expected \(m.width)×\(m.height)")
@@ -201,7 +232,7 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
             print(String(format: "golden %@ frame %d: marker %.1f px off", m.caseName, n, markerOff))
         }
         let passed = ssim.mean >= m.ssimMin && (fg ?? 1) >= m.ssimMin && markerOK
-            && psnr >= (m.psnrMin ?? -.infinity)
+            && psnr >= (psnrFloor ?? -.infinity)
         let score = FrameScore(frame: n, ssim: ssim.mean, psnr: psnr, foregroundSSIM: fg, passed: passed)
         scores.append(score)
         print("golden \(m.caseName): \(score)")
@@ -210,11 +241,12 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
                                                 ssim: ssim)
             if !passed {
                 let expect = m.expectations["\(n)"].map { " (expected: \($0))" } ?? ""
-                Issue.record("\(m.caseName) frame \(n): SSIM \(String(format: "%.4f", ssim.mean)) < \(m.ssimMin) or PSNR \(String(format: "%.2f", psnr)) < \(m.psnrMin ?? 0)\(expect); artefacts in \(dir.path)")
+                Issue.record("\(m.caseName) frame \(n): SSIM \(String(format: "%.4f", ssim.mean)) < \(m.ssimMin) or PSNR \(String(format: "%.2f", psnr)) < \(psnrFloor ?? 0)\(expect); artefacts in \(dir.path)")
             }
         }
     }
-    if Golden.calibrate, let cal = Golden.calibration(case: m.caseName, scores: scores) {
+    if Golden.calibrate, let cal = Golden.calibration(case: m.caseName, scores: scores,
+                                                                  reference: refURL.lastPathComponent) {
         let file = try Golden.writeCalibration(cal)
         print("golden \(m.caseName): calibration → \(file.path)")
     }

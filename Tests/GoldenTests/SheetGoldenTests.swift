@@ -37,8 +37,8 @@ enum SheetGolden {
         case still(RGBAImage, ticks: Int64)
         /// Camtasia's saved thumbnail; compared against a canvas-size render box-averaged down.
         case thumbnail(RGBAImage, ticks: Int64)
-        /// Movie frames by index.
-        case movie([Int: RGBAImage], fps: Int)
+        /// Movie frames by index; `file` is the movie compared (`reference.mov` preferred).
+        case movie([Int: RGBAImage], fps: Int, file: String)
     }
 
     /// Effect names and unsupported clip types anywhere in `plan` that RenderEngine does not draw.
@@ -114,11 +114,17 @@ struct SheetScore: CustomStringConvertible {
     let whole: Double
     let cells: [(id: Int, ssim: Double)]
     let threshold: Double
+    /// Whole-frame RGB PSNR, dB; nil when sizes differ.
+    var psnr: Double? = nil
+    /// Enforced PSNR floor, dB (manifest `psnrMin` when calibrated on the compared file).
+    var psnrFloor: Double? = nil
     var failedCells: [Int] { cells.filter { $0.ssim < threshold }.map(\.id) }
-    var passed: Bool { whole >= threshold && failedCells.isEmpty }
+    var psnrOK: Bool { psnrFloor.map { (psnr ?? -.infinity) >= $0 } ?? true }
+    var passed: Bool { whole >= threshold && failedCells.isEmpty && psnrOK }
     var description: String {
         let c = cells.map { String(format: "%d:%.3f", $0.id, $0.ssim) }.joined(separator: " ")
-        return String(format: "%@  SSIM %.4f  cells [%@]  %@", label, whole, c, passed ? "ok" : "FAIL")
+        return String(format: "%@  SSIM %.4f  PSNR %@  cells [%@]  %@", label, whole,
+                      psnr.map { String(format: "%.2f dB", $0) } ?? "–", c, passed ? "ok" : "FAIL")
     }
 }
 
@@ -128,8 +134,9 @@ func sheetReference(_ s: GoldenSheet, _ m: SheetManifest, bundle: ProjectBundle)
     let fm = FileManager.default
     let editRate = bundle.project.timebase.editRate
     let ticks = DocPrefs.playhead(in: bundle.directory) ?? Golden.ticks(frame: m.playheadFrame, fps: m.fps, editRate: editRate)
-    if let movie = m.referenceMovie, let frames = m.movieFrames, fm.fileExists(atPath: s.url(movie).path) {
-        return .movie(try await MovieFrameReader.frames(s.url(movie), indices: frames), fps: m.fps)
+    if let movie = m.referenceMovie, let frames = m.movieFrames,
+       let file = ReferenceFile.resolve(in: s.directory, declared: movie) {
+        return .movie(try await MovieFrameReader.frames(file, indices: frames), fps: m.fps, file: file.lastPathComponent)
     }
     if fm.fileExists(atPath: s.url(m.referenceImage).path) {
         guard let img = loadImage(s.url(m.referenceImage)) else {
@@ -171,6 +178,12 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
     let canvas = (m.width, m.height)
     let bg = scene.evaluate(at: 0).background
     let bg8 = (UInt8((bg.r * 255).rounded()), UInt8((bg.g * 255).rounded()), UInt8((bg.b * 255).rounded()))
+    let referenceFile: String = switch reference {
+    case .still: m.referenceImage
+    case .thumbnail: "ProjectThumbnail"
+    case .movie(_, _, let file): file
+    }
+    let psnrFloor: Double? = m.psnrReference == nil || m.psnrReference == referenceFile ? m.psnrMin : nil
 
     /// `motion`: movie frames also score each cell on its foreground box (see `SheetGolden.foregroundBox`).
     func score(_ label: String, frame: Int, rendered: RGBAImage, reference ref: RGBAImage,
@@ -192,7 +205,8 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
             }
             return (cell.id, ssim)
         }
-        let result = SheetScore(label: label, whole: Metrics.colorSSIM(rendered, ref), cells: cells, threshold: m.ssimMin)
+        let result = SheetScore(label: label, whole: Metrics.colorSSIM(rendered, ref), cells: cells, threshold: m.ssimMin,
+                                psnr: Metrics.psnr(rendered, ref), psnrFloor: psnrFloor)
         print("sheet \(s.name): \(result)")
         if !result.passed || Golden.dumpAll {
             let dir = try Golden.writeArtefacts(case: s.name.replacingOccurrences(of: "/", with: "-"), frame: frame,
@@ -200,39 +214,48 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
             if !result.passed {
                 let notes = m.cells.filter { result.failedCells.contains($0.id) }
                     .map { "cell \($0.id) (\($0.settings))" }.joined(separator: "; ")
-                Issue.record("\(s.name) \(label): SSIM \(String(format: "%.4f", result.whole)) / failing cells: \(notes.isEmpty ? "none" : notes) (min \(m.ssimMin)); artefacts in \(dir.path)")
+                Issue.record("\(s.name) \(label): SSIM \(String(format: "%.4f", result.whole)) / failing cells: \(notes.isEmpty ? "none" : notes) (min \(m.ssimMin))\(result.psnrOK ? "" : String(format: "; PSNR %.2f < %.2f dB", result.psnr ?? 0, psnrFloor ?? 0)); artefacts in \(dir.path)")
             }
         }
         return result
     }
 
-    switch reference {
-    case .still(let ref, let ticks):
-        let cg = try await renderer.image(at: ticks, size: CGSize(width: ref.width, height: ref.height))
-        let frame = Int(ticks * Int64(m.fps) / editRate)
-        return [try score("frame \(frame) (reference.png)", frame: frame, rendered: RGBAImage(cg), reference: ref)]
-    case .thumbnail(let ref, let ticks):
-        let frame = Int(ticks * Int64(m.fps) / editRate)
-        let rendered: RGBAImage
-        if let k = ProjectThumbnail.factor(canvas: canvas, thumbnail: (ref.width, ref.height)) {
-            let cg = try await renderer.image(at: ticks, size: CGSize(width: m.width, height: m.height))
-            rendered = RGBAImage(cg).boxDownsampled(by: k)
-        } else {
-            rendered = RGBAImage(try await renderer.image(at: ticks, size: CGSize(width: ref.width, height: ref.height)))
+    func scoreSheet() async throws -> [SheetScore] {
+        switch reference {
+        case .still(let ref, let ticks):
+            let cg = try await renderer.image(at: ticks, size: CGSize(width: ref.width, height: ref.height))
+            let frame = Int(ticks * Int64(m.fps) / editRate)
+            return [try score("frame \(frame) (reference.png)", frame: frame, rendered: RGBAImage(cg), reference: ref)]
+        case .thumbnail(let ref, let ticks):
+            let frame = Int(ticks * Int64(m.fps) / editRate)
+            let rendered: RGBAImage
+            if let k = ProjectThumbnail.factor(canvas: canvas, thumbnail: (ref.width, ref.height)) {
+                let cg = try await renderer.image(at: ticks, size: CGSize(width: m.width, height: m.height))
+                rendered = RGBAImage(cg).boxDownsampled(by: k)
+            } else {
+                rendered = RGBAImage(try await renderer.image(at: ticks, size: CGSize(width: ref.width, height: ref.height)))
+            }
+            return [try score("frame \(frame) (ProjectThumbnail \(ref.width)×\(ref.height))", frame: frame, rendered: rendered,
+                              reference: ref)]
+        case .movie(let frames, let fps, let file):
+            var out: [SheetScore] = []
+            for n in (m.movieFrames ?? []).sorted() {
+                guard let ref = frames[n] else { continue }
+                let cg = try await renderer.image(at: Golden.ticks(frame: n, fps: fps, editRate: editRate),
+                                                  size: CGSize(width: ref.width, height: ref.height))
+                out.append(try score("frame \(n) (\(file))", frame: n, rendered: RGBAImage(cg), reference: ref,
+                                     motion: true))
+            }
+            return out
         }
-        return [try score("frame \(frame) (ProjectThumbnail \(ref.width)×\(ref.height))", frame: frame, rendered: rendered,
-                          reference: ref)]
-    case .movie(let frames, let fps):
-        var out: [SheetScore] = []
-        for n in (m.movieFrames ?? []).sorted() {
-            guard let ref = frames[n] else { continue }
-            let cg = try await renderer.image(at: Golden.ticks(frame: n, fps: fps, editRate: editRate),
-                                              size: CGSize(width: ref.width, height: ref.height))
-            out.append(try score("frame \(n) (reference.mp4)", frame: n, rendered: RGBAImage(cg), reference: ref,
-                                 motion: true))
-        }
-        return out
     }
+
+    let scores = try await scoreSheet()
+    if Golden.calibrate, let cal = Golden.sheetCalibration(sheet: s.name, scores: scores, reference: referenceFile) {
+        let file = try Golden.writeCalibration(cal)
+        print("sheet \(s.name): calibration → \(file.path)")
+    }
+    return scores
 }
 
 /// Harness plumbing that runs without references.

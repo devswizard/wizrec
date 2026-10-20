@@ -127,8 +127,7 @@ struct GoldenFrameTests {
     func referenceShowsPredictedSourceFrames(_ c: GoldenCase) async throws {
         let m = try c.manifest()
         guard let expected = m.sourceFrames, !expected.isEmpty else { return }
-        let ref = c.url(m.reference)
-        guard FileManager.default.fileExists(atPath: ref.path) else {
+        guard let ref = ReferenceFile.resolve(in: c.directory, declared: m.reference) else {
             print("golden \(m.caseName): no \(m.reference) yet, skipped")
             return
         }
