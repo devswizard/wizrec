@@ -19,7 +19,7 @@ func scratchDir(_ name: String) throws -> URL {
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("card.mp4")
         let card = TestCard(width: 480, height: 270, label: "T")
-        let movie = try MediaWriter.writeH264(to: url, width: 480, height: 270, fps: 30, frameCount: 60) { n, ctx in
+        let movie = try await MediaWriter.writeH264(to: url, width: 480, height: 270, fps: 30, frameCount: 60) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         #expect(movie.timescale == 30000)

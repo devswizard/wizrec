@@ -50,9 +50,9 @@ public struct RGBAImage: Sendable, Equatable {
                     let a = hasAlpha ? p[ai] : 255
                     var r = p[ri], g = p[gi], b = p[bi]
                     if premul, a > 0, a < 255 {
-                        r = UInt8(min(255, (Int(r) * 255 + Int(a) / 2) / Int(a)))
-                        g = UInt8(min(255, (Int(g) * 255 + Int(a) / 2) / Int(a)))
-                        b = UInt8(min(255, (Int(b) * 255 + Int(a) / 2) / Int(a)))
+                        r = Self.unpremultiplied(r, alpha: a)
+                        g = Self.unpremultiplied(g, alpha: a)
+                        b = Self.unpremultiplied(b, alpha: a)
                     }
                     out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = a
                 }
@@ -69,6 +69,14 @@ public struct RGBAImage: Sendable, Equatable {
             }
         }
         self.init(width: w, height: h, pixels: out)
+    }
+
+    /// Straight colour from a premultiplied channel `c` with alpha `alpha` (1…254), rounded.
+    /// Kept out of the pixel loop: inline, Swift 6.3 took ~280 ms to type-check each line.
+    static func unpremultiplied(_ c: UInt8, alpha: UInt8) -> UInt8 {
+        let a: Int = Int(alpha)
+        let v: Int = (Int(c) * 255 + a / 2) / a
+        return UInt8(Swift.min(v, 255))
     }
 
     /// Copies a `32BGRA` pixel buffer.

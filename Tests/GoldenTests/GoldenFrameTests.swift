@@ -55,7 +55,7 @@ import Testing
     @Test @MainActor func caseWithoutReferenceIsSkipped() async throws {
         let dir = try scratchDir("golden-noref")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let media = try TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
+        let media = try await TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
         let testCase = try #require(TestGen.cases.first { $0.name == "baseline" })
         let caseDir = try TestGen.write(testCase, media: media, to: dir)
         #expect(try await runGoldenCase(GoldenCase(name: testCase.name, directory: caseDir)) == nil)
@@ -69,7 +69,7 @@ struct GoldenHarnessSelfTests {
     @Test @MainActor func ownRenderPassesAndOneFrameLateFails() async throws {
         let dir = try scratchDir("golden-self")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let media = try TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
+        let media = try await TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
         let testCase = try #require(TestGen.cases.first { $0.name == "keyframes-linear" })
         let caseDir = try TestGen.write(testCase, media: media, to: dir)
         let golden = GoldenCase(name: testCase.name, directory: caseDir)
@@ -84,9 +84,10 @@ struct GoldenHarnessSelfTests {
                 images[n] = try await renderer.image(at: Golden.ticks(frame: n + offset, fps: m.fps, editRate: 705_600_000),
                                                      size: CGSize(width: m.width, height: m.height))
             }
-            try MediaWriter.writeH264(to: golden.url(m.reference), width: m.width, height: m.height, fps: m.fps,
-                                      frameCount: (m.frames.max() ?? 0) + 1, bitsPerSecond: 40_000_000) { n, ctx in
-                if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: m.width, height: m.height)) }
+            let rendered = images, (w, h) = (m.width, m.height)
+            try await MediaWriter.writeH264(to: golden.url(m.reference), width: w, height: h, fps: m.fps,
+                                            frameCount: (m.frames.max() ?? 0) + 1, bitsPerSecond: 40_000_000) { n, ctx in
+                if let img = rendered[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
             }
         }
         try await writeReference(offset: 0)

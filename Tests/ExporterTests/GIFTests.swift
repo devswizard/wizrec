@@ -6,6 +6,7 @@ import RenderEngine
 import TestGenKit
 import Testing
 import TSCProjKit
+import WizRecTestSupport
 @testable import Exporter
 
 /// Decoded GIF: composited frames (ImageIO applies disposal and transparency) and delays in s.
@@ -172,9 +173,11 @@ struct GIFEncoderTests {
         let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(),
                                     settings: ExportSettings(format: .gif(fps: 30)), output: out)
         let run = Task { try await session.run() }
-        while await session.progress < 0.05 { try await Task.sleep(nanoseconds: 2_000_000) }
+        try await Deadline.poll("export progress to reach 5 %", seconds: 60) { await session.progress >= 0.05 }
         await session.cancel()
-        await #expect(throws: ExportError.cancelled) { try await run.value }
+        await #expect(throws: ExportError.cancelled) {
+            try await Deadline.value(of: run, "export to stop after cancel", seconds: 60)
+        }
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
     }
 }

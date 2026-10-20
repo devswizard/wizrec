@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WizRecTestSupport
 @testable import PlayerKit
 
 private struct Boom: Error {}
@@ -40,7 +41,7 @@ private struct Boom: Error {}
         #expect(q.jobs.isEmpty)
     }
 
-    @Test func cancelStopsRunningAndSkipsWaiting() async {
+    @Test func cancelStopsRunningAndSkipsWaiting() async throws {
         var hooked = false
         let q = ExportQueue { _, _, progress in
             progress(0.1)
@@ -50,7 +51,7 @@ private struct Boom: Error {}
         _ = q.add(name: "B", output: dir.appendingPathComponent("b.mp4"))
         q.onCancel(a) { hooked = true }
         #expect(q.pendingOutputs.count == 2)
-        while q.jobs.first?.state == .waiting { await Task.yield() }
+        try await Deadline.poll("first export job to start", seconds: 30, interval: 0) { q.jobs.first?.state != .waiting }
         q.cancelAll()
         await q.waitUntilIdle()
         #expect(q.jobs.map(\.state) == [.cancelled, .cancelled])
@@ -76,7 +77,7 @@ private struct Boom: Error {}
         #expect(g.decide(activeJobs: 1) == .proceed)
     }
 
-    @Test func activeCountAndCancelAllAndWait() async {
+    @Test func activeCountAndCancelAllAndWait() async throws {
         let q = ExportQueue { _, _, progress in
             progress(0.1)
             try await Task.sleep(nanoseconds: 5_000_000_000)
@@ -86,7 +87,7 @@ private struct Boom: Error {}
         _ = q.add(name: "A", output: dir.appendingPathComponent("a.mp4"))
         _ = q.add(name: "B", output: dir.appendingPathComponent("b.mp4"))
         #expect(q.activeJobCount == 2)
-        while q.jobs.first?.state == .waiting { await Task.yield() }
+        try await Deadline.poll("first export job to start", seconds: 30, interval: 0) { q.jobs.first?.state != .waiting }
         #expect(q.activeJobCount == 2)
         await q.cancelAllAndWait()
         #expect(!q.isRunning)

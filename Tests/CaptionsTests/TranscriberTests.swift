@@ -3,6 +3,7 @@ import CoreMedia
 import Foundation
 import MediaEngine
 import Testing
+import WizRecTestSupport
 @testable import Captions
 
 /// Reports each chunk as one word: text = chunk length in samples, at 0.1–0.2 s into the chunk.
@@ -121,10 +122,7 @@ struct AppleSpeechLiveTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("say.aiff")
-        let say = Process()
-        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        say.arguments = ["-o", file.path, "The quick brown fox jumps over the lazy dog."]
-        try say.run(); say.waitUntilExit()
+        try TestProcess.run("/usr/bin/say", ["-o", file.path, "The quick brown fox jumps over the lazy dog."])
         let backend = AppleSpeechRecognizer()
         var status = await backend.status(language: "en-US")
         if status == .needsPermission { status = await backend.requestAccess() }

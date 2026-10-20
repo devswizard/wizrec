@@ -77,6 +77,28 @@ public enum MediaWriter {
                               frameCount: frameCount, draw: draw)
     }
 
+    /// `writeH264` for async callers: the encode runs on a private thread (`offMain`) while the
+    /// caller is suspended, so a `@MainActor` test never holds the main thread during the write
+    /// (on the CI VM `finishWriting` needs it). Every async caller should use this form.
+    @discardableResult
+    public static func writeH264(to url: URL, width: Int, height: Int, fps: Int, frameCount: Int,
+                                 bitsPerSecond: Int? = nil,
+                                 draw: @escaping @Sendable (Int, CGContext) -> Void) async throws -> MovieInfo {
+        try await offMain {
+            try writeH264(to: url, width: width, height: height, fps: fps, frameCount: frameCount,
+                          bitsPerSecond: bitsPerSecond, draw: draw)
+        }
+    }
+
+    /// `writeProRes` for async callers; see the async `writeH264`.
+    @discardableResult
+    public static func writeProRes(to url: URL, width: Int, height: Int, fps: Int, frameCount: Int,
+                                   draw: @escaping @Sendable (Int, CGContext) -> Void) async throws -> MovieInfo {
+        try await offMain {
+            try writeProRes(to: url, width: width, height: height, fps: fps, frameCount: frameCount, draw: draw)
+        }
+    }
+
     private static var rec709: [String: Any] { [
         AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
         AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
@@ -92,21 +114,35 @@ public enum MediaWriter {
     private static let readyTimeout: TimeInterval = 60
     private static let finishTimeout: TimeInterval = 120
 
-    /// Waits until `condition` holds or `timeout` seconds pass; false on timeout. The main thread
-    /// never blocks here: it keeps its run loop turning. On GitHub's macOS VMs `AVAssetWriter`
-    /// needed the main thread to finish a file, so a main thread blocked in a writer (or on
-    /// `encodeLock`) deadlocked the whole test run.
+    /// Waits until `condition` holds or `timeout` seconds pass; false on timeout. On the main
+    /// thread the run loop keeps turning (run-loop sources and perform blocks still fire), but
+    /// `DispatchQueue.main` blocks cannot run while a main-actor caller waits here: the main queue
+    /// is busy with the caller (measured, QA10). On GitHub's macOS VMs `AVAssetWriter` needed the
+    /// main thread to finish a file, so main-actor callers must use the async API instead.
     private static func wait(_ timeout: TimeInterval, until condition: () -> Bool) -> Bool {
         let deadline = Date(timeIntervalSinceNow: timeout)
         while !condition() {
             if Date() > deadline { return false }
-            if Thread.isMainThread {
-                _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
-            } else {
+            // `run` returns at once when the mode has no sources: sleep so this never spins.
+            if !Thread.isMainThread || !RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005)) {
                 Thread.sleep(forTimeInterval: 0.001)
             }
         }
         return true
+    }
+
+    /// Runs `work` on a private thread and resumes the caller with its result. The caller (and
+    /// with it the main actor and main queue, for a `@MainActor` caller) stays free meanwhile.
+    /// A dedicated thread, not the cooperative pool: an encode blocks for seconds.
+    public static func offMain<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<T, any Error>) in
+            let thread = Thread {
+                c.resume(with: Result { try work() })
+            }
+            thread.name = "TestGenKit media writer"
+            thread.stackSize = 8 << 20
+            thread.start()
+        }
     }
 
     private static func writeMovie(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,

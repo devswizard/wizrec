@@ -54,11 +54,11 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
 
     /// Edited project: card A split at 20 and moved to 30 (gap 20–29), a fade between two
     /// clips, a keyframed, round-cornered card B grouped with a still on track 1.
-    private func editedBundle(in dir: URL) throws -> ProjectBundle {
+    private func editedBundle(in dir: URL) async throws -> ProjectBundle {
         let bundle = try ProjectBundle.create(at: dir.appendingPathComponent("pipe.cmproj"), width: PW, height: PH)
         let movie = dir.appendingPathComponent("card.mp4")
         let card = TestCard(width: 160, height: 90, label: "P")
-        _ = try MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 90) { n, ctx in
+        _ = try await MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 90) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let chain = EditChain(bundle.project)
@@ -119,7 +119,7 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
     func pipelineFrameNEqualsSequentialFrameN(format: OSType) async throws {
         let dir = try scratchDir("pipe-int")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let bundle = try editedBundle(in: dir)
+        let bundle = try await editedBundle(in: dir)
         let n = Int(bundle.project.duration / frameTicks)
         #expect(n >= 150)
         let ticks = (0..<n).map { Int64($0) * frameTicks }
@@ -139,7 +139,7 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
     @Test func scrambledTimesAndCancel() async throws {
         let dir = try scratchDir("pipe-scramble")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let bundle = try editedBundle(in: dir)
+        let bundle = try await editedBundle(in: dir)
         let ticks = [90, 3, 3, 120, 25, 104, 0, 60, 60, 150].map { Int64($0) * frameTicks }
         let format = kCVPixelFormatType_32BGRA
         let seq = try await sequential(bundle, ticks, format)
@@ -171,7 +171,7 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
     @Test func twoExportsDecodeToIdenticalFrames() async throws {
         let dir = try scratchDir("pipe-export")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let bundle = try editedBundle(in: dir)
+        let bundle = try await editedBundle(in: dir)
         var outs: [URL] = []
         for k in 0..<2 {
             let out = dir.appendingPathComponent("run\(k).mov")

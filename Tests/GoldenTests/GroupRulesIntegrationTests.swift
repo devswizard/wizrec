@@ -73,7 +73,7 @@ private func topLevel(_ p: Project) -> [Int64] { p.tracks.flatMap { $0.clips.map
         let media = bundleURL.appendingPathComponent("media/1", isDirectory: true)
         try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
         let card = TestCard(width: 320, height: 180, label: "G")
-        let movie = try MediaWriter.writeH264(to: media.appendingPathComponent("g.mp4"), width: 320, height: 180,
+        let movie = try await MediaWriter.writeH264(to: media.appendingPathComponent("g.mp4"), width: 320, height: 180,
                                               fps: 30, frameCount: 120) { n, ctx in card.draw(frame: n, fps: 30, in: ctx) }
         let b = ProjectBuilder(title: "g", width: 640, height: 360)
         let src = b.addVideoSource(src: "./media/1/g.mp4", movie: movie, modified: Date(timeIntervalSince1970: 1_792_000_000))

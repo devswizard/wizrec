@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WizRecTestSupport
 @testable import PlayerKit
 
 /// S5-QA-1 / ship6: checks a built `WizRec.app` (from `scripts/make-app.sh`) without launching it.
@@ -25,16 +26,8 @@ struct AppBundleIntegrationTests {
 
     /// Runs `tool args`; returns status and stdout+stderr.
     static func run(_ tool: String, _ args: [String]) throws -> (status: Int32, out: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        try p.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+        let r = try TestProcess.run(tool, args, stderr: .stdout)
+        return (r.status, r.stdoutText)
     }
 
     var executable: URL { Self.app.appendingPathComponent("Contents/MacOS/WizRec") }

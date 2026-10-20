@@ -178,6 +178,12 @@ public enum TestGen {
         return set
     }
 
+    /// `makeMedia` for async callers: the encodes run on a private thread while the caller is
+    /// suspended (see `MediaWriter.offMain`), so a `@MainActor` test keeps the main thread free.
+    public static func makeMedia(in directory: URL, scale: Double = 1) async throws -> MediaSet {
+        try await MediaWriter.offMain { try makeMedia(in: directory, scale: scale) }
+    }
+
     /// Builds `testCase` into `<outDir>/<name>/`: the `.cmproj` (media hard-linked, or copied,
     /// from `media`) and `golden.json`. Replaces an existing bundle; never touches `reference.mp4`.
     @discardableResult

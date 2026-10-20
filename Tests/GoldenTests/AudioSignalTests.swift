@@ -2,6 +2,7 @@ import Foundation
 import TestGenKit
 import Testing
 import TSCProjKit
+import WizRecTestSupport
 
 @Suite struct AudioSignalTests {
     /// BS.1770 reference point: a 0 dBFS 997 Hz sine in one channel reads −3.01 LUFS.
@@ -29,15 +30,8 @@ import TSCProjKit
         let x = AudioSignals.pinkNoise(seconds: 5, lufs: -23, seed: 42)
         let wav = dir.appendingPathComponent("p.wav")
         try AudioSignals.writeWAV(x, to: wav)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: ffmpeg)
-        p.arguments = ["-nostats", "-hide_banner", "-i", wav.path, "-af", "ebur128", "-f", "null", "-"]
-        let pipe = Pipe()
-        p.standardError = pipe
-        p.standardOutput = FileHandle.nullDevice
-        try p.run()
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        p.waitUntilExit()
+        let out = try TestProcess.run(ffmpeg, ["-nostdin", "-nostats", "-hide_banner", "-i", wav.path,
+                                               "-af", "ebur128", "-f", "null", "-"], stdout: .discard).stderrText
         let line = try #require(out.split(separator: "\n").last { $0.contains(" I:") && $0.contains("LUFS") })
         let value = try #require(line.split(separator: " ").compactMap { Double($0) }.first)
         #expect(abs(value - AudioSignals.integratedLUFS(x)) < 0.1, "ffmpeg \(value)")

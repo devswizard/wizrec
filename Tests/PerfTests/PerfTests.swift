@@ -188,8 +188,7 @@ struct PerfTests {
             let t0 = DispatchTime.now().uptimeNanoseconds
             let cb = try #require(queue.makeCommandBuffer())
             try compositor.encode(plan, frames: frames, into: target, commandBuffer: cb)
-            cb.commit()
-            cb.waitUntilCompleted()
+            try GPUWait.commitAndWait(cb, "composite frame")
             return ((cb.gpuEndTime - cb.gpuStartTime) * 1000, Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6)
         }
         for _ in 0..<5 { _ = try once() } // warm: pipelines, texture pool, image cache

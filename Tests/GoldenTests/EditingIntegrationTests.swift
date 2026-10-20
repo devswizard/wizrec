@@ -13,12 +13,12 @@ import TimelineEngine
 
     /// A new bundle with one imported synthetic movie and three sources:
     /// A (video+audio → UnifiedMedia, 60 frames), B (video only, 90 frames), C (image).
-    private func generatedBundle(in dir: URL) throws -> (ProjectBundle, a: AddSource, b: AddSource, c: AddSource,
+    private func generatedBundle(in dir: URL) async throws -> (ProjectBundle, a: AddSource, b: AddSource, c: AddSource,
                                                          chain: EditChain) {
         let bundle = try ProjectBundle.create(at: dir.appendingPathComponent("gen.cmproj"), width: 320, height: 180)
         let movie = dir.appendingPathComponent("card.mp4")
         let card = TestCard(width: 160, height: 90, label: "Q")
-        _ = try MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 30) { n, ctx in
+        _ = try await MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 30) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let src = try bundle.importFile(movie)
@@ -35,10 +35,10 @@ import TimelineEngine
 
     /// Every M2/M3 command once, in a realistic order; then a full undo/redo
     /// walk, save with backup, reopen, and undo-all back to the new project.
-    @Test func scriptedChainOnGeneratedProject() throws {
+    @Test func scriptedChainOnGeneratedProject() async throws {
         let dir = try scratchDir("edit-chain")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (bundle, a, b, c, chain) = try generatedBundle(in: dir)
+        let (bundle, a, b, c, chain) = try await generatedBundle(in: dir)
         let sa = try #require(a.sourceID), sb = try #require(b.sourceID), sc = try #require(c.sourceID)
         #expect(Set([sa, sb, sc]).count == 3)
 
@@ -149,10 +149,10 @@ import TimelineEngine
     /// keep the invariants; the whole chain must undo/redo byte-identically
     /// and survive save/reopen.
     @Test(arguments: [UInt64(1), 2, 3, 42, 2026])
-    func randomisedChain(seed: UInt64) throws {
+    func randomisedChain(seed: UInt64) async throws {
         let dir = try scratchDir("edit-fuzz")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (bundle, a, b, c, chain) = try generatedBundle(in: dir)
+        let (bundle, a, b, c, chain) = try await generatedBundle(in: dir)
         try chain.run(AddTrack(at: 1))
         try chain.run(AddTrack(at: 2))
         let steps = 150
@@ -281,10 +281,10 @@ import TimelineEngine
 
     /// Save As on a package copies the bundle (minus backups), the copy
     /// reopens byte-identically, and later edits go to the new location only.
-    @Test func saveAsThenEditKeepsBothFilesConsistent() throws {
+    @Test func saveAsThenEditKeepsBothFilesConsistent() async throws {
         let dir = try scratchDir("edit-saveas")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (bundle, a, _, _, chain) = try generatedBundle(in: dir)
+        let (bundle, a, _, _, chain) = try await generatedBundle(in: dir)
         let sa = try #require(a.sourceID)
         try chain.run(InsertClip(sourceID: sa, track: 0, start: 0))
         try bundle.saveWithBackup()
@@ -305,10 +305,10 @@ import TimelineEngine
     }
 
     /// The first save of a new project writes no backup; a second keeps the previous bytes.
-    @Test func backupHoldsPreviousSave() throws {
+    @Test func backupHoldsPreviousSave() async throws {
         let dir = try scratchDir("edit-backup")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (bundle, a, _, _, chain) = try generatedBundle(in: dir)
+        let (bundle, a, _, _, chain) = try await generatedBundle(in: dir)
         let backup = URL(fileURLWithPath: bundle.projectFile.path + ProjectBundle.backupSuffix)
         #expect(!FileManager.default.fileExists(atPath: backup.path))
         let created = try Data(contentsOf: bundle.projectFile)

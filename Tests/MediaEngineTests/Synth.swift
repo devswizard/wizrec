@@ -7,6 +7,7 @@ import CoreVideo
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import WizRecTestSupport
 @testable import MediaEngine
 
 enum Synth {
@@ -87,7 +88,10 @@ enum Synth {
         guard writer.startWriting() else { throw writer.error ?? MediaError.decodeFailed("startWriting") }
         writer.startSession(atSourceTime: .zero)
         for (i, t) in times.enumerated() {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
+            try await Deadline.poll("writer ready for frame \(i) of \(url.lastPathComponent)", seconds: 60, interval: 0.001) {
+                if writer.status == .failed { throw writer.error ?? MediaError.decodeFailed("writer failed") }
+                return input.isReadyForMoreMediaData
+            }
             guard let pool = adaptor.pixelBufferPool else { throw MediaError.decodeFailed("no adaptor pool") }
             var b: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, pool, &b)
@@ -99,7 +103,11 @@ enum Synth {
         }
         input.markAsFinished()
         if let last = times.last { writer.endSession(atSourceTime: CMTime(seconds: last + 1.0 / 30, preferredTimescale: 600)) }
-        await writer.finishWriting()
+        // finishWriting's callback can fail to arrive on a loaded CI VM: bounded, never a hang.
+        nonisolated(unsafe) let w = writer
+        try await Deadline.callback("finishWriting \(url.lastPathComponent)", seconds: 60) { done in
+            w.finishWriting { done() }
+        }
         if writer.status != .completed { throw writer.error ?? MediaError.decodeFailed("finishWriting") }
     }
 
@@ -150,12 +158,8 @@ enum Synth {
     /// Runs ffmpeg with `args`; throws on failure.
     static func ffmpeg(_ args: [String]) throws {
         guard let path = ffmpegPath else { throw MediaError.unsupported("ffmpeg missing") }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = ["-hide_banner", "-loglevel", "error", "-y"] + args
-        try p.run()
-        p.waitUntilExit()
-        if p.terminationStatus != 0 { throw MediaError.decodeFailed("ffmpeg exit \(p.terminationStatus)") }
+        let r = try TestProcess.run(path, ["-nostdin", "-hide_banner", "-loglevel", "error", "-y"] + args)
+        if r.status != 0 { throw MediaError.decodeFailed("ffmpeg exit \(r.status): \(r.stderrText)") }
     }
 }
 

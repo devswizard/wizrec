@@ -25,13 +25,13 @@ private struct SyncFixture {
     /// Timeline times of the click onsets, seconds.
     let clicks = (0..<seconds).map { Double($0) + 0.5 }
 
-    init(in dir: URL) throws {
+    init(in dir: URL) async throws {
         bundle = try ProjectBundle.create(at: dir.appendingPathComponent("sync.cmproj"), width: W, height: H)
         card = TestCard(width: W, height: H, label: "S")
         let frameCount = seconds * 30
         let movie = dir.appendingPathComponent("card.mp4")
         let card = self.card
-        try MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: frameCount, bitsPerSecond: 4_000_000) { n, ctx in
+        try await MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: frameCount, bitsPerSecond: 4_000_000) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         var pcm = [Float](repeating: 0, count: seconds * 48_000)
@@ -93,7 +93,7 @@ private func onsets(_ x: [Float], start: Double, threshold: Float = 0.2) -> [Dou
     func everyClickStaysWithinOneFrame(_ format: ExportFormat) async throws {
         let dir = try scratchDir("s4-sync")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try SyncFixture(in: dir)
+        let f = try await SyncFixture(in: dir)
         let out = dir.appendingPathComponent("out.\(format.fileExtension)")
         try await f.export(ExportSettings(format: format), to: out)
 
@@ -116,7 +116,7 @@ private func onsets(_ x: [Float], start: Double, threshold: Float = 0.2) -> [Dou
     @Test func proResExportIsDeterministicWithAudio() async throws {
         let dir = try scratchDir("s4-determinism")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try SyncFixture(in: dir)
+        let f = try await SyncFixture(in: dir)
         var outs: [URL] = []
         for k in 0..<2 {
             let out = dir.appendingPathComponent("run\(k).mov")

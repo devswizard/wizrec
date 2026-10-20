@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WizRecTestSupport
 @testable import PlayerKit
 
 @Suite struct UpdaterConfigurationTests {
@@ -49,21 +50,12 @@ import Testing
         .appendingPathComponent("scripts/release/sparkle-info.sh")
 
     private func run(_ env: [String: String]) throws -> (status: Int32, out: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        p.arguments = [Self.script.path]
         var e = ProcessInfo.processInfo.environment
         e["WIZREC_SPARKLE_FEED"] = nil
         e["WIZREC_SPARKLE_PUBKEY"] = nil
         e.merge(env) { $1 }
-        p.environment = e
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: data, as: UTF8.self))
+        let r = try TestProcess.run("/bin/bash", [Self.script.path], environment: e, stderr: .discard)
+        return (r.status, r.stdoutText)
     }
 
     @Test func buildScriptWritesNothingWhenUnset() throws {

@@ -9,6 +9,7 @@ import Testing
 import TestGenKit
 import TimelineEngine
 import TSCProjKit
+import WizRecTestSupport
 
 // Session 4 (S4-MED-1, HDR10/HLG → SDR tone mapping) end to end: an HDR clip on the timeline
 // goes through evaluate → decode → composite → export. Synthetic media only (ffmpeg testsrc2).
@@ -31,17 +32,12 @@ private func writeClip(_ transfer: HDRTransfer, to url: URL) throws {
     let colour = transfer == .sdr709
         ? ["-vf", "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
         : ["-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=\(transfer.rawValue)"]
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: ffmpeg)
-    p.arguments = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-                   "-f", "lavfi", "-i", "testsrc2=size=\(W)x\(H):rate=30", "-frames:v", "30",
-                   "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1",
-                   "-pix_fmt", "yuv420p10le"] + colour + [url.path]
-    p.standardOutput = FileHandle.nullDevice
-    p.standardError = FileHandle.nullDevice
-    try p.run()
-    p.waitUntilExit()
-    #expect(p.terminationStatus == 0, "ffmpeg failed for \(transfer)")
+    let args: [String] = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                          "-f", "lavfi", "-i", "testsrc2=size=\(W)x\(H):rate=30", "-frames:v", "30",
+                          "-c:v", "libx265", "-x265-params", "log-level=error", "-tag:v", "hvc1",
+                          "-pix_fmt", "yuv420p10le"] + colour + [url.path]
+    let r = try TestProcess.run(ffmpeg, args, stdout: .discard)
+    #expect(r.status == 0, "ffmpeg failed for \(transfer): \(r.stderrText)")
 }
 
 /// A project with the clip on track 0 for its full 30 frames.

@@ -524,23 +524,14 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
 
     /// Writes `text` spoken by `say` to `url`.
     private static func say(_ text: String, voice: String? = nil, to url: URL) throws -> URL {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        p.arguments = (voice.map { ["-v", $0] } ?? []) + ["-o", url.path, text]
-        try p.run(); p.waitUntilExit()
+        try TestProcess.run("/usr/bin/say", (voice.map { ["-v", $0] } ?? []) + ["-o", url.path, text])
         return url
     }
 
     /// The first `say` voice whose locale starts with `locale` (e.g. `"bn_"`).
     private static func voice(locale: String) -> String? {
-        let p = Process(), out = Pipe()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        p.arguments = ["-v", "?"]
-        p.standardOutput = out
-        guard (try? p.run()) != nil else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+        guard let out = try? TestProcess.run("/usr/bin/say", ["-v", "?"], stderr: .discard, seconds: 30) else { return nil }
+        for line in out.stdoutText.split(separator: "\n") {
             let cols = line.split(separator: " ", omittingEmptySubsequences: true)
             if let i = cols.firstIndex(where: { $0.hasPrefix(locale) }), i > 0 {
                 return cols[..<i].joined(separator: " ")

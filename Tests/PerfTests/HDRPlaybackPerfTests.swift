@@ -74,16 +74,13 @@ enum HDRMovie {
         if FileManager.default.fileExists(atPath: url.path) { return url }
         guard let path = ffmpeg else { throw MediaError.unsupported("ffmpeg missing") }
         let tmp = dir.appendingPathComponent("tmp-\(UUID().uuidString).mp4")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=3840x2160:rate=60",
-                       "-frames:v", "125", "-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-b:v", "40M",
-                       "-tag:v", "hvc1", "-pix_fmt", "p010le",
-                       "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=\(trc)",
-                       "-color_primaries", "bt2020", "-color_trc", trc, "-colorspace", "bt2020nc", tmp.path]
-        try p.run()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { throw MediaError.decodeFailed("ffmpeg exit \(p.terminationStatus)") }
+        let args: [String] = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                              "-f", "lavfi", "-i", "testsrc2=size=3840x2160:rate=60", "-frames:v", "125", "-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-b:v", "40M",
+                              "-tag:v", "hvc1", "-pix_fmt", "p010le",
+                              "-vf", "setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=\(trc)",
+                              "-color_primaries", "bt2020", "-color_trc", trc, "-colorspace", "bt2020nc", tmp.path]
+        let r = try TestProcess.run(path, args, seconds: 300)
+        guard r.status == 0 else { throw MediaError.decodeFailed("ffmpeg exit \(r.status): \(r.stderrText)") }
         try? FileManager.default.moveItem(at: tmp, to: url)
         return url
     }

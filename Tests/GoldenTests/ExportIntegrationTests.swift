@@ -8,6 +8,7 @@ import Testing
 import TestGenKit
 import TimelineEngine
 import TSCProjKit
+import WizRecTestSupport
 
 // Wave B integration (M9 acceptance): export frame N == preview frame N, and
 // audio in sync with video to within one frame. Synthetic media only.
@@ -25,12 +26,12 @@ private struct ExportFixture {
     /// Timeline time of the click onset, seconds.
     let clickAt = 1.0
 
-    init(in dir: URL) throws {
+    init(in dir: URL) async throws {
         bundle = try ProjectBundle.create(at: dir.appendingPathComponent("exp.cmproj"), width: W, height: H)
         card = TestCard(width: W, height: H, label: "E")
         let movie = dir.appendingPathComponent("card.mp4")
         let card = self.card
-        try MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: 60, bitsPerSecond: 8_000_000) { n, ctx in
+        try await MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: 60, bitsPerSecond: 8_000_000) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         // 2 s of silence with a 1 kHz one-cycle click at 0.5 s.
@@ -83,7 +84,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     @Test func exportFrameMatchesPreviewFrame() async throws {
         let dir = try scratchDir("exp-frames")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         var settings = ExportSettings(format: .mp4(codec: "h264", bitrate: 8_000_000))
         settings.includeAudio = false
         let out = dir.appendingPathComponent("out.mp4")
@@ -116,7 +117,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     @Test func audioStaysInSyncWithinOneFrame() async throws {
         let dir = try scratchDir("exp-sync")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         let out = dir.appendingPathComponent("out.mp4")
         guard try await f.export(ExportSettings(format: .mp4(codec: "h264", bitrate: nil)), to: out) != nil else { return }
 
@@ -137,7 +138,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     @Test func wavExportEqualsMixer() async throws {
         let dir = try scratchDir("exp-wav")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         let out = dir.appendingPathComponent("out.wav")
         guard try await f.export(ExportSettings(format: .audio(container: "wav")), to: out) != nil else { return }
         let rate = Double(f.bundle.project.audioSampleRate)
@@ -157,14 +158,14 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     @Test func cancelRemovesPartialFile() async throws {
         let dir = try scratchDir("exp-cancel")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         let out = dir.appendingPathComponent("out.mov")
         let session = ExportSession(scene: f.scene, audio: f.audio, pool: MediaPool(diskCacheDirectory: nil),
                                     settings: ExportSettings(format: .mov(profile: "422")), output: out)
         let job = Task { try await session.run() }
         await session.cancel()
         do {
-            try await job.value
+            try await Deadline.value(of: job, "export to stop after cancel")
             // A tiny job may finish before the cancel lands; then the file must be complete.
             #expect(FileManager.default.fileExists(atPath: out.path))
         } catch ExportError.notImplemented {
@@ -196,7 +197,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     func exportUsesReopenedProjectSampleRate(lexeme: String, expected: Double) async throws {
         let dir = try scratchDir("exp-rate")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         f.bundle.project.root["audioFormatSampleRate"] = try JSON.parse(lexeme)
         try f.bundle.saveWithBackup()
         let reopened = try ProjectBundle(url: f.bundle.directory)
@@ -236,7 +237,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
     @Test func cancelAndWaitHookOnProjectExport() async throws {
         let dir = try scratchDir("exp-cancelwait")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let f = try ExportFixture(in: dir)
+        let f = try await ExportFixture(in: dir)
         let outDir = dir.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         var settings = ExportSettings(format: .mov(profile: "4444"))
@@ -259,7 +260,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         #expect(await fresh.cancellationLosesWork == false)
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: outDir.path)
         do {
-            try await job.value
+            try await Deadline.value(of: job, "export to stop after cancel")
             #expect(leftovers == ["big.mov"], "finished before the cancel: only the complete file")
         } catch ExportError.cancelled {
             #expect(leftovers.isEmpty, "cancelAndWait returned with \(leftovers) still present")

@@ -6,6 +6,7 @@ import ImageIO
 import MediaEngine
 import Metal
 import Testing
+import WizRecTestSupport
 @testable import RenderEngine
 
 let gpu = MTLCreateSystemDefaultDevice()
@@ -73,8 +74,7 @@ enum GPUTest {
         let queue = try #require(device.makeCommandQueue())
         let cb = try #require(queue.makeCommandBuffer())
         try comp.encode(plan, frames: frames, into: target, commandBuffer: cb)
-        cb.commit()
-        cb.waitUntilCompleted()
+        try GPUWait.commitAndWait(cb, "compositor render")
         #expect(cb.status == .completed, "\(String(describing: cb.error))")
         gpuTime?.pointee = cb.gpuEndTime - cb.gpuStartTime
         var bytes = [UInt8](repeating: 0, count: w * h * 4)

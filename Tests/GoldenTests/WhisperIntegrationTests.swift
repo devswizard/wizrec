@@ -7,6 +7,7 @@ import Testing
 import TestGenKit
 import TimelineEngine
 import TSCProjKit
+import WizRecTestSupport
 
 // S3-QA-1: whisper.cpp backend (S3-CAP-1) end to end with a fake `whisper-cli`
 // (a shell script writing canned JSON): project media → Transcriber →
@@ -284,12 +285,9 @@ printf '{"result":{"language":"en"},"transcription":[{"offsets":{"from":200,"to"
         let dir = try scratchDir("whisper-live-int")
         defer { try? FileManager.default.removeItem(at: dir) }
         let wav = dir.appendingPathComponent("speech.wav")
-        let say = Process()
-        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        say.arguments = ["--data-format=LEI16@48000", "-o", wav.path,
-                         "The quick brown fox jumps over the lazy dog. Then it runs home."]
-        try say.run(); say.waitUntilExit()
-        #expect(say.terminationStatus == 0)
+        let say = try TestProcess.run("/usr/bin/say", ["--data-format=LEI16@48000", "-o", wav.path,
+                                                       "The quick brown fox jumps over the lazy dog. Then it runs home."])
+        #expect(say.status == 0, "\(say.stderrText)")
         let samples = try Int64(AVAudioFile(forReading: wav).length)
         #expect(samples > 48_000, "say produced \(samples) samples")
 

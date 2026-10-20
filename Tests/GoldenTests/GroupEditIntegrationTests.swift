@@ -37,11 +37,11 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
 
     /// New bundle with one imported synthetic movie: A (video+audio, 60 frames),
     /// B (video only, 90 frames), C (image).
-    private func generated(in dir: URL) throws -> (ProjectBundle, a: Int64, b: Int64, c: Int64, chain: EditChain) {
+    private func generated(in dir: URL) async throws -> (ProjectBundle, a: Int64, b: Int64, c: Int64, chain: EditChain) {
         let bundle = try ProjectBundle.create(at: dir.appendingPathComponent("grp.cmproj"), width: 320, height: 180)
         let movie = dir.appendingPathComponent("card.mp4")
         let card = TestCard(width: 160, height: 90, label: "G")
-        _ = try MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 30) { n, ctx in
+        _ = try await MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 30) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let src = try bundle.importFile(movie)
@@ -58,10 +58,10 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
     /// group growth, nested groups under a speed change), rejected edits leave
     /// the bytes alone, the dropped clips render at the mapped times, then
     /// undo/redo walk, save/reopen, continue, undo-all.
-    @Test func groupTrackAndDropChain() throws {
+    @Test func groupTrackAndDropChain() async throws {
         let dir = try scratchDir("grp-chain")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (bundle, sa, sb, sc, chain) = try generated(in: dir)
+        let (bundle, sa, sb, sc, chain) = try await generated(in: dir)
 
         let a1 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: 0)).clipID)
         let a2 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: frames(60))).clipID)
@@ -134,10 +134,10 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
 
     /// A magnetic inner track takes a drop at the insertion point and packs; the
     /// group grows to the packed end.
-    @Test func dropOnMagneticInnerTrackPacks() throws {
+    @Test func dropOnMagneticInnerTrackPacks() async throws {
         let dir = try scratchDir("grp-magnetic")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let (_, sa, sb, _, chain) = try generated(in: dir)
+        let (_, sa, sb, _, chain) = try await generated(in: dir)
         let a1 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: 0)).clipID)
         let a2 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: frames(60))).clipID)
         let g = try #require(try chain.run(GroupClips(clipIDs: [a1, a2])).groupID)

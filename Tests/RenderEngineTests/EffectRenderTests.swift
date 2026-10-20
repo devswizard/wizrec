@@ -3,6 +3,7 @@ import Foundation
 import MediaEngine
 import Metal
 import Testing
+import WizRecTestSupport
 @testable import RenderEngine
 
 private let canvas = CGSize(width: 192, height: 108)
@@ -250,7 +251,7 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
         for _ in 0..<6 {
             let cb = try #require(queue.makeCommandBuffer())
             try comp.encode(p, frames: [rq: fr], into: target, commandBuffer: cb)
-            cb.commit(); cb.waitUntilCompleted()
+            try GPUWait.commitAndWait(cb, "effect render")
             idle.append(comp.idleTextureCount)
         }
         #expect(idle[0] > 0)
