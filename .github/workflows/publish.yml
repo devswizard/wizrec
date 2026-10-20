@@ -1,0 +1,66 @@
+# Publishes a draft GitHub Release created by release.yml, with the workflow's own
+# GITHUB_TOKEN (no personal token needed). Before flipping draft -> public it downloads the
+# draft's assets, checks them against SHA256SUMS.txt, runs scripts/release/verify-dmg.sh
+# (mount, signature, load paths, launch) and refuses notes with AI attribution lines.
+# Idempotent: an already public release is left alone.
+#
+# Triggers: a push to main that changes release/publish (first non-comment line = tag), or
+# by hand with a tag. See docs/RELEASING.md, "Publishing a release".
+name: Publish release
+
+on:
+  push:
+    branches: [main]
+    paths: [release/publish]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of the draft release to publish (default: the one in release/publish)"
+        required: false
+      dry_run:
+        description: "Run every check but keep the draft"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # read drafts, download their assets, publish
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish (macOS arm64)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag to publish
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ]; then
+            tag=$(grep -vE '^[[:space:]]*(#|$)' release/publish | head -n 1 | tr -d '[:space:]')
+          fi
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error title=Publish::invalid tag '$tag'"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Publish::$tag"
+
+      - name: Verify assets and publish
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          WIZREC_BUNDLE_ID: ${{ vars.WIZREC_BUNDLE_ID }}
+          # A request pushed together with its tag waits for release.yml to attach the DMG.
+          WAIT_MINUTES: ${{ github.event_name == 'push' && '75' || '0' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+          WORK_DIR: ${{ runner.temp }}/publish
+        run: scripts/release/publish-release.sh "$TAG"
