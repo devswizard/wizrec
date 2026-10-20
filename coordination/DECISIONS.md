@@ -157,3 +157,8 @@ Dated log. Newest last.
   `ggml-silero-*.bin` model is installed (`captions.whisper.vad`, default on),
   else own energy speech detection with silence compaction and time remap;
   silent audio is never sent to whisper. (captions, approved.)
+- **2026-10-20 · WizRec backgrounds in Camtasia (session 5):** Camtasia
+  rejects WizRec `.tscshadervid` files (it only accepts vendor-signed ones;
+  shader-backgrounds.md §10). We never copy or forge a signature. WizRec
+  warns on save when a project uses a WizRec background; the rest of the
+  project still opens in Camtasia.
