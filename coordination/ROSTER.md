@@ -75,3 +75,16 @@ checks pending → no researcher/render/audio/captions.
 | ship | aa28312e4ab9a18e3 | `agent/ship9` |
 | app | a9e409eb044fc2982 | `agent/app9` |
 | qa | a6b149a71c4ac904b | `agent/qa9` |
+
+### Session 7 wave 2 (user: "use multi agents")
+
+app9, qa9, ship9 finished and merged. ship (aa28312e4ab9a18e3) is resumed for
+the v0.1.0 draft check after the tag.
+
+| Name | Address | Branch |
+|---|---|---|
+| app | ad9d414370529ee54 | `agent/app10` |
+| timeline | acc7cf05fe9fd9abb | `agent/timeline10` |
+| render | a0235298e2717e696 | `agent/render10` |
+| qa | ac89e5809b08b7d6a | `agent/qa10` |
+| docs | a43fa0d7aabf8f054 | `agent/docs10` |
