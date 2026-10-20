@@ -64,6 +64,22 @@ Everything else in `Sources/WizRecAssets` (backgrounds, transitions, callout pre
 and click-effect artwork) and `Design/AppIcon` is original work by Devs Wizard, under
 GPL-3.0-or-later.
 
+## Optional tools the user installs (not bundled)
+
+WizRec can transcribe captions with [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+(MIT). It is never linked or shipped: WizRec runs the user's own `whisper-cli` executable
+(e.g. `brew install whisper.cpp`) as a separate process, with model files the user puts in
+`~/Library/Application Support/WizRec/models/`. Tested 2026-10-20 with:
+
+| Item | File | Version | Licence | Size, bytes | SHA-256 |
+|---|---|---|---|---|---|
+| whisper.cpp CLI | `whisper-cli` (Homebrew `whisper.cpp`) | 1.9.5 | MIT | | |
+| Speech model | `ggml-small.bin` (ggml-org/whisper.cpp models) | small | MIT | 487601967 | `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
+| Silero VAD model | `ggml-silero-v5.1.2.bin` (huggingface.co/ggml-org/whisper-vad) | 5.1.2 | MIT | 885098 | `29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf` |
+
+When a `ggml-silero-*.bin` file is present, WizRec passes it to `whisper-cli --vad` (setting
+`captions.whisper.vad`, on by default); it is not offered as a transcription model.
+
 ## Planned
 
 - **Sparkle** (MIT), the update framework, once it is added (`docs/RELEASING.md`).
