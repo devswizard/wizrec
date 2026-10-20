@@ -6,15 +6,43 @@
 #   scripts/release/verify-dmg.sh build/WizRec-0.1.0.dmg
 #
 # Needs a GUI login session (the app opens its welcome window for a few seconds).
+#
+# Mounts with `diskutil image attach` where it exists (macOS 27 deprecates `hdiutil attach`
+# and `hdiutil detach`), else with hdiutil. WIZREC_DMG_TOOL=diskutil|hdiutil forces one.
 set -euo pipefail
 
 DMG=${1:?usage: verify-dmg.sh <WizRec-x.y.z.dmg>}
 EXPECT_ID=${WIZREC_BUNDLE_ID:-com.devswizard.WizRec}
-MNT=$(mktemp -d "${TMPDIR:-/tmp}/wizrec-verify.XXXXXX")
-cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || hdiutil detach "$MNT" -force -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+TOOL=${WIZREC_DMG_TOOL:-auto}
+if [ "$TOOL" = auto ]; then
+  if diskutil image attach --help 2>/dev/null | grep -q -- '--mountPoint'; then TOOL=diskutil; else TOOL=hdiutil; fi
+fi
+case "$TOOL" in diskutil|hdiutil) ;; *) echo "error: WIZREC_DMG_TOOL must be auto, diskutil or hdiutil (got $TOOL)" >&2; exit 2 ;; esac
+
+MNT=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/wizrec-verify.XXXXXX")" && pwd -P)   # real path, as mount(8) prints it
+DEV=""   # whole-disk node of the attached image (diskutil path), e.g. /dev/disk17
+cleanup() {
+  if [ "$TOOL" = diskutil ]; then
+    if [ -n "$DEV" ]; then
+      diskutil eject "$DEV" >/dev/null 2>&1 \
+        || { diskutil unmountDisk force "$DEV" >/dev/null 2>&1; diskutil eject "$DEV" >/dev/null 2>&1; } || true
+    elif mount | grep -qF " on $MNT ("; then
+      diskutil eject "$MNT" >/dev/null 2>&1 || true   # attached, but no /dev node parsed
+    fi
+  else
+    hdiutil detach "$MNT" -quiet 2>/dev/null || hdiutil detach "$MNT" -force -quiet 2>/dev/null || true
+  fi
+  rmdir "$MNT" 2>/dev/null || true
+}
 trap cleanup EXIT
 
-hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG" >/dev/null
+if [ "$TOOL" = diskutil ]; then
+  attach_out=$(diskutil image attach --readOnly --nobrowse --mountPoint "$MNT" "$DMG")
+  DEV=$(printf '%s\n' "$attach_out" | awk '/^\/dev\/disk[0-9]+[ \t]/ { print $1; exit }')
+  [ -n "$DEV" ] || { echo "$attach_out" >&2; echo "error: could not attach $DMG" >&2; exit 1; }
+else
+  hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG" >/dev/null
+fi
 APP="$MNT/WizRec.app"
 [ -d "$APP" ] || { echo "error: no WizRec.app in $DMG" >&2; exit 1; }
 [ -L "$MNT/Applications" ] || { echo "error: no Applications link in $DMG" >&2; exit 1; }
@@ -52,4 +80,4 @@ if [ "$status" != 0 ] || grep -qE "dyld|Library not loaded|image not found" "$lo
   echo "error: app exited with status $status" >&2; exit 1
 fi
 rm -f "$log"
-echo "OK $DMG: $id $version, signed ${authority:-${signature:-?}}, updates $updates, launched and quit cleanly in ${elapsed}s"
+echo "OK $DMG: $id $version, signed ${authority:-${signature:-?}}, updates $updates, launched and quit cleanly in ${elapsed}s (mounted with $TOOL)"
