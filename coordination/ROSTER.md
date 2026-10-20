@@ -56,6 +56,7 @@ from the old worktrees, which are left untouched):
 | Name | Address | Branch (from) |
 |---|---|---|
 | researcher | a76ca5a4bc30c9fb0 | `agent/researcher7` (researcher6) |
+| audio | a7b7522bc45ba7baf | `agent/audio6` (new) |
 | timeline | a19feda9afd2905e6 | `agent/timeline7` (timeline6) |
 | media | ad73865fb2bc66524 | `agent/media7` (media6) |
 | app | a6e42718f0c40802c | `agent/app7` (app6) |

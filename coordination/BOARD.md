@@ -257,7 +257,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | S5-SHIP-1 | ship | done (Sparkle 2.10.0 off when unconfigured, self-signed DMG verified) | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
 | S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
 | S5-TL-1 | timeline | in progress (group-edits.md published) | Replace [inf] group-edit rules with X5 results |
-| S5-AUD-1 | audio | waiting spec | Replace [inf]/[WizRec] audio rules with AU1/AU2 spec |
+| S5-AUD-1 | audio | in progress (audio.md published) | Replace [inf]/[WizRec] audio rules with AU1/AU2 spec |
 
 ## Session 5 merges
 
@@ -271,3 +271,4 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - researcher6: group key layout (§1a), X7 edit semantics (stitched split keeps segments, auto-stitch, transitions, no pruning, image trimStartSum).
 - render6 slice 2: Border/Reflection render, catalog defaults, rotation0/1 + shear0 (provisional look). 867 green.
 - media7: MediaPool.toneMapStats; BandedSws; banded HDR 12-bit/alpha resample (4K HDR 4444 GPU 11.8 → 4.4 ms). 871 green.
+- researcher7: audio.md (AU1/AU2 panel names, params, fades as volume keyframes, dual-mono loudness), shader-backgrounds §10 (Camtasia rejects WizRec backgrounds). Audio agent spawned.
