@@ -267,3 +267,5 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - captions6: whisper.cpp 1.9.5 live green; word times kept out of silences (Silero VAD or energy compaction), silent audio skipped, VAD model not listed as transcription model. 841 tests green.
 - render6: Metal HDR tone map in the playback pool (byte-identical to CPU; 4K60 PQ 34 → 478 fps, HLG 29 → 496 fps); composite GPU 0.25 ms 1080p / 0.92 ms 4K. 848 tests green.
 - researcher6 batch 1 (wall-reviewed): group-edits.md, effects/catalog.md, Border/Reflection params, animation.md, behaviours defaults, transform X2; `wizrec-testgen experiments|shadervids`. 848 green.
+- qa6 slice 2: live whisper, whisper timing, GPU tone map, app bundle integration tests; flaky watch 5/5 clean at load 12–50. 856 green.
+- researcher6: group key layout (§1a), X7 edit semantics (stitched split keeps segments, auto-stitch, transitions, no pruning, image trimStartSum).
