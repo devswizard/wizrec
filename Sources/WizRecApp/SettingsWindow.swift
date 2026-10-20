@@ -43,11 +43,14 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @AppStorage(AppPreferences.Key.showWelcomeAtLaunch) private var showWelcome = false
+    @AppStorage(AppPreferences.Key.warnUnsignedBackgrounds) private var warnBackgrounds = true
 
     var body: some View {
         Form {
             Toggle("Show the welcome window at launch", isOn: $showWelcome)
             Button("Show Welcome Window") { WelcomeWindowController.shared.present() }
+            Toggle("When saving, say that Camtasia won't show WizRec backgrounds", isOn: $warnBackgrounds)
+                .accessibilityIdentifier("settings.general.warnBackgrounds")
         }
         .formStyle(.grouped)
     }
