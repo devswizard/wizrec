@@ -6,6 +6,10 @@ from existing files. Everything is saved to
 `~/WorkDir/vibe_coding/camtasia_rea_refs/`, which is outside the repo, and
 nothing here touches your existing projects.
 
+> **Status 2026-10-20.** Part B was done by automation (ledger RT-002 to
+> RT-008). Part A still needs a licensed export. Session 2's section "Still
+> needs a licensed export" lists everything left, from both sessions.
+
 ## Part A: reference exports (about 25 minutes)
 
 There are 15 small test projects, all made from original synthetic test cards.
