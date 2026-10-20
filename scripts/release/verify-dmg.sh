@@ -64,11 +64,33 @@ signature=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Signature=//p' | head -n 1)
 for l in Sparkle/LICENSE MANIFEST.txt WizRec-LICENSE.txt THIRD_PARTY_NOTICES.md; do
   [ -f "$APP/Contents/Resources/Licenses/$l" ] || { echo "error: Licenses/$l missing" >&2; exit 1; }
 done
-for f in "$APP/Contents/MacOS/WizRec" "$APP"/Contents/Frameworks/*.dylib; do
-  if otool -L "$f" | tail -n +2 | grep -qE "/opt/homebrew|/usr/local|/Cellar/"; then
-    echo "error: $f links outside the bundle" >&2; exit 1
-  fi
-done
+# Every Mach-O in the bundle (app, dylibs, Sparkle and its helpers): load paths must stay in
+# the bundle (@rpath/@loader_path/@executable_path) or the OS (/usr/lib, /System); run paths
+# (LC_RPATH) the same. A path into Homebrew, /usr/local, Xcode or the Command Line Tools
+# works only on the build machine. WIZREC_ALLOW_BUILD_RPATHS=1 turns run-path findings
+# into warnings, for checking releases built before bundle-dylibs.sh stripped them (v0.1.0).
+in_bundle_or_os() { case "$1" in @rpath/*|@loader_path*|@executable_path*|/usr/lib/*|/System/*) return 0;; *) return 1;; esac; }
+machos=0; bad=0; rpath_warn=0
+while IFS= read -r -d '' f; do
+  file -b "$f" | grep -q '^Mach-O' || continue
+  machos=$((machos + 1))
+  rel=${f#"$APP"/}
+  # otool -L: a header line per architecture ("<file> (architecture …):"), then the load
+  # commands; a dylib's own install name (LC_ID_DYLIB) is listed too and must obey the same rule.
+  while IFS= read -r dep; do
+    in_bundle_or_os "$dep" || { echo "error: $rel loads $dep (outside the bundle)" >&2; bad=1; }
+  done < <(otool -L "$f" | grep -v ':$' | awk 'NF{print $1}')
+  while IFS= read -r p; do
+    in_bundle_or_os "$p" && continue
+    if [ "${WIZREC_ALLOW_BUILD_RPATHS:-0}" = 1 ]; then
+      echo "warning: $rel has run path $p (outside the bundle)" >&2; rpath_warn=$((rpath_warn + 1))
+    else
+      echo "error: $rel has run path $p (outside the bundle)" >&2; bad=1
+    fi
+  done < <(otool -l "$f" | awk '/cmd LC_RPATH/{r=1} r&&/ path /{print $2; r=0}')
+done < <(find "$APP/Contents" -type f -print0)
+[ "$machos" -gt 1 ] || { echo "error: no Mach-O files found in $APP" >&2; exit 1; }
+[ "$bad" = 0 ] || exit 1
 
 start=$(date +%s)
 log=$(mktemp "${TMPDIR:-/tmp}/wizrec-verify-log.XXXXXX")
@@ -80,4 +102,6 @@ if [ "$status" != 0 ] || grep -qE "dyld|Library not loaded|image not found" "$lo
   echo "error: app exited with status $status" >&2; exit 1
 fi
 rm -f "$log"
-echo "OK $DMG: $id $version, signed ${authority:-${signature:-?}}, updates $updates, launched and quit cleanly in ${elapsed}s (mounted with $TOOL)"
+paths="load/run paths clean in $machos Mach-O files"
+[ "$rpath_warn" = 0 ] || paths="$paths except $rpath_warn build run path(s)"
+echo "OK $DMG: $id $version, signed ${authority:-${signature:-?}}, updates $updates, $paths, launched and quit cleanly in ${elapsed}s (mounted with $TOOL)"

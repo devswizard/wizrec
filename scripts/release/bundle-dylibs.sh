@@ -9,7 +9,8 @@
 #
 # Ends with an ad-hoc signature (install_name_tool invalidates signatures; arm64 refuses to
 # load unsigned code). scripts/release/sign.sh re-signs with a real identity.
-# Fails if any Mach-O in the bundle still points into /opt/homebrew or /usr/local.
+# Removes run paths into the build machine (Xcode back-deployment, Homebrew) before signing.
+# Fails if any Mach-O it handles still points into /opt/homebrew, /usr/local or a toolchain.
 set -euo pipefail
 
 APP=${1:?usage: bundle-dylibs.sh <WizRec.app>}
@@ -113,12 +114,39 @@ if ! otool -l "$EXE" | grep -q "@executable_path/../Frameworks"; then
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$EXE"
 fi
 
-# Nothing may still point outside the bundle.
+# Run paths into the build machine's toolchain or package manager mean nothing on a user's
+# Mac, and dyld would search them first. Xcode adds one for Swift back-deployment
+# (…/XcodeDefault.xctoolchain/usr/lib/swift-6.x/macosx); the walk above already copied
+# anything the app loads through it into Contents/Frameworks. Removed before signing.
+is_build_path() {
+  case "$1" in
+    */Xcode*.app/*|*/CommandLineTools/*|*.xctoolchain/*|/Library/Developer/*|/opt/homebrew/*|/usr/local/*|*/Cellar/*) return 0;;
+    *) return 1;;
+  esac
+}
+raw_rpaths() { otool -l "$1" | awk '/cmd LC_RPATH/{r=1} r&&/ path /{print $2; r=0}'; }
+stripped=0
+for f in "$EXE" "$FW"/*.dylib; do
+  while IFS= read -r p; do
+    if is_build_path "$p"; then
+      # -delete_rpath removes one entry; a duplicate shows up again in the next pass.
+      while raw_rpaths "$f" | grep -qxF "$p"; do install_name_tool -delete_rpath "$p" "$f" 2>/dev/null; done
+      echo "removed run path $p from $(basename "$f")"
+      stripped=$((stripped + 1))
+    fi
+  done < <(raw_rpaths "$f" | sort -u)
+done
+
+# Nothing may still point outside the bundle: no load path and no run path into Homebrew,
+# /usr/local or a developer toolchain.
 leaks=0
 for f in "$EXE" "$FW"/*.dylib; do
-  if otool -L "$f" | tail -n +2 | grep -E "/opt/homebrew|/usr/local|/Cellar/"; then
+  if otool -L "$f" | tail -n +2 | grep -E "/opt/homebrew|/usr/local|/Cellar/|/Xcode[^/]*\.app/|/CommandLineTools/|\.xctoolchain/"; then
     echo "error: $f still links outside the bundle" >&2; leaks=1
   fi
+  while IFS= read -r p; do
+    is_build_path "$p" && { echo "error: $f still has run path $p" >&2; leaks=1; }
+  done < <(raw_rpaths "$f")
 done
 [ "$leaks" = 0 ] || exit 1
 
@@ -133,4 +161,4 @@ codesign --force --sign - "$APP" >/dev/null 2>&1
 
 count=$(ls "$FW"/*.dylib | wc -l | tr -d ' ')
 size=$(du -sh "$FW" | cut -f1)
-echo "Bundled $count dylibs ($size) into $FW; licences in $LIC"
+echo "Bundled $count dylibs ($size) into $FW; licences in $LIC; removed $stripped build run path(s)"
