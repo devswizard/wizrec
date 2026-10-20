@@ -22,7 +22,7 @@ jobs:
   build-and-test:
     name: swift build + test (macOS arm64)
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -76,18 +76,26 @@ jobs:
             exit 1
           fi
 
+      - name: Build tests
+        timeout-minutes: 40
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          if ! swift build --build-tests 2>&1 | tee build-tests.log; then
+            grep -E "(error|fatal error):" build-tests.log | sort -u | head -40 | while IFS= read -r line; do
+              echo "::error title=swift build --build-tests::${line}"
+            done
+            exit 1
+          fi
+          echo "::notice title=build-tests::took $(( $(date +%s) - start )) s"
+
       - name: Test
+        timeout-minutes: 30
         env:
           REFS_DIR: ""
           WIZREC_PERF: ""
           WIZREC_CAPTURE_TESTS: ""
           WIZREC_SPEECH_TESTS: ""
           WIZREC_WHISPER_TESTS: ""
-        run: |
-          set -o pipefail
-          if ! swift test 2>&1 | tee test.log; then
-            grep -E "(error:|✘)" test.log | sort -u | head -40 | while IFS= read -r line; do
-              echo "::error title=swift test::${line}"
-            done
-            exit 1
-          fi
+          TEST_DEADLINE_SECONDS: "1500"
+        run: scripts/ci/test-with-watchdog.sh
