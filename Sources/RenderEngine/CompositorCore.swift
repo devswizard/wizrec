@@ -400,6 +400,16 @@ final class CompositorCore {
         let box = Self.rectQuad(CalloutGeometry.box(c), m: toNDC, opacity: layer.opacity)
         var out = [Item(fill: .texture(b), quad: Self.fullPassQuad)]
         let intensity = Float(Conventions.clamp01(c.intensity))
+        // `corner-radius`, callout px: scales with the callout, as the highlighter's does [callouts.md §3.1].
+        let radius = Float(c.cornerRadius.isFinite ? max(c.cornerRadius, 0) : 0)
+        let rounded = SIMD4<Float>(0, radius, 0, 0)
+        /// The box's rounded coverage as a pass-sized mask texture (alpha).
+        func boxMask() throws -> any MTLTexture {
+            var mask = box
+            mask.opacity = 1
+            return try backdropTexture([Item(fill: .pass("round_mask_fs", [], rounded), quad: mask)], space: space,
+                                       clear: false, pass: pass)
+        }
         switch c.kind {
         case "TypeWinBlur":
             let ctx = EffectContext(gpu: fx, commandBuffer: pass.commandBuffer,
@@ -410,26 +420,20 @@ final class CompositorCore {
             if c.invert {
                 // Blur everything except the box [inf from `blur-invert`].
                 out = [Item(fill: .texture(blurred), quad: Self.fullPassQuad),
-                       Item(fill: .pass("screen_fs", [b], .zero), quad: box)]
+                       Item(fill: .pass("screen_fs", [b], rounded), quad: box)]
             } else {
-                out.append(Item(fill: .pass("screen_fs", [blurred], .zero), quad: box))
+                out.append(Item(fill: .pass("screen_fs", [blurred], rounded), quad: box))
             }
         case "TypeWinPixelate":
             let block = max(Float(Double(intensity) * RegionCalloutSpec.pixelBlockAtFull * k), 1)
-            out.append(Item(fill: .pass("pixelate_fs", [b], SIMD4(block, 0, 0, 0)), quad: box))
+            out.append(Item(fill: .pass("pixelate_fs", [b], SIMD4(block, radius, 0, 0)), quad: box))
         case "TypeWinSpotlight":
-            var mask = box
-            mask.opacity = 1
-            let white = [SIMD4<Float>](repeating: SIMD4(1, 1, 1, 1), count: 4)
-            let mt = try backdropTexture([Item(fill: .gradient(white), quad: mask)], space: space, clear: false, pass: pass)
+            let mt = try boxMask()
             out = [Item(fill: .pass("spotlight_fs", [b, mt], SIMD4(intensity * Float(layer.opacity), 0, 0, 0)),
                         quad: Self.fullPassQuad)]
         case "TypeWinHighlighter":
             // `fill-invert` 1: the highlight colour covers everything outside the box [inf from the name].
-            var mask = box
-            mask.opacity = 1
-            let white = [SIMD4<Float>](repeating: SIMD4(1, 1, 1, 1), count: 4)
-            let mt = try backdropTexture([Item(fill: .gradient(white), quad: mask)], space: space, clear: false, pass: pass)
+            let mt = try boxMask()
             let f = c.fill
             out = [Item(fill: .pass("highlight_outside_fs", [b, mt],
                                     SIMD4(Float(f.r), Float(f.g), Float(f.b), Float(f.a * layer.opacity))),
