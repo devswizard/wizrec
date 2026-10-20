@@ -119,6 +119,20 @@ private func clipMetadata(_ scale: String?, visual: Bool = true) -> String {
     try expectTracks(p, tracks(track(0, [leaf(10, start: 0, dur: 50), unified])))
 }
 
+@MainActor @Test func insertShaderBackgroundLastsSixtySeconds() throws {
+    // An endless video stream (shader background) is placed for 60 s [obs, shader-backgrounds.md SH2].
+    let bin = "[" + source(id: 2, src: "./media/1/bg.tscshadervid", rect: (1920, 1080),
+                           tracks: [(0, 30, Int.max, 1920, 1080, 0)]) + "]"
+    let p = try makeProject(tracks: tracks(track(0, [])), sourceBin: bin)
+    let insert = InsertClip(sourceID: 2, track: 0, start: 15)
+    try expectReversible(insert, on: p)
+    try insert.apply(to: p)
+    let c = try #require(p.tracks[0].clips.first)
+    #expect(c.kind == .video && [c.start, c.duration] == [15, 1800])
+    #expect(c.object["mediaDuration"]?.int == 1800 && c.metadata?["default-scale"]?.string == "1")
+    #expect(c.metadata?["lockAspectRatio"] == (try JSON.parse(#"{"type" : "bool", "value" : true}"#)))
+}
+
 @MainActor @Test func insertPicksClipTypeFromStreams() throws {
     let bin = "[" + [
         source(id: 2, src: "./media/1/v.mov", rect: (1280, 720), tracks: [(0, 30, 90, 1280, 720, 0)]),

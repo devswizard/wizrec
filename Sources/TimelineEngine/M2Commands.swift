@@ -15,8 +15,8 @@ import TSCProjKit
 ///   shortest used stream rounded down to a frame (time-mapping.md §2);
 ///   images get 5 s (`mediaStart` 0, `mediaDuration` 1, `trimStartSum` 0)
 ///   and a video+audio `UnifiedMedia` the shorter stream floored to a frame
-///   [obs, edit-semantics.md ED0]; open-ended sources (shaders) get 5 s too
-///   [inf]. `scale0/1` = `metadata.default-scale` = min(1, fit)
+///   [obs, edit-semantics.md ED0]; open-ended video (shader backgrounds,
+///   `range` end ≥ 2^61) gets 60 s [obs, shader-backgrounds.md SH2]. `scale0/1` = `metadata.default-scale` = min(1, fit)
 ///   (transform.md §3). Visual clips get `metadata.lockAspectRatio` true
 ///   [obs, ED0]; audio-only clips do not [?]. `start` snaps to the nearest
 ///   frame [obs]; overlap throws.
@@ -58,8 +58,11 @@ enum M2 {
 
     // MARK: InsertClip
 
-    /// Default duration for stills [obs, ED0] and open-ended sources [inf], seconds.
+    /// Default duration for stills, seconds [obs, ED0].
     static let stillSeconds: Int64 = 5
+    /// Default duration for open-ended video (shader backgrounds), seconds
+    /// [obs, shader-backgrounds.md SH2].
+    static let endlessSeconds: Int64 = 60
 
     static func insertClip(_ c: InsertClip, _ project: Project) throws -> Int64 {
         let tracks = Locator.sceneTracks(project)
@@ -100,9 +103,12 @@ enum M2 {
         let used = [video, audio].compactMap { $0 }
         let lengths = image != nil && video == nil ? [] : used.compactMap(length)
         let still = grid.floor(stillSeconds * editRate)
+        let endless = video.map { streams[$0].range.count == 2 && streams[$0].range[1] >= Int64.max / 4 } ?? false
         let duration: Int64
         if lengths.count == used.count, let shortest = lengths.min(by: Exact.less) {
             duration = grid.floor(Exact.floor(shortest))
+        } else if endless {
+            duration = grid.floor(endlessSeconds * editRate)
         } else {
             duration = still
         }
