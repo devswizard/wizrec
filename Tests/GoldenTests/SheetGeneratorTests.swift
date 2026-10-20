@@ -69,7 +69,8 @@ import TSCProjKit
                     for e in effects {
                         let name = try #require(e["effectName"]?.string)
                         effectNames.insert(name)
-                        #expect(Array(e.keys.prefix(4)) == ["effectName", "bypassed", "category", "parameters"])
+                        let firstKeys: [String] = Array(e.keys.prefix(4))
+                        #expect(firstKeys == ["effectName", "bypassed", "category", "parameters"])
                         #expect(e["category"]?.string == "categoryVisualEffects")
                         let params = try #require(e["parameters"]?.object)
                         if let want = Self.camtasiaKeys[name] { #expect(params.keys == want, "\(name) keys") }
