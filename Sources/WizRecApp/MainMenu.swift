@@ -9,6 +9,10 @@ enum MainMenu {
 
         let app = NSMenu(title: String(localized: "WizRec"))
         app.addItem(withTitle: String(localized: "About WizRec"), action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        // Sparkle; disabled when this build has no update feed (AppUpdater).
+        let updates = app.addItem(withTitle: String(localized: "Check for Updates…"),
+                                  action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "")
+        updates.target = AppUpdater.shared
         app.addItem(.separator())
         app.addItem(withTitle: String(localized: "Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         app.addItem(.separator())
