@@ -179,22 +179,33 @@ public final class SetClipSpeed: EditCommand {
 
 /// Extend frame: holds a clip's last frame for `duration` ticks after it.
 ///
-/// **[inf] JSON shape, needs a Camtasia check:** we insert a new clip right
-/// after the original — a copy of the video clip (the `video` half for a
-/// `UnifiedMedia`, which keeps the parent's `metadata`) whose media range is
-/// the last output frame (`mediaStart` = media end − 1 frame, `mediaDuration`
-/// = 1 frame) and whose `scalar` = `duration` / 1 frame, i.e. a slowed-down
-/// single frame. This plays correctly under the documented time mapping.
-/// Later clips on the track shift right by `duration`. Isolated in
-/// `freezeClip` so it can change once the real shape is known.
+/// Shape [obs, edit-semantics.md ED1]: the clip becomes a `StitchedMedia`
+/// (new id, `StitchClips.parent`, parameters gain
+/// `smoothCursorAcrossEditDuration` 0) holding two segments: the original
+/// clip (id kept) and an `IMFile` on the **same video source** whose
+/// `mediaStart` is the media time of the clip's last output frame,
+/// `mediaDuration` 1 (the image convention), `trimStartSum` 0 and
+/// `attributes.ident` "Frame of <ident>". The frame segment's `duration` is
+/// the hold [inf; Camtasia wrote a much longer segment that the outer
+/// duration cuts]. Its crops are copied from the clip [inf].
+///
+/// - `VMFile`/`ScreenVMFile` [obs]; `UnifiedMedia` [inf]: the frame comes
+///   from the `video` child, the whole clip is the first segment.
+/// - `StitchedMedia` [inf]: the window must end at its last segment's end; a
+///   trailing frame segment grows, otherwise a frame segment is appended.
+///
+/// Transitions on the clip are relinked to the stitched id. Later clips on
+/// the track shift right by `duration` [inf].
 @MainActor
 public final class ExtendFrame: EditCommand {
     public let clipID: Int64
     /// Hold length, ticks (frame-snapped, > 0).
     public let duration: Int64
     public var name: String { "Extend Frame" }
-    /// Id of the inserted hold clip after `apply`.
+    /// Id of the frame (`IMFile`) segment after `apply`.
     public private(set) var freezeID: Int64?
+    /// Id of the `StitchedMedia` holding the clip and its frame after `apply`.
+    public private(set) var stitchedID: Int64?
     private var swap = TrackSwap()
 
     public init(clipID: Int64, duration: Int64) { self.clipID = clipID; self.duration = duration }
@@ -206,48 +217,92 @@ public final class ExtendFrame: EditCommand {
         let loc = try Locator.locate(clipID, in: project)
         var edits = TrackEdits(project)
         let track = try edits.track(at: loc.trackPath)
-        guard let clip = track["medias"]?.array?[loc.index].object else { throw EditError.clipNotFound(clipID) }
-        let frame = Rational(grid.ceil(1))
-        var next = project.maxID
-        let freeze = try Self.freezeClip(clip, hold: d, frame: frame, next: &next)
+        guard let medias = track["medias"]?.array, let clip = medias[loc.index].object else {
+            throw EditError.clipNotFound(clipID)
+        }
+        let frame = grid.ceil(1)
         let end = (clip["start"]?.int ?? 0) + (clip["duration"]?.int ?? 0)
+        var next = project.maxID
+        let result: JSONObject
+        if clip.clipType == "StitchedMedia" {
+            result = clip.copy()
+            freezeID = try Self.extendStitched(result, hold: d, frame: frame, next: &next)
+        } else {
+            let freeze = try Self.frameSegment(of: clip, hold: d, frame: frame, next: &next)
+            next += 1
+            result = StitchClips.parent(id: next, segments: [clip, freeze],
+                                        extraParameters: [("smoothCursorAcrossEditDuration", J.int(0))])
+            freezeID = freeze.clipID
+            if let tr = track["transitions"]?.array {
+                for t in tr.items.compactMap(\.object) {
+                    if t["leftMedia"]?.int == clipID { t["leftMedia"] = J.int(next) }
+                    if t["rightMedia"]?.int == clipID { t["rightMedia"] = J.int(next) }
+                }
+            }
+        }
+        medias.items[loc.index] = .object(result)
         TrimClip.shiftLater(in: track, except: loc.index, from: end, by: d)
-        track["medias"]?.array?.items.insert(.object(freeze), at: loc.index + 1)
         try edits.packMagnetic()
         try edits.commit(&swap)
-        freezeID = freeze.clipID
+        stitchedID = result.clipID
     }
 
-    public func revert(on project: Project) throws { try swap.restore(in: project); freezeID = nil }
+    public func revert(on project: Project) throws { try swap.restore(in: project); freezeID = nil; stitchedID = nil }
 
-    static func freezeClip(_ clip: JSONObject, hold: Int64, frame: Rational, next: inout Int64) throws -> JSONObject {
-        let source: JSONObject
+    /// The `IMFile` showing the last output frame of `clip` (a video leaf or
+    /// `UnifiedMedia`), `hold` ticks long, with a new id from `next`.
+    static func frameSegment(of clip: JSONObject, hold: Int64, frame: Int64, next: inout Int64) throws -> JSONObject {
+        let video: JSONObject
         switch clip.clipType {
-        case "VMFile", "ScreenVMFile":
-            source = clip
+        case "VMFile", "ScreenVMFile": video = clip
         case "UnifiedMedia":
             guard let v = clip["video"]?.object else { throw EditError.invalid("UnifiedMedia has no video") }
-            source = v
-        default:
-            throw EditError.invalid("extend frame needs a video clip")
+            video = v
+        default: throw EditError.invalid("extend frame needs a video clip")
         }
-        let t = try Timing(source)
-        let f = source.copy()
-        if clip !== source, let md = clip["metadata"]?.object, f["metadata"] == nil {
-            // Top-level clips carry metadata; keep the key order of a leaf (before animationTracks).
-            let anim = f["animationTracks"]
-            f["animationTracks"] = nil
-            f["metadata"] = .object(md.copy())
-            if let anim { f["animationTracks"] = anim }
-        }
+        guard let src = video["src"] else { throw EditError.invalid("video clip has no source") }
+        let t = try Timing(video)
         let mediaEnd = try Exact.add(t.mediaStart, t.mediaDuration)
-        let last = try Exact.sub(mediaEnd, frame)
+        let last = try Exact.sub(mediaEnd, t.media(frame))
+        let ident = Clip(video).name ?? Clip(clip).name ?? ""
+        let crops = (video["parameters"]?.object?.entries ?? [])
+            .filter { $0.key.hasPrefix("geometryCrop") || $0.key.hasPrefix("sourceCrop") }
+            .map { ($0.key, $0.value.copy()) }
+        next += 1
+        let f = JSONObject([
+            ("id", J.int(next)), ("_type", .string("IMFile")), ("src", src.copy()),
+            ("trackNumber", video["trackNumber"]?.copy() ?? J.int(0)), ("trimStartSum", J.int(0)),
+            ("attributes", J.obj([("ident", .string("Frame of \(ident)"))])),
+            ("parameters", J.obj(crops)), ("effects", J.emptyArray),
+            ("start", J.int(t.end)), ("duration", J.int(hold)), ("mediaStart", J.int(0)),
+            ("mediaDuration", J.int(1)), ("scalar", J.int(1)), ("animationTracks", J.emptyObject),
+        ])
         TimeWriter.set(Exact.less(last, t.mediaStart) ? t.mediaStart : last, "mediaStart", in: f)
-        TimeWriter.set(frame, "mediaDuration", in: f)
-        TimeWriter.set(try Exact.div(Rational(hold), frame), "scalar", in: f)
-        TimeWriter.set(t.end, "start", in: f)
-        TimeWriter.set(hold, "duration", in: f)
-        IDs.remap(.object(f), next: &next)
         return f
+    }
+
+    /// Extends a `StitchedMedia` (edited in place) by `hold`; returns the frame segment's id.
+    static func extendStitched(_ s: JSONObject, hold: Int64, frame: Int64, next: inout Int64) throws -> Int64 {
+        let t = try Timing(s)
+        guard t.scalar == Rational(1) else { throw EditError.invalid("extending a sped-up stitched clip is not supported") }
+        guard let segs = s["medias"]?.array, let lastSeg = segs.items.last?.object else {
+            throw EditError.invalid("stitched clip has no segments")
+        }
+        let segEnd = (lastSeg["start"]?.int ?? 0) + (lastSeg["duration"]?.int ?? 0)
+        guard try Exact.add(t.mediaStart, t.mediaDuration) == Rational(segEnd) else {
+            throw EditError.invalid("the stitched clip does not end at its last segment")
+        }
+        let id: Int64
+        if lastSeg.clipType == "IMFile" {
+            TimeWriter.set(Rational((lastSeg["duration"]?.int ?? 0) + hold), "duration", in: lastSeg)
+            id = lastSeg.clipID ?? -1
+        } else {
+            let f = try frameSegment(of: lastSeg, hold: hold, frame: frame, next: &next)
+            segs.items.append(.object(f))
+            id = f.clipID ?? -1
+        }
+        TimeWriter.set(Rational(t.duration + hold), "duration", in: s)
+        TimeWriter.set(try Exact.add(t.mediaDuration, Rational(hold)), "mediaDuration", in: s)
+        return id
     }
 }
