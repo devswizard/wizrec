@@ -217,6 +217,7 @@ struct LibraryList: View {
                            : "Double-click to add to the selected clips")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { _ = apply(kind, item.name) }
+        .accessibilityIdentifier("library.\(item.name)")
     }
 
     static func provider(type: String, name: String) -> NSItemProvider {

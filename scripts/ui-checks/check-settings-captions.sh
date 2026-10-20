@@ -37,6 +37,10 @@ echo "$texts" | grep -qF "Found: $WHISPER" && pass "whisper-cli detected at $WHI
 echo "$texts" | grep -qF "whisper.cpp is ready." && pass "status: ready" || fail "status not ready"
 echo "$items" | grep -q "^Automatic" && echo "$items" | grep -qF "$MODEL_NAME" \
     && pass "model picker lists Automatic and $MODEL_NAME" || fail "model picker lacks $MODEL_NAME"
+case "$(dump_value "$texts" settings.captions.model)" in
+    "Automatic ("*")") pass "Automatic names the model it loads: $(dump_value "$texts" settings.captions.model)" ;;
+    *) fail "Automatic does not name its model" ;;
+esac
 [ "$(dump_value "$texts" settings.captions.vad)" = 1 ] \
     && pass "VAD toggle shown and on" || fail "VAD toggle missing or off"
 VAD_MODEL=$(ls "$MODELS" 2>/dev/null | grep '^ggml-silero-.*\.bin$' | tail -1); VAD_MODEL=${VAD_MODEL#ggml-}
