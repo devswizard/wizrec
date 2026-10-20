@@ -364,6 +364,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     func applyLibraryItem(_ kind: LibraryItem.Kind, _ name: String) -> Bool {
         if kind == .audio, let item = AudioPanelItem(rawValue: name) { return applyAudioItem(item) }
         if kind == .callout, let preset = AssetCatalog.callout(id: name) { return insertCallout(preset) }
+        if kind == .background, let bg = AssetCatalog.background(id: name) { return placeBackground(bg) }
+        if kind == .background { return false }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
@@ -398,7 +400,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         return ok
     }
 
-    /// Edit ▸ Add Audio Point: a volume point at the playhead on the selected clips with audio.
+    /// Backgrounds library double-click: the background at the playhead (60 s, lowest free
+    /// track), selected. One undo step ("Add Background").
+    func placeBackground(_ bg: BackgroundAsset) -> Bool {
+        let at = engine.currentTicks
+        ui.isImporting = true
+        Task {
+            defer { ui.isImporting = false }
+            do {
+                let clip = try await model.placeBackground(bg, at: at)
+                select([clip])
+            } catch {
+                ui.show(String(localized: "Could not add \(bg.displayName): \(Self.describe(error))"))
+            }
+        }
+        return true
+    }
+
+    /// Edit ▸ Add Audio Point:a volume point at the playhead on the selected clips with audio.
     @objc func addAudioPoint(_ sender: Any?) {
         guard let c = AudioPanel.addPointCommand(project: model.project, selection: timelineModel.selection,
                                                  playhead: engine.currentTicks) else {

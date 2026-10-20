@@ -15,11 +15,12 @@ struct LibraryActions {
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, annotations, effects, audio, transitions
+        case media, backgrounds, annotations, effects, audio, transitions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
             case .media: "Media"
+            case .backgrounds: "Backgrounds"
             case .annotations: "Annotations"
             case .effects: "Effects"
             case .audio: "Audio"
@@ -44,6 +45,9 @@ struct SidebarView: View {
             .padding(.horizontal, 8).padding(.top, 8)
             switch tab {
             case .media: MediaBinView(model: model, thumbnails: thumbnails, actions: actions)
+            case .backgrounds:
+                LibraryList(items: Self.backgroundItems(), kind: .background, apply: library.apply,
+                            hint: "Double-click to add at the playhead for 60 seconds. Camtasia won't show WizRec backgrounds.")
             case .effects:
                 LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
                             hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
@@ -64,6 +68,30 @@ struct SidebarView: View {
         TimelineLibrary.effects.map {
             LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
                         note: $0.isRendered ? nil : String(localized: "not previewed"))
+        }
+    }
+
+    /// WizRec's own animated backgrounds (`AssetCatalog.backgrounds`), grouped by category.
+    static func backgroundItems() -> [LibraryItem] {
+        AssetCatalog.backgrounds.map {
+            LibraryItem(name: $0.id, title: $0.displayName, symbol: symbol(background: $0.category),
+                        section: backgroundSection($0.category))
+        }
+    }
+
+    static func backgroundSection(_ c: BackgroundAsset.Category) -> String {
+        switch c {
+        case .gradients: String(localized: "Gradients")
+        case .patterns: String(localized: "Patterns")
+        case .abstract: String(localized: "Abstract")
+        }
+    }
+
+    static func symbol(background: BackgroundAsset.Category) -> String {
+        switch background {
+        case .gradients: "paintpalette"
+        case .patterns: "square.grid.3x3"
+        case .abstract: "sparkles"
         }
     }
 
@@ -156,7 +184,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition, audio, callout }
+    enum Kind { case effect, transition, audio, callout, background }
     var name: String
     var title: String
     var symbol: String
@@ -181,7 +209,7 @@ struct LibraryList: View {
         switch kind {
         case .effect: TimelineUI.TimelineView.effectType.rawValue
         case .transition: TimelineUI.TimelineView.transitionType.rawValue
-        case .audio, .callout: nil
+        case .audio, .callout, .background: nil
         }
     }
 
@@ -243,15 +271,19 @@ struct LibraryList: View {
         .help(item.note.map { "\(item.title) — \($0): kept in the project, not drawn yet" } ?? item.title)
         .onTapGesture(count: 2) { if !apply(kind, item.name) { NSSound.beep() } }
         .onDrag { type.map { Self.provider(type: $0, name: item.name) } ?? NSItemProvider() }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(item.title)
-        .accessibilityValue(item.note ?? "")
-        .accessibilityHint(kind == .transition ? "Double-click to add at the cut under the playhead or to the selected clips"
-                           : kind == .callout ? "Double-click to add at the playhead"
-                           : "Double-click to add to the selected clips")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { _ = apply(kind, item.name) }
-        .accessibilityIdentifier("library.\(item.name)")
+        // SwiftUI's own accessibility label on a LazyVGrid cell never reaches AXTitle /
+        // AXDescription; an AppKit element in front of the tile carries them (mouse passes through).
+        .accessibilityHidden(true)
+        .overlay(LibraryTileAccessibility(title: item.title, note: item.note, hint: Self.hint(for: kind),
+                                          identifier: "library.\(item.name)") { apply(kind, item.name) })
+    }
+
+    static func hint(for kind: LibraryItem.Kind) -> String {
+        switch kind {
+        case .transition: String(localized: "Double-click to add at the cut under the playhead or to the selected clips")
+        case .callout, .background: String(localized: "Double-click to add at the playhead")
+        case .effect, .audio: String(localized: "Double-click to add to the selected clips")
+        }
     }
 
     static func provider(type: String, name: String) -> NSItemProvider {
@@ -262,5 +294,39 @@ struct LibraryList: View {
             return nil
         }
         return p
+    }
+}
+
+/// The accessibility element of one library tile: an AppKit button element with the tile's
+/// title as AXTitle and AXDescription, its note as AXValue, a press action that applies the
+/// item, and the `library.<name>` identifier. It is transparent to the mouse (`hitTest` nil),
+/// so clicks, double-clicks and drags still reach the SwiftUI tile below.
+struct LibraryTileAccessibility: NSViewRepresentable {
+    var title: String
+    var note: String?
+    var hint: String
+    var identifier: String
+    var press: () -> Bool
+
+    final class Element: NSView {
+        var press: () -> Bool = { false }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func isAccessibilityElement() -> Bool { true }
+        override func accessibilityRole() -> NSAccessibility.Role? { .button }
+        override func accessibilityPerformPress() -> Bool {
+            if !press() { NSSound.beep() }
+            return true
+        }
+    }
+
+    func makeNSView(context: Context) -> Element { Element() }
+
+    func updateNSView(_ v: Element, context: Context) {
+        v.press = press
+        v.setAccessibilityTitle(title)
+        v.setAccessibilityLabel(title)
+        v.setAccessibilityValue(note ?? "")
+        v.setAccessibilityHelp(hint)
+        v.setAccessibilityIdentifier(identifier)
     }
 }

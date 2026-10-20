@@ -30,9 +30,20 @@ extension EditorWindowController {
                                    self.window?.endSheet(s)
                                    self.exportSheet = nil
                                })
-        let sheet = NSWindow(contentViewController: NSHostingController(rootView: view))
+        let sheet = ExportSheetWindow(contentViewController: NSHostingController(rootView: view))
+        sheet.onPerformClose = { [weak self] in self?.closeFromExportSheet() }
         exportSheet = sheet
         window.beginSheet(sheet)
+    }
+
+    /// ⌘W while the export sheet is up: the sheet is the key window, so File ▸ Close reaches it,
+    /// not the project window. Dismiss the sheet (exports keep running) and take the project
+    /// window's own close path, as its close button does: confirm and cancel running exports,
+    /// then NSDocument's unsaved-changes review.
+    func closeFromExportSheet() {
+        guard let window else { return }
+        if let s = exportSheet { window.endSheet(s); exportSheet = nil }
+        window.performClose(nil)
     }
 
     /// Queues one job per preset, rendering the project as it is now.
@@ -121,6 +132,21 @@ extension EditorWindowController {
 }
 
 // MARK: Closing while exporting
+
+/// The export sheet's window: File ▸ Close (⌘W) closes the project window behind it
+/// (`EditorWindowController.closeFromExportSheet`) instead of doing nothing.
+final class ExportSheetWindow: NSWindow {
+    var onPerformClose: (@MainActor () -> Void)?
+
+    override func performClose(_ sender: Any?) {
+        if let onPerformClose { onPerformClose() } else { super.performClose(sender) }
+    }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(performClose(_:)), onPerformClose != nil { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+}
 
 extension EditorWindowController {
     /// Exports a close or quit would cancel; 0 when none or when the user already agreed.
