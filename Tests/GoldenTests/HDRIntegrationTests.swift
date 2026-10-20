@@ -60,9 +60,10 @@ private func project(_ transfer: HDRTransfer, in dir: URL) throws -> ProjectBund
 }
 
 @MainActor
-private func preview(_ bundle: ProjectBundle, frame n: Int, toneMapping: HDRToneMapping = .cpu) async throws -> RGBAImage {
+private func preview(_ bundle: ProjectBundle, frame n: Int, toneMapping: HDRToneMapping = .cpu,
+                     pool: MediaPool? = nil) async throws -> RGBAImage {
     let r = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve),
-                            pool: MediaPool(diskCacheDirectory: nil, hdrToneMapping: toneMapping))
+                            pool: pool ?? MediaPool(diskCacheDirectory: nil, hdrToneMapping: toneMapping))
     return RGBAImage(try await r.image(at: Int64(n) * frameTicks, size: CGSize(width: W, height: H)))
 }
 
@@ -114,9 +115,23 @@ private func meanAbsDiff(_ a: RGBAImage, _ b: RGBAImage) -> Double {
         let dir = try scratchDir("s5-hdr-gpu")
         defer { try? FileManager.default.removeItem(at: dir) }
         let bundle = try project(transfer, in: dir)
+        let cpuPool = MediaPool(diskCacheDirectory: nil, hdrToneMapping: .cpu)
+        let gpuPool = MediaPool(diskCacheDirectory: nil, hdrToneMapping: .gpu)
+        defer {
+            // media7: prove which path ran. HDR transfers tone-map on the GPU with no fallback;
+            // SDR transfers never tone-map.
+            let g = gpuPool.toneMapStats, c = cpuPool.toneMapStats
+            print("HDR toneMapStats \(transfer.rawValue): gpu pool \(g), cpu pool \(c)")
+            if transfer == .pq || transfer == .hlg {
+                #expect(g.gpuFrames > 0 && g.cpuFallbackFrames == 0 && g.cpuFrames == 0, "\(transfer): gpu pool \(g)")
+                #expect(c.cpuFrames > 0 && c.gpuFrames == 0, "\(transfer): cpu pool \(c)")
+            } else {
+                #expect(g == ToneMapStats() && c == ToneMapStats(), "\(transfer): SDR tone-mapped (\(g), \(c))")
+            }
+        }
         for n in [0, 15, 29] {
-            let cpu = try await preview(bundle, frame: n, toneMapping: .cpu)
-            let gpu = try await preview(bundle, frame: n, toneMapping: .gpu)
+            let cpu = try await preview(bundle, frame: n, pool: cpuPool)
+            let gpu = try await preview(bundle, frame: n, pool: gpuPool)
             var maxDiff = 0, exact = 0, total = 0
             for i in stride(from: 0, to: cpu.pixels.count, by: 4) {
                 for c in 0..<3 {
