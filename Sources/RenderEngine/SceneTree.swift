@@ -177,6 +177,19 @@ struct SceneBuilder {
         return Transcript.words(tracks[i], editRate: editRate)
     }
 
+    /// A transition's parameters: plain constants in its `attributes` (shader parameters, colours split
+    /// into `<name>-red/-green/-blue`, bools as 1/0, alongside the flags) [obs, transitions.md TR2/TR3],
+    /// overridden by a `parameters` object when one exists (older guesses, keyframed values).
+    static func transitionParameters(_ o: JSONObject) -> SParams {
+        var p = SParams(o["attributes"]?.object)
+        let extra = SParams(o["parameters"]?.object)
+        for n in extra.names {
+            if p.values[n] == nil { p.names.append(n) }
+            p.values[n] = extra.values[n]
+        }
+        return p
+    }
+
     /// Resolves transitions against `clips`; bypassed ones and ones naming no existing clip are dropped.
     func transitions(_ list: [Transition], clips: [SNode]) -> [STransition] {
         list.compactMap { tr in
@@ -187,7 +200,7 @@ struct SceneBuilder {
             let w = Conventions.transitionWindow(leftEnd: l.map { clips[$0].end }, rightStart: r.map { clips[$0].start },
                                                  duration: tr.duration)
             return STransition(name: tr.name, duration: tr.duration, reverse: tr.reversed,
-                               parameters: SParams(tr.object["parameters"]?.object),
+                               parameters: Self.transitionParameters(tr.object),
                                left: l, right: r, lo: w.lo, hi: w.hi)
         }
     }
