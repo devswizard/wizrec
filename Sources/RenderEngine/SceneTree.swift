@@ -46,10 +46,13 @@ struct SNode: Sendable {
         Conventions.keyframeTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar, base: keyframeBase)
     }
 
-    /// Constant volume × gain of this clip (keyframes ignored in M1).
+    /// Constant volume × gain of this clip (keyframes ignored in M1). A point envelope (fades) uses
+    /// its loudest point, so a fade-in starting at 0 does not silence the clip [WizRec]; AudioEngine
+    /// mixes the full envelope.
     var constantGain: Double {
-        let v = params["volume"]
-        return gain * (v?.base ?? v?.keys.first?.value ?? 1)
+        guard let v = params["volume"] else { return gain }
+        if v.isPointEnvelope { return gain * (v.keys.compactMap(\.value).max() ?? 1) }
+        return gain * (v.base ?? v.keys.first?.value ?? 1)
     }
 }
 

@@ -77,6 +77,27 @@ public struct Parameter {
         return current
     }
 
+    /// Every keyframe has zero length (`endTime == time`): audio volume points as Camtasia writes
+    /// them (fades, audio points) [obs, audio.md §4 AU1].
+    public var isPointEnvelope: Bool {
+        let kfs = keyframes
+        return !kfs.isEmpty && kfs.allSatisfy { $0.endTime == $0.time }
+    }
+
+    /// Value at clip-relative `ticks` of a point envelope: linear from point to point (sorted by
+    /// time), the first point's value before it and the last's after it; `defaultValue` is not used
+    /// [obs layout; inf linear]. Same rule as AudioEngine's volume. Nil when there are no points.
+    public func pointEnvelopeValue(at ticks: Int64) -> Double? {
+        let pts = keyframes.compactMap { k in k.number.map { (t: k.time, v: $0) } }.sorted { $0.t < $1.t }
+        guard let first = pts.first, let last = pts.last else { return nil }
+        if ticks <= first.t { return first.v }
+        for i in 1..<pts.count where ticks < pts[i].t {
+            let a = pts[i - 1], b = pts[i]
+            return a.v + (b.v - a.v) * Double(ticks - a.t) / Double(b.t - a.t)
+        }
+        return last.v
+    }
+
     static func ease(_ t: Double, _ i: Interpolation) -> Double {
         switch i {
         case .easeInOut: t * t * (3 - 2 * t)  // smoothstep; exact Camtasia curve unverified
@@ -124,7 +145,11 @@ public struct Parameters {
     /// Z-axis rotation in radians (`rotation2`; 0/1 would be X/Y tilt).
     public func rotation(at t: Int64 = 0) -> Double { value("rotation2", at: t, default: 0) }
     public func opacity(at t: Int64 = 0) -> Double { value("opacity", at: t, default: 1) }
-    public func volume(at t: Int64 = 0) -> Double { value("volume", at: t, default: 1) }
+    /// Linear volume; zero-length keyframes form a point envelope (`Parameter.pointEnvelopeValue`).
+    public func volume(at t: Int64 = 0) -> Double {
+        guard let p = self["volume"] else { return 1 }
+        return (p.isPointEnvelope ? p.pointEnvelopeValue(at: t) : p.value(at: t)) ?? 1
+    }
 
     /// Writes a constant, replacing any animation, keeping the key's position.
     public func set(_ name: String, _ value: Double) {

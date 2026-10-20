@@ -61,3 +61,18 @@ struct MenuAnimationTests {
         #expect(p.value(at: s / 2) == 0 && p.value(at: -s) == 1)
     }
 }
+
+/// Volume point envelopes agree with TSCProjKit (and AudioEngine) [audio.md §4].
+struct VolumeEnvelopeAgreementTests {
+    @Test func renderAndProjectKitAgree() throws {
+        let raw = #"{"type":"double","defaultValue":1.0,"keyframes":[{"time":4000,"endTime":4000,"value":0.0},{"time":0,"endTime":0,"value":0.0},{"time":1000,"endTime":1000,"value":0.8}]}"#
+        let json = try JSON.parse(Data(raw.utf8))
+        let sp = try #require(SParam(json))
+        let kit = Parameters(try #require(JSON.parse(Data(("{\"volume\":" + raw + "}").utf8)).object))
+        #expect(sp.isPointEnvelope)
+        for t in stride(from: -500, through: 5000, by: 250) {
+            #expect(sp.volume(at: Double(t)) == kit.volume(at: Int64(t)), "t = \(t)")
+        }
+        #expect(sp.volume(at: 500) == 0.4 && sp.volume(at: 2500) == 0.4)
+    }
+}
