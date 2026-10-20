@@ -104,7 +104,8 @@ import TimelineEngine
         clip["scalar"] = .string("1/2"); clip["mediaDuration"] = .number(JSONNumber(s(6)))
         try AddCaptions(cues: [CaptionCue(start: 1, end: 2, text: "x")]).apply(to: fast)
         let kfs = at(fast, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0/parameters/captions/keyframes")?.array?.items ?? []
-        #expect(kfs.compactMap { $0.object?["time"]?.int } == [0, s(2), s(4)])
+        let fastTimes: [Int64] = kfs.compactMap { (k: JSON) -> Int64? in k.object?["time"]?.int }
+        #expect(fastTimes == [0, s(2), s(4)])
         #expect(ClassicCaptions.cues(in: fast) == [CaptionCue(start: 1, end: 2, text: "x")])
     }
 

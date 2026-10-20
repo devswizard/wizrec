@@ -176,5 +176,6 @@ private func demoBundleCopy() throws -> URL {
     #expect(reopened.project.sourceBin.map(\.src) == b.project.sourceBin.map(\.src))
     // Only the .tscproj is written; relative media now resolve against b/ and are reported missing.
     #expect(try FileManager.default.contentsOfDirectory(atPath: tmp.appendingPathComponent("b").path) == ["y.tscproj"])
-    #expect(reopened.missingMedia().count == reopened.project.sourceBin.filter { !$0.src.hasPrefix("/") }.count)
+    let relative: Int = reopened.project.sourceBin.filter { !$0.src.hasPrefix("/") }.count
+    #expect(reopened.missingMedia().count == relative)
 }

@@ -44,7 +44,9 @@ private let k = E / 44100   // ticks per sample
         #expect(out == expectedOut)
         let wide = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 3), startTime: .zero, frameCount: 4,
                              channels: [[1, 1, 1, 1], [0.1, 0.2, 0.3, 0.4], [9, 9, 9, 9]])
-        #expect(AudioMix.fit(wide, frameCount: 2, channels: 2) == [[1, 1], [0.1, 0.2]])
+        let fitted: [[Float]] = AudioMix.fit(wide, frameCount: 2, channels: 2)
+        let expectedFit: [[Float]] = [[1, 1], [0.1, 0.2]]
+        #expect(fitted == expectedFit)
         let empty = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 0), startTime: .zero, frameCount: 0, channels: [])
         #expect(AudioMix.fit(empty, frameCount: 2, channels: 2) == [[0, 0], [0, 0]])
     }

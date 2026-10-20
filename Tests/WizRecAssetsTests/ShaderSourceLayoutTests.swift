@@ -20,7 +20,8 @@ struct ShaderSourceLayoutTests {
 
     @Test func codeTable() throws {
         let e = try ShaderSourceLayout.entries(shaderVid: Data(Self.file.utf8))
-        #expect(e.map(\.name) == ["Color0", "Odd", "Speed", "Mix", "Fill", "Angle", "Pos", "sourceFileType"])
+        let names: [String] = e.map { $0.name }
+        #expect(names == ["Color0", "Odd", "Speed", "Mix", "Fill", "Angle", "Pos", "sourceFileType"])
         func row(_ n: String) throws -> ShaderSourceEntry { try #require(e.first { $0.name == n }) }
 
         let c = try row("Color0")

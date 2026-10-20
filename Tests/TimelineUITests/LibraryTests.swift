@@ -29,7 +29,8 @@ struct LibraryTests {
         // Sourced from WizRec's own catalog, in its order, flagged by what RenderEngine draws.
         #expect(TimelineLibrary.transitions.map(\.name) == AssetCatalog.transitions.map(\.name))
         #expect(TimelineLibrary.effects.map(\.name) == AssetCatalog.effects.map(\.name))
-        #expect(Array(TimelineLibrary.transitions.prefix(3).map(\.name)) == ["Fade", "Dissolve", "FadeThroughBlack"])
+        let firstThree: [String] = TimelineLibrary.transitions.prefix(3).map { $0.name }
+        #expect(firstThree == ["Fade", "Dissolve", "FadeThroughBlack"])
         for t in TimelineLibrary.transitions { #expect(t.isRendered == Compositor.renderedTransitions.contains(t.name)) }
         #expect(Compositor.renderedTransitions.isSuperset(of: ["Fade", "Dissolve", "FadeThroughBlack"]))
         for e in TimelineLibrary.effects { #expect(e.isRendered == Compositor.renderedEffects.contains(e.name)) }
