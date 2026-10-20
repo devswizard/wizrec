@@ -3,6 +3,7 @@ import Foundation
 import MediaEngine
 import Testing
 import TSCProjKit
+import WizRecTestSupport
 @testable import Exporter
 
 struct PresetTests {
@@ -60,9 +61,9 @@ struct PresetTests {
         let jobs = (0..<3).map { ExportBatch.Job(settings: s, output: dir.appendingPathComponent("\($0).mp4")) }
         let batch = ExportBatch(scene: p.scene, audio: p.audio, pool: MediaPool(), jobs: jobs)
         let run = Task { await batch.run() }
-        while await batch.progress == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        try await Deadline.poll("batch progress to start", seconds: 60, interval: 0.001) { await batch.progress > 0 }
         await batch.cancel()
-        let outcomes = await run.value
+        let outcomes = try await Deadline.value(of: run, "batch to stop after cancel", seconds: 60)
         // The first job may finish before the cancel lands (exports run faster than real time);
         // every job after the cancel is skipped and leaves no file.
         let done = outcomes.prefix { if case .completed = $0 { true } else { false } }.count
@@ -82,11 +83,11 @@ struct PresetTests {
         let batch = ExportBatch(scene: p.scene, audio: p.audio, pool: MediaPool(), jobs: jobs)
         #expect(await batch.cancellationLosesWork == false)
         let run = Task { await batch.run() }
-        while await batch.progress == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        try await Deadline.poll("batch progress to start", seconds: 60, interval: 0.001) { await batch.progress > 0 }
         #expect(await batch.cancellationLosesWork)
         await batch.cancelAndWait()
         #expect(await batch.cancellationLosesWork == false)
-        let outcomes = await run.value
+        let outcomes = try await Deadline.value(of: run, "batch to stop after cancel", seconds: 60)
         let done = outcomes.prefix { if case .completed = $0 { true } else { false } }.count
         #expect(done < jobs.count)
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()

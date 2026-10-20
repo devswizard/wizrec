@@ -8,6 +8,7 @@ import Testing
 import TestGenKit
 import TimelineEngine
 import TSCProjKit
+import WizRecTestSupport
 
 // Wave B integration (M9 acceptance): export frame N == preview frame N, and
 // audio in sync with video to within one frame. Synthetic media only.
@@ -164,7 +165,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         let job = Task { try await session.run() }
         await session.cancel()
         do {
-            try await job.value
+            try await Deadline.value(of: job, "export to stop after cancel")
             // A tiny job may finish before the cancel lands; then the file must be complete.
             #expect(FileManager.default.fileExists(atPath: out.path))
         } catch ExportError.notImplemented {
@@ -259,7 +260,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         #expect(await fresh.cancellationLosesWork == false)
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: outDir.path)
         do {
-            try await job.value
+            try await Deadline.value(of: job, "export to stop after cancel")
             #expect(leftovers == ["big.mov"], "finished before the cancel: only the complete file")
         } catch ExportError.cancelled {
             #expect(leftovers.isEmpty, "cancelAndWait returned with \(leftovers) still present")

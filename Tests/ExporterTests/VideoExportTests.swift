@@ -184,9 +184,11 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         s.includeAudio = false
         let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(), settings: s, output: out)
         let run = Task { try await session.run() }
-        while await session.progress < 0.05 { try await Task.sleep(nanoseconds: 2_000_000) }
+        try await Deadline.poll("export progress to reach 5 %", seconds: 60) { await session.progress >= 0.05 }
         await session.cancel()
-        await #expect(throws: ExportError.cancelled) { try await run.value }
+        await #expect(throws: ExportError.cancelled) {
+            try await Deadline.value(of: run, "export to stop after cancel", seconds: 60)
+        }
         #expect(try Data(contentsOf: out) == Data("previous export".utf8))
         let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         #expect(left == ["c.mp4"], "\(left)")
@@ -202,14 +204,16 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(), settings: s, output: out)
         #expect(await session.cancellationLosesWork == false)
         let run = Task { try await session.run() }
-        while await session.progress < 0.05 { try await Task.sleep(nanoseconds: 2_000_000) }
+        try await Deadline.poll("export progress to reach 5 %", seconds: 60) { await session.progress >= 0.05 }
         #expect(await session.cancellationLosesWork)
         await session.cancelAndWait()
         // Returned only after run() stopped and cleaned up: nothing left in the directory.
         #expect(await session.cancellationLosesWork == false)
         let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         #expect(left.isEmpty, "\(left)")
-        await #expect(throws: ExportError.cancelled) { try await run.value }
+        await #expect(throws: ExportError.cancelled) {
+            try await Deadline.value(of: run, "export to stop after cancel", seconds: 60)
+        }
     }
 
     @Test func cancelAndWaitAfterCompletionKeepsFile() async throws {
@@ -233,9 +237,11 @@ func fourCC(_ s: String) -> FourCharCode { s.utf8.reduce(0) { $0 << 8 | FourChar
         s.includeAudio = false
         let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(), settings: s, output: out)
         let run = Task { try await session.run() }
-        while await session.progress < 0.05 { try await Task.sleep(nanoseconds: 2_000_000) }
+        try await Deadline.poll("export progress to reach 5 %", seconds: 60) { await session.progress >= 0.05 }
         run.cancel()
-        await #expect(throws: ExportError.cancelled) { try await run.value }
+        await #expect(throws: ExportError.cancelled) {
+            try await Deadline.value(of: run, "export to stop after cancel", seconds: 60)
+        }
         let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         #expect(left.isEmpty, "\(left)")
     }
@@ -297,7 +303,7 @@ final class ProgressLog: @unchecked Sendable {
             try await Task.sleep(nanoseconds: 200_000_000)
             if Date().timeIntervalSince(t0) > 60 { break }
         }
-        try await run.value
+        try await Deadline.value(of: run, "polled export to finish")
         let elapsed = Date().timeIntervalSince(t0)
         LoadGate.expect(elapsed < 60, "export with polling took \(elapsed) s (\(polls) polls)")
     }

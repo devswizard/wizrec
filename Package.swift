@@ -88,12 +88,12 @@ let package = Package(
         .testTarget(
             name: "PlayerKitTests",
             dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit",
-                           "WizRecAssets"]
+                           "WizRecAssets", "WizRecTestSupport"]
         ),
         .testTarget(
             name: "GoldenTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "TimelineEngine",
-                           "AudioEngine", "Captions", "Exporter"]
+                           "AudioEngine", "Captions", "Exporter", "WizRecTestSupport"]
         ),
         .testTarget(
             name: "TimelineUITests",
@@ -108,13 +108,13 @@ let package = Package(
         .testTarget(name: "CaptionsTests", dependencies: ["Captions", "CaptionLayout", "TSCProjKit", "TimelineEngine", "MediaEngine",
                                                   "WizRecTestSupport"]),
         // RenderEngine only to check that every built-in shader translates, compiles and draws.
-        .testTarget(name: "WizRecAssetsTests", dependencies: ["WizRecAssets", "RenderEngine", "MediaEngine"]),
+        .testTarget(name: "WizRecAssetsTests", dependencies: ["WizRecAssets", "RenderEngine", "MediaEngine", "WizRecTestSupport"]),
         // qa: decode/composite throughput; runs only with WIZREC_PERF=1.
         .testTarget(
             name: "PerfTests",
             dependencies: ["RenderEngine", "MediaEngine", "TSCProjKit", "TestGenKit", "WizRecTestSupport"]
         ),
-        // qa: helpers for test targets only (LoadGate timing bounds); never a product dependency.
+        // qa: helpers for test targets only (LoadGate timing bounds, bounded waits); never a product dependency.
         .target(name: "WizRecTestSupport", path: "Tests/WizRecTestSupport"),
     ]
 )

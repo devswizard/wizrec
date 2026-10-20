@@ -4,6 +4,7 @@ import MediaEngine
 import Testing
 import TimelineEngine
 import TSCProjKit
+import WizRecTestSupport
 @testable import TimelineUI
 
 /// Synthesises a 2-s 320×240 test pattern with a 440 Hz tone (ffmpeg lavfi). Nil when ffmpeg is missing.
@@ -13,14 +14,10 @@ func synthMovie() throws -> URL? {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("timelineui-media-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let out = dir.appendingPathComponent("clip.mp4")
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: ffmpeg)
-    p.arguments = ["-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-f", "lavfi",
-                   "-i", "sine=frequency=440:sample_rate=44100", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                   "-c:a", "aac", "-shortest", out.path]
-    try p.run()
-    p.waitUntilExit()
-    return p.terminationStatus == 0 ? out : nil
+    let args: [String] = ["-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-f", "lavfi",
+                          "-i", "sine=frequency=440:sample_rate=44100", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                          "-c:a", "aac", "-shortest", out.path]
+    return try TestProcess.run(ffmpeg, args).status == 0 ? out : nil
 }
 
 struct MediaProviderTests {

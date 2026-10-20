@@ -4,6 +4,7 @@ import ImageIO
 import Metal
 import Testing
 import WizRecAssets
+import WizRecTestSupport
 @testable import RenderEngine
 
 private let device = MTLCreateSystemDefaultDevice()
@@ -50,8 +51,7 @@ private struct ShaderRig {
         let tex = try #require(compositor.device.makeTexture(descriptor: desc))
         let cb = try #require(queue.makeCommandBuffer())
         try compositor.encode(plan, frames: [:], into: tex, commandBuffer: cb)
-        cb.commit()
-        cb.waitUntilCompleted()
+        try GPUWait.commitAndWait(cb, "shader render \(url.lastPathComponent)")
         var bgra = [UInt8](repeating: 0, count: width * height * 4)
         tex.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
         return stride(from: 0, to: bgra.count, by: 4).map { SIMD4(bgra[$0 + 2], bgra[$0 + 1], bgra[$0], bgra[$0 + 3]) }

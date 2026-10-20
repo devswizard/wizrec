@@ -4,6 +4,7 @@ import MediaEngine
 import TestGenKit
 import Testing
 import TSCProjKit
+import WizRecTestSupport
 @testable import AudioEngine
 
 // BS.1770-4 meter checks (EBU Tech 3341-style cases on synthesized signals) and the per-clip
@@ -113,15 +114,9 @@ private func sine(dBFS: Double, freq: Double = 997, rate: Double = 48_000) -> (I
     try Synth.wav(u, rate: rate, channels: 2, frames: frames) { c, i in chans[c][i] }
     let b = PCMBuffer(format: PCMFormat(sampleRate: Double(rate), channels: 2), startTime: .zero,
                       frameCount: frames, channels: chans)
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: ffmpeg)
-    p.arguments = ["-hide_banner", "-nostats", "-i", u.path, "-af", "ebur128=peak=true", "-f", "null", "-"]
-    let pipe = Pipe()
-    p.standardError = pipe
-    p.standardOutput = FileHandle.nullDevice
-    try p.run()
-    let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    p.waitUntilExit()
+    let out = try TestProcess.run(ffmpeg, ["-nostdin", "-hide_banner", "-nostats", "-i", u.path,
+                                           "-af", "ebur128=peak=true", "-f", "null", "-"],
+                                  stdout: .discard).stderrText
     // Summary block: "I:         -23.4 LUFS" … "Peak:       -1.2 dBFS".
     let summary = out.components(separatedBy: "Summary:").last ?? ""
     func value(_ label: String) -> Double? {
