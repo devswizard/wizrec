@@ -21,6 +21,7 @@ public struct AppPreferences: Sendable, Equatable {
         public static let playAudio = "WizRec.PlayAudio"
         public static let framePolicy = "WizRec.FramePolicy"
         public static let showPerformanceOverlay = "WizRec.ShowPerformanceOverlay"
+        public static let warnUnsignedBackgrounds = "WizRec.WarnUnsignedBackgrounds"
     }
 
     /// The welcome window was finished once (it then shows only if `showWelcomeAtLaunch`).
@@ -31,6 +32,8 @@ public struct AppPreferences: Sendable, Equatable {
     public var playAudio = true
     public var framePolicy: FramePolicy = .nearest
     public var showPerformanceOverlay = false
+    /// Saving a project with WizRec backgrounds says Camtasia won't show them (`BackgroundSaveNotice`).
+    public var warnUnsignedBackgrounds = true
 
     public init() {}
 
@@ -43,6 +46,7 @@ public struct AppPreferences: Sendable, Equatable {
         bool(Key.crashLogsEnabled, &p.crashLogsEnabled)
         bool(Key.playAudio, &p.playAudio)
         bool(Key.showPerformanceOverlay, &p.showPerformanceOverlay)
+        bool(Key.warnUnsignedBackgrounds, &p.warnUnsignedBackgrounds)
         if let s = defaults.string(forKey: Key.framePolicy), let f = FramePolicy(rawValue: s) { p.framePolicy = f }
         return p
     }
@@ -54,6 +58,7 @@ public struct AppPreferences: Sendable, Equatable {
         defaults.set(playAudio, forKey: Key.playAudio)
         defaults.set(framePolicy.rawValue, forKey: Key.framePolicy)
         defaults.set(showPerformanceOverlay, forKey: Key.showPerformanceOverlay)
+        defaults.set(warnUnsignedBackgrounds, forKey: Key.warnUnsignedBackgrounds)
     }
 
     /// Whether the welcome window opens at launch. Never for scripted launches (project

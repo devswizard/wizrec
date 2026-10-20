@@ -23,6 +23,8 @@ final class ProjectDocument: NSDocument {
     }
 
     private(set) var model: EditorDocumentModel?
+    /// "Camtasia won't show WizRec backgrounds" after a save, once per document session.
+    private let backgroundNotice = BackgroundSaveNotice()
 
     override class var autosavesInPlace: Bool { false }
     override class var autosavesDrafts: Bool { false }
@@ -104,6 +106,18 @@ final class ProjectDocument: NSDocument {
             throw Self.error("WizRec does not save copies or autosave in this version.")
         }
         updateChangeCount(.changeCleared)
+        noteUnsignedBackgrounds(in: model)
+    }
+
+    /// Non-blocking notice above the canvas when the saved project uses WizRec backgrounds.
+    private func noteUnsignedBackgrounds(in model: EditorDocumentModel) {
+        guard let wc = windowControllers.lazy.compactMap({ $0 as? EditorWindowController }).first else { return }
+        let enabled = AppPreferences.load(from: .standard).warnUnsignedBackgrounds
+        guard enabled, !backgroundNotice.wasShown, !wc.options.isScripted else { return }
+        let names = BackgroundSaveNotice.unsignedBackgrounds(in: model.bundle)
+        if backgroundNotice.shouldShow(unsignedBackgrounds: names, scripted: wc.options.isScripted, enabled: enabled) {
+            wc.ui.show(BackgroundSaveNotice.text, seconds: 12)
+        }
     }
 
     override func data(ofType typeName: String) throws -> Data { throw Self.error("Use Save.") }

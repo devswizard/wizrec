@@ -610,6 +610,9 @@
     "Skip frames, show nearest while seeking" : {
 
     },
+    "Skip silences (voice activity detection)" : {
+
+    },
     "Slides" : {
 
     },
@@ -705,6 +708,9 @@
     "Updates are not configured in this build." : {
 
     },
+    "Uses %arg from the models folder." : {
+
+    },
     "View" : {
 
     },
@@ -714,6 +720,9 @@
     "Welcome to WizRec" : {
 
     },
+    "When saving, say that Camtasia won't show WizRec backgrounds" : {
+
+    },
     "Whole timeline" : {
 
     },
@@ -721,6 +730,9 @@
 
     },
     "Wipes" : {
+
+    },
+    "Without a Silero VAD model (ggml-silero-*.bin) in the models folder, silences are detected from the audio level." : {
 
     },
     "WizRec" : {

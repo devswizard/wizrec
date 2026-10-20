@@ -108,6 +108,22 @@ private let tb = Timebase.camtasia
         #expect(o.quitAfter == 8)
     }
 
+    /// `-Key value` argument-domain defaults (UI checks set the export folder this way) are not
+    /// project paths.
+    @Test func skipsArgumentDomainDefaults() {
+        let o = LaunchOptions(arguments: ["-WizRec.ExportFolder", "/tmp/out", "p.cmproj", "-WizRec.Model", "",
+                                          "-psn_0_1", "q.cmproj"])
+        #expect(o.paths == ["p.cmproj", "q.cmproj"])
+        #expect(!o.isScripted)
+    }
+
+    @Test func groupDropIsAScriptedStep() {
+        let o = LaunchOptions(arguments: ["p.cmproj", "--group-drop", "a.mp4", "--group-drop", "b.png"])
+        #expect(o.groupDropPaths == ["a.mp4", "b.png"] && o.paths == ["p.cmproj"])
+        #expect(o.runsScript && o.isScripted)
+        #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+    }
+
     /// Scripted and timed runs never wait for the user: no relink sheet at open.
     @Test func scriptedRunsSkipTheRelinkSheet() {
         let user = LaunchOptions(arguments: ["p.cmproj", "--autoplay"])

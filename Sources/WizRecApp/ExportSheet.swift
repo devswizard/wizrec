@@ -62,10 +62,11 @@ struct ExportSheet: View {
             if !queue.jobs.isEmpty { jobs }
             HStack {
                 if queue.isRunning {
-                    Button("Cancel All") { queue.cancelAll() }
+                    Button("Cancel All") { queue.cancelAll() }.accessibilityIdentifier("export.cancelAll")
                 }
                 Spacer()
                 Button("Close", action: close).keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("export.close")
                 Button("Export") {
                     export(ExportRequest(presets: presets.filter { state.selected.contains($0.name) },
                                          scope: hasSelection ? state.scope : .timeline,
@@ -74,6 +75,7 @@ struct ExportSheet: View {
                                          gifDither: state.gifDither, gifLoop: state.gifLoop))
                 }
                 .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("export.start")
                 .disabled(state.selected.isEmpty || presets.isEmpty)
             }
         }
@@ -94,6 +96,7 @@ struct ExportSheet: View {
                             get: { state.selected.contains(p.name) },
                             set: { on in if on { state.selected.insert(p.name) } else { state.selected.remove(p.name) } }))
                             .toggleStyle(.checkbox)
+                            .accessibilityIdentifier("export.preset.\(p.name)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

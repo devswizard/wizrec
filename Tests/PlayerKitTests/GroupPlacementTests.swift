@@ -54,6 +54,50 @@ import TimelineEngine
         #expect(doc.project.serialized() == before)
     }
 
+    /// The UI check's scenario on a Camtasia-authored group (demo fixture, group 4 with three full
+    /// inner tracks): a file dropped on inner track 0 after its last clip is imported, nested in
+    /// the group (which grows to show it), saved and reopened; top-level clips are unchanged.
+    @Test func dropAfterLastClipOfCamtasiaGroupGrowsItAndSurvivesSave() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-groupdrop-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bundle = dir.appendingPathComponent("demo.cmproj")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: Self.fixture, to: bundle.appendingPathComponent("project.tscproj"))
+        let png = dir.appendingPathComponent("dropped.png")
+        try MediaWriter.writePNG(to: png, width: 64, height: 36) { ctx in
+            ctx.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 36))
+        }
+        let doc = try EditorDocumentModel(url: bundle)
+        let group = try #require(doc.project.tracks.flatMap(\.clips).first { $0.kind == .group })
+        let topLevel = doc.project.tracks.map { $0.clips.map(\.id) }
+        let innerEnd = try #require(group.tracks.first?.clips.map(\.end).max())
+        let before = doc.project.serialized()
+
+        let ids = try await doc.placeInGroup(.files([png]), group: group.id, track: 0, at: innerEnd)
+        let id = try #require(ids.first)
+        let g2 = try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == group.id })
+        let placed = try #require(g2.tracks.first?.clips.first { $0.id == id })
+        #expect(placed.start == innerEnd)
+        #expect(g2.duration > group.duration)
+        #expect(doc.project.tracks.map { $0.clips.map(\.id) } == topLevel)
+        #expect(doc.project.sourceBin.count == 3)
+
+        try doc.save()
+        let reopened = try EditorDocumentModel(url: bundle)
+        let g3 = try #require(reopened.project.tracks.flatMap(\.clips).first { $0.id == group.id })
+        #expect(g3.tracks.first?.clips.contains { $0.id == id } == true)
+        #expect(reopened.project.sourceBin.count == 3)
+
+        try doc.undoLast()
+        #expect(doc.project.serialized() == before)
+    }
+
+    static let fixture = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("TSCProjKitTests/Fixtures/demo.tscproj")
+
     private func nestedStarts(_ ids: [Int64], in doc: EditorDocumentModel) -> [Int64] {
         var out: [Int64: Int64] = [:]
         for t in doc.project.tracks {

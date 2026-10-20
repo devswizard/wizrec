@@ -42,6 +42,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
     private var recorderHUD: RecorderHUDController?
+    /// The last media drop into an open group while it imports and places (`placeInGroup`).
+    private var groupDrop: Task<Void, Never>?
     /// Playhead (ticks) when the current recording started; the result is placed there.
     private var recordingStart: Int64 = 0
     /// The running transcription (Captions ▸ Transcribe); cancel with Captions ▸ Cancel.
@@ -431,7 +433,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// the group's inner track one after another (one undo step).
     func placeInGroup(_ items: EditorDocumentModel.GroupPlacement, _ target: GroupDropTarget) {
         if case .files = items { ui.isImporting = true }
-        Task {
+        groupDrop = Task {
             defer { ui.isImporting = false }
             do {
                 let ids = try await model.placeInGroup(items, group: target.group, track: target.track, at: target.ticks)
@@ -562,6 +564,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     // MARK: Script (verification without UI interaction)
 
+    /// `--group-drop` files: opens the first top-level group (as a double-click does) and hands
+    /// the files to the timeline's group-drop handler on inner track 0, after its last clip.
+    private func runScriptedGroupDrops() async {
+        let urls = options.groupDropPaths.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        guard !urls.isEmpty else { return }
+        guard let group = model.project.tracks.flatMap(\.clips).first(where: { $0.kind == .group }) else {
+            print("script: group drop: no group on the timeline")
+            return
+        }
+        timelineModel.openGroups = [group.id]
+        let end = group.tracks.first?.clips.map(\.end).max() ?? 0
+        let target = GroupDropTarget(group: group.id, groupPath: [group.id], track: 0, ticks: end)
+        let accepted = timelineModel.onGroupDrop?(.files(urls), target) ?? false
+        await groupDrop?.value
+        let inner = model.project.tracks.flatMap(\.clips).first { $0.id == group.id }?.tracks.first?.clips.count ?? 0
+        print("script: group drop into \(group.id) accepted=\(accepted) innerTrack0Clips=\(inner) "
+              + "selection=\(timelineModel.selection.sorted()) message=\(ui.message ?? "none")")
+    }
+
     /// `--import` files (placed at the playhead), `--nudge` the result, `--save`, then
     /// snapshots at `--snapshot-at` times into `--snapshot-dir`.
     private func runScript() async {
@@ -576,6 +597,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 print("script: import \(url.lastPathComponent) failed: \(Self.describe(error))")
             }
         }
+        await runScriptedGroupDrops()
         if let n = options.nudge, let id = timelineModel.selection.first, let i = inspection(of: id) {
             let x = (i.values[.positionX] ?? 0) + n.x, y = (i.values[.positionY] ?? 0) + n.y
             run("Move") { try model.set(i.changes(.positionX, x) + i.changes(.positionY, y)) }
