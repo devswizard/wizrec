@@ -92,7 +92,7 @@ enum DynamicCaptionText {
             var asc: CGFloat = 0, desc: CGFloat = 0
             _ = CTLineGetTypographicBounds(line, &asc, &desc, nil)
             let base = rect.minY + origins[i].y
-            return (CGRect(x: rect.minX + origins[i].x + x0, y: base - desc, width: x1 - x0, height: asc + desc), base)
+            return (CGRect(x: rect.minX + origins[i].x + x0, y: base - desc, width: x1 - x0, height: asc + desc), Double(base))
         }
         return nil
     }
