@@ -49,6 +49,43 @@ on the canvas). One copy sits at the canvas centre on track 1; the other is
 - **Group parameters.** Only the re-centring offset appears, plus
   `volume` = 1.0 [obs]. Metadata has `isOpen` set to false [obs].
 
+### 1a. Key layout of a new group (X3 saves, answers to an implementer question)
+
+All of the following is [obs] in Camtasia's first save after *Group*, and
+unchanged after the scale/position edit.
+
+- **Group object key order:** `id`, `_type`, `parameters`, `tracks`,
+  `attributes`, `effects`, `start`, `duration`, `mediaStart`,
+  `mediaDuration`, `scalar`, `metadata`, `animationTracks`.
+- **`assetProperties`** sits **inside `attributes`**, as its last key:
+  `ident`, `widthAttr`, `heightAttr`, `maxDurationAttr`, `gain`,
+  `mixToMono`, `assetProperties` (an empty list).
+- **Group `parameters`**:
+  - Every value is a **bare number** (short form), not the long object form.
+  - Order: the re-centring offset `translation0` first, then
+    `geometryCrop0`…`geometryCrop3` (bare 0.0), then `volume` (1.0).
+  - After the group's scale was set, the order became `translation0`,
+    `scale0`, `scale1`, then the four geometry crops, then `volume`.
+- **Member `parameters`**:
+  - Every value is also a **bare number**, including the new `translation0`.
+  - Camtasia writes them in its own canonical order, whatever order the input
+    file used: `translation0`, `scale0`, `scale1`, then
+    `geometryCrop0`…`geometryCrop3`.
+  - The WizRec input had `sourceCrop0..3`, `geometryCrop0..3`, `scale0`,
+    `scale1`, `translation0`, all in the long form. Camtasia dropped the zero
+    source crops, put `translation0` first and wrote everything short.
+  - For the member that had **no** `translation0` before (it was at x 0),
+    the new key was likewise placed first [obs].
+  - The general rule is that Camtasia re-serialises the parameter map in a
+    fixed key order: translation, then rotation, then scale, opacity, crops,
+    then the rest [inf]. The exact order of keys not seen here (rotation,
+    opacity) is [?]. `transform.md` §defaults lists the order seen in user
+    projects.
+- **Inner track key order:** `trackIndex`, `medias`, `parameters`, `ident`,
+  `audioMuted`, `videoHidden`, `magnetic`, `matte`, `solo`.
+- **When the short form changes.** Only after a *Cut/Paste* (§3) does
+  Camtasia write the long form for all of these.
+
 ## 2. Changing the group's transform (Properties panel)
 
 - **Scale.** Setting the group's scale to 50 % writes the group's own
