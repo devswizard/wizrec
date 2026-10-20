@@ -83,18 +83,38 @@ public enum MediaWriter {
         AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
     ] }
 
-    /// One encode at a time, process-wide. On GitHub's 3-core macOS VMs, several writers
-    /// finishing at once (parallel tests) never got their `finishWriting` callback, and the
-    /// blocked threads (the main thread among them) stalled the whole test run.
-    private static let encodeLock = NSLock()
-    /// Longest wait for the input to take a frame, and for `finishWriting` (seconds).
+    /// One encode at a time, process-wide (re-entrant: a main-thread wait below can run another
+    /// main-actor test that writes media on the same thread).
+    private static let encodeLock = NSRecursiveLock()
+    /// Longest waits (seconds): for the encode lock, for the input to take a frame, and for
+    /// `finishWriting`.
+    private static let lockTimeout: TimeInterval = 600
     private static let readyTimeout: TimeInterval = 60
     private static let finishTimeout: TimeInterval = 120
+
+    /// Waits until `condition` holds or `timeout` seconds pass; false on timeout. The main thread
+    /// never blocks here: it keeps its run loop turning. On GitHub's macOS VMs `AVAssetWriter`
+    /// needed the main thread to finish a file, so a main thread blocked in a writer (or on
+    /// `encodeLock`) deadlocked the whole test run.
+    private static func wait(_ timeout: TimeInterval, until condition: () -> Bool) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while !condition() {
+            if Date() > deadline { return false }
+            if Thread.isMainThread {
+                _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
+            } else {
+                Thread.sleep(forTimeInterval: 0.001)
+            }
+        }
+        return true
+    }
 
     private static func writeMovie(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,
                                    height: Int, fps: Int, frameCount: Int,
                                    draw: (Int, CGContext) -> Void) throws -> MovieInfo {
-        encodeLock.lock()
+        guard wait(lockTimeout, until: { encodeLock.try() }) else {
+            throw MediaWriterError.writeFailed("another encode held the media writer for \(Int(lockTimeout)) s")
+        }
         defer { encodeLock.unlock() }
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
@@ -118,14 +138,10 @@ public enum MediaWriter {
         writer.startSession(atSourceTime: .zero)
 
         for n in 0..<frameCount {
-            let readyBy = Date(timeIntervalSinceNow: readyTimeout)
-            while !input.isReadyForMoreMediaData {
-                if writer.status == .failed { break }
-                if Date() > readyBy {
-                    writer.cancelWriting()
-                    throw MediaWriterError.writeFailed("input not ready for frame \(n) after \(Int(readyTimeout)) s")
-                }
-                Thread.sleep(forTimeInterval: 0.001)
+            let ready = wait(readyTimeout) { input.isReadyForMoreMediaData || writer.status == .failed }
+            guard ready else {
+                writer.cancelWriting()
+                throw MediaWriterError.writeFailed("input not ready for frame \(n) after \(Int(readyTimeout)) s")
             }
             guard writer.status == .writing else { break }
             guard let pool = adaptor.pixelBufferPool else { throw MediaWriterError.setup("no pixel buffer pool") }
@@ -158,7 +174,7 @@ public enum MediaWriter {
         writer.endSession(atSourceTime: CMTime(value: CMTimeValue(frameCount) * 1000, timescale: CMTimeScale(timescale)))
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
-        if done.wait(timeout: .now() + finishTimeout) == .timedOut {
+        if !wait(finishTimeout, until: { done.wait(timeout: .now()) == .success }) {
             writer.cancelWriting()
             throw MediaWriterError.writeFailed("finishWriting gave no answer after \(Int(finishTimeout)) s "
                                                + "(writer status \(writer.status.rawValue))")
