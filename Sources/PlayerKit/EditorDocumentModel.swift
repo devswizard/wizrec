@@ -181,8 +181,18 @@ public final class EditorDocumentModel {
         public var value: Double
         /// Clip media time (ticks) of the keyframe to set, or nil for a constant.
         public var keyframeAt: Int64?
+        /// True for a shader background's `sourceEffect` parameter (`SetSourceEffectParameters`)
+        /// rather than the clip's own `parameters`.
+        public var isSourceEffect = false
         public init(clipID: Int64, _ name: String, _ value: Double, keyframeAt: Int64? = nil) {
             self.clipID = clipID; self.name = name; self.value = value; self.keyframeAt = keyframeAt
+        }
+
+        /// A shader background `sourceEffect` change (`ShaderInspection.changes`).
+        public static func sourceEffect(clipID: Int64, _ change: SourceEffectChange) -> ParameterChange {
+            var c = ParameterChange(clipID: clipID, change.name, change.value, keyframeAt: change.keyframeAt)
+            c.isSourceEffect = true
+            return c
         }
     }
 
@@ -226,7 +236,17 @@ public final class EditorDocumentModel {
 
     private static func command(for changes: [ParameterChange]) -> any EditCommand {
         // Volume keyframes are audio points: Camtasia's point shape, not eased windows.
-        let steps: [any EditCommand] = changes.map { ch in
+        var steps: [any EditCommand] = []
+        // Background parameters of one clip go in one SetSourceEffectParameters (e.g. a colour's 4 channels).
+        var clips: [Int64] = []
+        for ch in changes where ch.isSourceEffect && !clips.contains(ch.clipID) { clips.append(ch.clipID) }
+        for id in clips {
+            let mine: [SourceEffectChange] = changes.filter { $0.isSourceEffect && $0.clipID == id }.map {
+                SourceEffectChange($0.name, $0.value, keyframeAt: $0.keyframeAt)
+            }
+            steps.append(SetSourceEffectParameters(clipID: id, changes: mine))
+        }
+        steps += changes.filter { !$0.isSourceEffect }.map { (ch: ParameterChange) -> any EditCommand in
             if ch.name == "volume", let at = ch.keyframeAt {
                 return SetVolumePoint(clipID: ch.clipID, at: at, value: ch.value)
             }

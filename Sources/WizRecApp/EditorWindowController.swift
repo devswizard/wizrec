@@ -168,7 +168,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             commit: { [weak self] in self?.commitPreview() },
             set: { [weak self] f, v in self?.setField(f, v) },
             setSpeed: { [weak self] v in self?.setSpeed(v) },
-            setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) })))
+            setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) },
+            previewBackground: { [weak self] n, v in self?.previewBackground(n, v) },
+            setBackground: { [weak self] n, v in self?.setBackground(n, v) })))
         bin.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         props.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
@@ -345,6 +347,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let changes = i.changes(f, v)
         guard !changes.isEmpty else { return }
         run("Change property") { try model.set(changes) }
+    }
+
+    /// Live shader background parameter values from the inspector (no undo step yet).
+    private func previewBackground(_ name: String, _ values: [Double]) {
+        guard let s = inspector.inspection?.shader else { return }
+        preview(s.parameterChanges(name, values))
+    }
+
+    /// Shader background parameter values from the inspector: one undo step ("Change Background").
+    private func setBackground(_ name: String, _ values: [Double]) {
+        guard let s = inspector.inspection?.shader else { return }
+        let changes = s.parameterChanges(name, values)
+        guard !changes.isEmpty else { return }
+        run("Change background") { try model.set(changes) }
     }
 
     /// Clip speed from the inspector, as an exact rational (percent precision); later clips ripple.
