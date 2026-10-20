@@ -58,8 +58,9 @@ final class FrameConverter {
     private var sws: UnsafeMutablePointer<SwsContext>?
     private var swsKey: [Int32] = []
     /// One context per row band for parallel same-size conversion, and their key.
-    private var bandSws: [UnsafeMutablePointer<SwsContext>] = []
-    private var bandKey: [Int32] = []
+    private let rgbBands = BandedSws()
+    /// Banded resampling of HDR pictures with no bi-planar equivalent (e.g. ProRes 4444).
+    private let hdrBands = BandedSws()
     private var transfer: VTPixelTransferSession?
     /// Codec of the stream; picks the default matrix for untagged frames.
     private let codecID: AVCodecID
@@ -130,7 +131,6 @@ final class FrameConverter {
 
     deinit {
         if let s = sws { sws_freeContext(s) }
-        for c in bandSws { sws_freeContext(c) }
         if let t = transfer { VTPixelTransferSessionInvalidate(t) }
         if let s = hdrSws { sws_freeContext(s) }
         if hdrFrame != nil { av_frame_free(&hdrFrame) }
@@ -230,8 +230,22 @@ final class FrameConverter {
             guard av_frame_get_buffer(f, 0) >= 0 else { throw MediaError.decodeFailed("av_frame_get_buffer") }
         }
         guard let out = hdrFrame else { throw MediaError.decodeFailed("no HDR resample frame") }
+        let flags = Int32(SWS_BILINEAR.rawValue | SWS_ACCURATE_RND.rawValue)
+        if swsBanding, let bands = Self.swsBands(format: frame.pointee.format, width: Int(w), height: Int(h),
+                                                  cores: ProcessInfo.processInfo.activeProcessorCount) {
+            let o = out.pointee.data, ol = out.pointee.linesize
+            let dst: [(UInt, Int)] = [(o.0, ol.0), (o.1, ol.1), (o.2, ol.2)].map { (UInt(bitPattern: $0.0), Int($0.1)) }
+            let src = AVPixelFormat(frame.pointee.format)
+            try hdrBands.run(frame, bands: bands, key: [w, h, frame.pointee.format], dst: dst) { rows in
+                guard let c = sws_getCachedContext(nil, w, Int32(rows), src, w, Int32(rows), target, flags, nil, nil, nil)
+                else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(src.rawValue)") }
+                return c
+            }
+            guard let staged = try stage(out) else { throw MediaError.decodeFailed("HDR resample staging failed") }
+            return staged
+        }
         hdrSws = sws_getCachedContext(hdrSws, w, h, AVPixelFormat(frame.pointee.format), w, h, target,
-                                      Int32(SWS_BILINEAR.rawValue | SWS_ACCURATE_RND.rawValue), nil, nil, nil)
+                                      flags, nil, nil, nil)
         guard let s = hdrSws else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(frame.pointee.format)") }
         let rc = withUnsafePointer(to: frame.pointee.data) { dp in
             dp.withMemoryRebound(to: UnsafePointer<UInt8>?.self, capacity: 8) { srcData in
@@ -390,50 +404,13 @@ final class FrameConverter {
     private func convertBanded(_ frame: UnsafeMutablePointer<AVFrame>, bands: [Range<Int>], key: [Int32],
                                into dst: CVPixelBuffer) throws {
         let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
-        let fullKey = key + bands.map { Int32($0.count) }
-        if bandKey != fullKey {
-            for c in bandSws { sws_freeContext(c) }
-            bandSws = []
-            bandKey = []
-            for b in bands {
-                bandSws.append(try makeSws(frame, width: w, height: b.count, outWidth: w, outHeight: b.count,
-                                           matrixHeight: h, reusing: nil))
-            }
-            bandKey = fullKey
-        }
         CVPixelBufferLockBaseAddress(dst, [])
         defer { CVPixelBufferUnlockBaseAddress(dst, []) }
         guard let base = CVPixelBufferGetBaseAddress(dst) else { throw MediaError.decodeFailed("pixel buffer has no memory") }
-        let dstStride = CVPixelBufferGetBytesPerRow(dst)
-        let planes = Int(av_pix_fmt_count_planes(AVPixelFormat(frame.pointee.format)))
-        guard planes > 0, planes <= 4 else { throw MediaError.decodeFailed("unexpected plane count \(planes)") }
-        // Addresses cross into the workers as integers (pointers are not Sendable); the frame and
-        // the locked destination outlive `concurrentPerform`.
-        let d = frame.pointee.data, l = frame.pointee.linesize
-        let srcBase: [UInt] = [d.0, d.1, d.2, d.3].prefix(planes).map { $0.map { UInt(bitPattern: $0) } ?? 0 }
-        let srcStride: [Int] = [l.0, l.1, l.2, l.3].prefix(planes).map(Int.init)
-        guard !srcBase.contains(0) else { throw MediaError.decodeFailed("software frame without planes") }
-        let ctxs = bandSws.map { UInt(bitPattern: $0) }
-        let dstBase = UInt(bitPattern: base)
-        let results = UnsafeMutableBufferPointer<Int32>.allocate(capacity: bands.count)
-        defer { results.deallocate() }
-        results.initialize(repeating: 0)
-        let resultBase = UInt(bitPattern: results.baseAddress)
-        DispatchQueue.concurrentPerform(iterations: bands.count) { i in
-            let rows = bands[i]
-            guard let ctx = UnsafeMutablePointer<SwsContext>(bitPattern: ctxs[i]),
-                  let rc = UnsafeMutablePointer<Int32>(bitPattern: resultBase + UInt(i * 4)) else { return }
-            // No vertical chroma subsampling: every plane advances one line per row.
-            let src: [UnsafePointer<UInt8>?] = (0..<4).map { p in
-                p < planes ? UnsafePointer<UInt8>(bitPattern: srcBase[p] + UInt(rows.lowerBound * srcStride[p])) : nil
-            }
-            let srcStrides: [Int32] = (0..<4).map { p in p < planes ? Int32(srcStride[p]) : 0 }
-            var out: [UnsafeMutablePointer<UInt8>?] = [
-                UnsafeMutablePointer<UInt8>(bitPattern: dstBase + UInt(rows.lowerBound * dstStride)), nil, nil, nil]
-            var outStrides: [Int32] = [Int32(dstStride), 0, 0, 0]
-            rc.pointee = sws_scale(ctx, src, srcStrides, 0, Int32(rows.count), &out, &outStrides)
+        try rgbBands.run(frame, bands: bands, key: key,
+                         dst: [(UInt(bitPattern: base), CVPixelBufferGetBytesPerRow(dst))]) { rows in
+            try makeSws(frame, width: w, height: rows, outWidth: w, outHeight: rows, matrixHeight: h, reusing: nil)
         }
-        guard results.allSatisfy({ $0 > 0 }) else { throw MediaError.decodeFailed("sws_scale failed in a band") }
     }
 
     private func convertSoftware(_ frame: UnsafeMutablePointer<AVFrame>, width w: Int, height h: Int,

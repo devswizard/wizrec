@@ -87,6 +87,34 @@ import Testing
         #expect(Self.bytes(try banded.convert(frame)) == a)
     }
 
+    /// HDR pictures with no bi-planar equivalent are resampled to 4:4:4 10-bit before tone
+    /// mapping; the banded resample gives the same tone-mapped bytes.
+    @Test(arguments: [AV_PIX_FMT_YUVA444P12LE, AV_PIX_FMT_YUV422P12LE])
+    func hdrResampleBandedEqualsOnePass(_ format: AVPixelFormat) throws {
+        let c = Case(format: format, width: 1280, height: 723)
+        var f: UnsafeMutablePointer<AVFrame>? = try Self.makeFrame(c)
+        defer { av_frame_free(&f) }
+        let frame = try #require(f)
+        var par: UnsafeMutablePointer<AVCodecParameters>? = avcodec_parameters_alloc()
+        defer { avcodec_parameters_free(&par) }
+        let p = try #require(par)
+        p.pointee.codec_type = AVMEDIA_TYPE_VIDEO
+        p.pointee.codec_id = AV_CODEC_ID_PRORES
+        p.pointee.format = format.rawValue
+        p.pointee.width = Int32(c.width); p.pointee.height = Int32(c.height)
+        p.pointee.color_trc = AVCOL_TRC_SMPTE2084
+        p.pointee.color_space = AVCOL_SPC_BT2020_NCL
+        p.pointee.color_primaries = AVCOL_PRI_BT2020
+        let one = FrameConverter(par: p), banded = FrameConverter(par: p)
+        #expect(one.isHDR)
+        one.swsBanding = false
+        banded.swsBanding = true
+        let a = Self.bytes(try one.convert(frame))
+        let b = Self.bytes(try banded.convert(frame))
+        #expect(a.count == c.width * c.height * 4)
+        #expect(zip(a, b).filter { $0 != $1 }.count == 0)
+    }
+
     @Test func bandsCoverRowsOnDitherPeriod() throws {
         for h in [720, 723, 1080, 2160, 4320] {
             let bands = try #require(FrameConverter.swsBands(format: AV_PIX_FMT_YUVA444P12LE.rawValue, width: 3840, height: h, cores: 11))
