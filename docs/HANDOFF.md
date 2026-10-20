@@ -89,7 +89,14 @@ This is for the **lead session** that continues the WizRec build. Read
   - Sparkle appcast (GitHub Pages) once the user has keys;
   - local `agent/*` branches and `backup/pre-coauthor-strip` hold old
     history: never push; delete only with the user's OK;
-  - remove finished session-7 worktrees at session start.
+  - save-only Camtasia experiments (researcher, GUI lock) for the open [?]
+    rules: copy/paste inside groups (DECISIONS, 4 items) and shader origin
+    metadata (shader-backgrounds.md §11, 3 items);
+  - VoiceOver pass on the library tiles (user);
+  - local `agent/*` and `backup/pre-coauthor-strip` branches: delete only
+    with the user's OK (all work is merged; they hold old history).
+- **Session 7 ended with:** CI run 19 green on `7a32d7b`; no open branches
+  or worktrees; v0.1.0 a draft for the user to publish.
 - **NEED_USER:**
   1. Licensed reference exports (or activate this Camtasia).
   2. Sparkle feed host + one `generate_keys` run.
@@ -404,13 +411,17 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
 ## 4. Team setup for the next session
 
 - **Roster:** at most about 8 concurrent agents (load hit ~50 with 8 in
-  session 5; LoadGate absorbed it). Session 8: qa always; ship for the
-  v0.1.0 check and Sparkle once the feed exists; render + researcher + qa
-  when licensed references arrive (golden parity, calibration, looks);
-  researcher for manual-only checks only with the user. Agent branches next:
-  `agent/<name>11`.
+  session 5; LoadGate absorbed it). Session 8 plan (tasks in
+  `docs/NEXT_SESSION_PROMPT.md` "PENDING WORK → AGENTS"): export (bounded
+  AVFoundation waits in product code), app (main-thread GPU wait, multi-doc
+  quit, Swift 6.3 spots), qa (bounded reader loops, CI time, integration),
+  ship (rpath strip, public v0.1.0 check, Sparkle only with keys), researcher
+  (save-only experiments for the open [?] rules); timeline only if those
+  answers change a rule; render/audio/captions only with licensed exports.
+  Agent branches next: `agent/<name>11`.
 - **Toolchains:** local `swift` stays Xcode's 6.4. After any swiftly
-  install, run `swiftly use xcode`; reach 6.3.3 only through
+  install, run `swiftly use --global-default xcode` (plain `swiftly use`
+  writes a per-project `.swift-version`); reach 6.3.3 only through
   `swiftly run … +6.3.3` (recipe in AGENT_BRIEF / DECISIONS).
 - **Stopped agents:** an agent the user stops cannot be resumed. Spawn a
   replacement on `agent/<name>N+1` from the old branch and copy the old
