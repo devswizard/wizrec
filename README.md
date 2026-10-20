@@ -42,10 +42,14 @@ Nothing else: no Xcode, no Homebrew. FFmpeg and everything WizRec needs are insi
 1. Download the latest **WizRec-x.y.z.dmg** from
    [Releases](https://github.com/devswizard/wizrec/releases).
 2. Open the DMG and drag **WizRec** into **Applications**.
-3. First launch only: right-click **WizRec** in Applications ▸ **Open** ▸ **Open**.
-   WizRec is free and not notarized by Apple, so macOS asks this once. If it only
-   offers *Move to Trash*, go to **System Settings ▸ Privacy & Security** and click
-   **Open Anyway**.
+3. First launch only: right-click (or Control-click) **WizRec** in Applications ▸
+   **Open** ▸ **Open**. WizRec is free and not notarized by Apple, so macOS asks this
+   once. If it only offers *Move to Trash*, go to **System Settings ▸ Privacy &
+   Security**, scroll down and click **Open Anyway** next to WizRec.
+
+Optional: check the download with `shasum -a 256 -c SHA256SUMS.txt` (from the same
+release) in the folder that holds both files. WizRec does not update itself yet; new
+versions appear on the Releases page.
 
 To record, allow **Screen & System Audio Recording**, **Camera** and **Microphone**
 when macOS asks.
