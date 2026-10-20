@@ -54,6 +54,23 @@ private func transitionParts(_ l: Layer?) -> (TransitionInstance, Layer?, Layer?
         #expect(scene.evaluate(at: 4 * s).frameRequests.count == 2)
     }
 
+    @Test func parametersComeFromAttributes() throws {
+        // TR3: shader parameters are plain constants in `attributes`, next to the flags; colours split
+        // into -red/-green/-blue (FadeThroughBlack) [obs].
+        var t = transition("Accordion", duration: 2 * s, left: 10, right: 11)
+        t["attributes"] = ["FlipX": true, "Number": 4.0, "Color-red": 0.5, "bypass": false, "reverse": false]
+        let (inst, _, _) = try #require(transitionParts(try cutProject([t]).evaluate(at: 4 * s).layers.first))
+        #expect(inst.parameters["FlipX"] == 1 && inst.parameters["Number"] == 4 && inst.parameters["Color-red"] == 0.5)
+        // A `parameters` object still overrides.
+        t["parameters"] = ["Number": 6.0]
+        let (inst2, _, _) = try #require(transitionParts(try cutProject([t]).evaluate(at: 4 * s).layers.first))
+        #expect(inst2.parameters["Number"] == 6 && inst2.parameters["FlipX"] == 1)
+    }
+
+    @Test func panelFadeNameHasItsOwnRenderer() {
+        #expect(TransitionRegistry.names.isSuperset(of: ["LuminanceFadeIn", "FadeThroughBlack", "CubeRotate", "RadialWipe"]))
+    }
+
     @Test func oneSidedWindows() throws {
         let scene = try cutProject([transition(duration: 1 * s, right: 10), transition(duration: 1 * s, left: 11)])
         // Fade in on clip 10: [0, 1 s).

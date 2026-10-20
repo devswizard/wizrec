@@ -8,7 +8,8 @@ import Foundation
 /// sample values only; the exact look waits on experiment CA2, and every proportion sits in `Spec`.
 /// Coordinates: callout px, origin at the box centre, +y up.
 ///
-/// - Size: the base `font.size`, shrunk until the block fits the box (`resize-behavior` [?]).
+/// - Size: the base size (`textAttributes` run size for `resize-behavior: "resizeCallout"` [obs CA2], else
+///   `font.size`), shrunk until the block fits the box.
 /// - Words: past at `past-word-opacity`, future at `future-word-opacity`; the current word in
 ///   `current-word-color` with an outline widened by `current-word-stroke-extra-width` in
 ///   `current-word-stroke-color`, scaled by `1 + current-word-extra-scale`, with a glow of
@@ -53,7 +54,9 @@ enum DynamicCaptionText {
         return x
     }
 
-    /// The content at its fitted size and the frame rect its text is laid out in.
+    /// The content at its fitted size and the frame rect its text is laid out in. Fitting starts from
+    /// `c.fontSize`, the caption's base size (run size for `"resizeCallout"` presets [obs CA2]); the
+    /// font name comes from the block run (the `textAttributes` runs), over `c.fontName`.
     static func fit(_ c: CalloutContent, box: CGRect) -> (content: CalloutContent, rect: CGRect) {
         var size = max(c.fontSize, 1)
         var cc = sized(c, size)

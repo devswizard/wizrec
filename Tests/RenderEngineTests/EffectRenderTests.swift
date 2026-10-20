@@ -224,6 +224,16 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
         let img = try GPUTest.render(plan([Layer(clipID: 2, content: .transition(t, from: a, to: b), size: canvas)],
                                           bg: RGBA(1, 1, 1)), frames: [ra: fa, rb: fb])
         #expect(img.at(96, 54).near(.black, 2))
+        // The colour comes from `Color-red/-green/-blue` (TR2): through blue; a quarter in = half red, half blue.
+        let blue = TransitionInstance(name: "FadeThroughBlack", progress: 0.5, duration: 10,
+                                      parameters: ["Color-red": 0, "Color-green": 0, "Color-blue": 1])
+        let img2 = try GPUTest.render(plan([Layer(clipID: 2, content: .transition(blue, from: a, to: b), size: canvas)]),
+                                      frames: [ra: fa, rb: fb])
+        #expect(img2.at(96, 54).near(Px(r: 0, g: 0, b: 255, a: 255), 2))
+        var quarter = blue; quarter.progress = 0.25
+        let img3 = try GPUTest.render(plan([Layer(clipID: 2, content: .transition(quarter, from: a, to: b), size: canvas)]),
+                                      frames: [ra: fa, rb: fb])
+        #expect(img3.at(96, 54).near(Px(r: 128, g: 0, b: 128, a: 255), 2))
     }
 
     @Test func pooledTexturesAreRecycled() throws {

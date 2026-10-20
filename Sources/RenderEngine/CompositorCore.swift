@@ -184,44 +184,67 @@ final class CompositorCore {
     private func collect(_ layers: [Layer], parent: CGAffineTransform, space: Space,
                          frames: [FrameRequest: VideoFrame], pass: Pass) throws -> [Item] {
         var items: [Item] = []
-        /// Items of the previous layer (the track directly below), for mattes.
-        var below: Range<Int> = 0..<0
+        /// Start index in `items` of each layer drawn so far (bottom first): the tracks below, for mattes.
+        var layerStarts: [Int] = []
         for layer in layers {
             let start = items.count
-            // Passes that rebuild the item list (backdrops) leave only their own last item as "the layer".
-            defer { below = start <= items.count ? start..<items.count : max(items.count - 1, 0)..<items.count }
+            /// Set by passes that rebuild the item list (backdrops).
+            var rebuilt: [Int]?
+            defer {
+                if let r = rebuilt {
+                    layerStarts = r
+                } else if items.count > start {
+                    layerStarts.append(start)
+                } else if items.count < start {
+                    // A pass replaced the list: what is left counts as one layer, its last item as this one.
+                    layerStarts = items.count >= 2 ? [0, items.count - 1] : (items.isEmpty ? [] : [0])
+                }
+            }
             let m = layer.transform.concatenating(parent)
             let toNDC = m.concatenating(space.toNDC)
 
             if let matte = layer.effects.first(where: { $0.name == MediaMatteSpec.name && !$0.bypassed }) {
-                // The matte masks the track below and is not drawn itself [MediaMatte.md].
-                guard !below.isEmpty else { continue }
-                let content = Array(items[below])
-                items.removeSubrange(below)
+                // The matte masks `trackDepth` tracks below and is not drawn itself [MediaMatte.md].
+                let depth = MediaMatteSpec.trackDepth(matte)
+                let lower = depth >= layerStarts.count ? (layerStarts.first ?? items.count)
+                    : layerStarts[layerStarts.count - depth]
+                guard lower < items.count else { continue }
+                let content = Array(items[lower...])
+                items.removeSubrange(lower...)
                 var matteLayer = layer
                 matteLayer.effects.removeAll { $0.name == MediaMatteSpec.name }
                 matteLayer.opacity = 1
-                let c = try backdropTexture(content, space: space, clear: false, pass: pass)
-                let mt = try backdropTexture(try collect([matteLayer], parent: parent, space: space, frames: frames,
-                                                         pass: pass), space: space, clear: false, pass: pass)
                 let mode = MediaMatteSpec.mode(matte)
-                items.append(Item(fill: .pass("matte_fs", [c, mt], SIMD4(mode.luminosity ? 1 : 0, mode.inverted ? 1 : 0,
-                                                                         Float(MediaMatteSpec.intensity(matte)), 0)),
-                                  quad: Self.fullPassQuad))
+                items.append(try matteItem(content, matte: matteLayer, luminosity: mode.luminosity, inverted: mode.inverted,
+                                           intensity: MediaMatteSpec.intensity(matte), parent: parent, space: space,
+                                           frames: frames, pass: pass))
+                rebuilt = layerStarts.filter { $0 < lower } + [lower]
                 continue
             }
             if let blend = layer.effects.first(where: { $0.name == BlendModeSpec.name && !$0.bypassed }),
                BlendModeSpec.mode(blend) != .normal, BlendModeSpec.intensity(blend) > 0, layer.opacity > 0 {
                 var plain = layer
                 plain.effects.removeAll { $0.name == BlendModeSpec.name }
+                let mode = BlendModeSpec.mode(blend)
+                if let stencil = mode.stencil {
+                    // Stencil / silhouette: the layer is a matte over everything below in this canvas [inf].
+                    guard !items.isEmpty else { continue }
+                    plain.opacity = 1
+                    let below = items
+                    items = [try matteItem(below, matte: plain, luminosity: stencil.luminosity, inverted: stencil.inverted,
+                                           intensity: BlendModeSpec.intensity(blend) * layer.opacity, parent: parent,
+                                           space: space, frames: frames, pass: pass)]
+                    rebuilt = [0]
+                    continue
+                }
                 if let r = try effectLayer(plain, EffectRegistry.active(plain.effects), m: m, space: space,
                                            frames: frames, pass: pass) {
                     let b = try backdropTexture(items, space: space, clear: true, pass: pass)
                     items = [Item(fill: .texture(b), quad: Self.fullPassQuad)]
                     items.append(Item(fill: .pass("blend_fs", [r.texture, b],
-                                                  SIMD4(Float(BlendModeSpec.mode(blend).rawValue),
-                                                        Float(BlendModeSpec.intensity(blend)), 0, 0)),
+                                                  SIMD4(Float(mode.rawValue), Float(BlendModeSpec.intensity(blend)), 0, 0)),
                                       quad: Self.rectQuad(r.rect, m: toNDC, opacity: layer.opacity)))
+                    rebuilt = [0, 1]
                 }
                 continue
             }
@@ -306,6 +329,19 @@ final class CompositorCore {
             }
         }
         return items
+    }
+
+    /// `content` masked by `matte` (both drawn to pass-sized textures): alpha or luma, optionally
+    /// inverted, mixed with no masking by `intensity` [MediaMatte.md, BlendModeEffect.md stencils].
+    private func matteItem(_ content: [Item], matte: Layer, luminosity: Bool, inverted: Bool, intensity: Double,
+                           parent: CGAffineTransform, space: Space, frames: [FrameRequest: VideoFrame],
+                           pass: Pass) throws -> Item {
+        let c = try backdropTexture(content, space: space, clear: false, pass: pass)
+        let mt = try backdropTexture(try collect([matte], parent: parent, space: space, frames: frames, pass: pass),
+                                     space: space, clear: false, pass: pass)
+        return Item(fill: .pass("matte_fs", [c, mt], SIMD4(luminosity ? 1 : 0, inverted ? 1 : 0,
+                                                           Float(Conventions.clamp01(intensity)), 0)),
+                    quad: Self.fullPassQuad)
     }
 
     /// The layer (with its effects) rendered once in local space, then accumulated at each motion sample with

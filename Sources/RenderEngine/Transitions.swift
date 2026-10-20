@@ -19,6 +19,9 @@ enum TransitionRegistry {
             "Fade": FadeTransition(),
             "Dissolve": FadeTransition(),
             "FadeThroughBlack": FadeThroughBlackTransition(),
+            // The panel's "Fade" is the shader transition `LuminanceFadeIn` [obs, transitions.md TR2]; its
+            // look is [?] until a reference render, so it cross-fades like Fade [inf].
+            "LuminanceFadeIn": FadeTransition(),
         ]
         for t in AssetCatalog.transitions where r[t.name] == nil {
             r[t.name] = GLSLTransition(name: t.name, glsl: t.glsl)
@@ -58,14 +61,17 @@ struct FadeTransition: TransitionRenderer {
     """ }
 }
 
-/// FadeThroughBlack: A → black over the first half, black → B over the second
-/// [transitions.md §6, inf weak]. Black is opaque only where a side has content.
+/// FadeThroughBlack: A → colour over the first half, colour → B over the second
+/// [transitions.md §6, inf weak]. The colour is `Color-red/-green/-blue` in the transition's
+/// `attributes` (0–1, default black, no alpha) [obs, TR2]. Opaque only where a side has content.
 struct FadeThroughBlackTransition: TransitionRenderer {
     func encode(_ t: TransitionInstance, from: (any MTLTexture)?, to: (any MTLTexture)?, size: (Int, Int),
                 gpu: EffectGPU, commandBuffer: any MTLCommandBuffer) throws -> any MTLTexture {
         var fx = Shaders.FX(rect: SIMD4(0, 0, Float(size.0), Float(size.1)), size: SIMD2(Float(size.0), Float(size.1)),
                             scale: 1, rotation: 0)
         fx.set(0, SIMD4(Float(Conventions.clamp01(t.progress)), 0, 0, 0))
+        func ch(_ c: String) -> Float { Float(Conventions.clamp01(t.parameters["Color-" + c] ?? 0)) }
+        fx.set(1, SIMD4(ch("red"), ch("green"), ch("blue"), 1))
         return try gpu.pass("transition_ftb_fs", textures: [from, to], fx: fx, size: size, commandBuffer: commandBuffer)
     }
 
@@ -75,8 +81,8 @@ struct FadeThroughBlackTransition: TransitionRenderer {
                                       sampler smp [[sampler(0)]]) {
         float p = fx.p[0].x;
         float4 c = p < 0.5 ? a.sample(smp, in.uv) : b.sample(smp, in.uv);
-        float k = p < 0.5 ? 1.0 - p * 2.0 : p * 2.0 - 1.0;   // colour weight
-        return float4(c.rgb * k, c.a);
+        float k = p < 0.5 ? 1.0 - p * 2.0 : p * 2.0 - 1.0;   // clip weight; the rest is the colour
+        return float4(c.rgb * k + fx.p[1].rgb * c.a * (1.0 - k), c.a);
     }
     """ }
 }

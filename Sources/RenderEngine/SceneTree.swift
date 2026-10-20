@@ -29,6 +29,9 @@ struct SNode: Sendable {
     indirect enum Body: Sendable {
         case video(url: URL, stream: Int, size: CGSize, cursor: CursorTrack?)
         case image(url: URL, size: CGSize)
+        /// An `IMFile` whose source is a video (Extend Frame, edit-semantics.md ED1): one frame of the
+        /// stream, at media time `at` (ticks), held for the whole clip.
+        case heldFrame(url: URL, stream: Int, size: CGSize, at: Rational)
         case shader(url: URL, parameters: SParams, size: CGSize)
         case audio(url: URL, stream: Int)
         case group(tracks: [STrack], size: CGSize)
@@ -46,10 +49,13 @@ struct SNode: Sendable {
         Conventions.keyframeTime(parent: t, start: start, mediaStart: mediaStart, scalar: scalar, base: keyframeBase)
     }
 
-    /// Constant volume × gain of this clip (keyframes ignored in M1).
+    /// Constant volume × gain of this clip (keyframes ignored in M1). A point envelope (fades) uses
+    /// its loudest point, so a fade-in starting at 0 does not silence the clip [WizRec]; AudioEngine
+    /// mixes the full envelope.
     var constantGain: Double {
-        let v = params["volume"]
-        return gain * (v?.base ?? v?.keys.first?.value ?? 1)
+        guard let v = params["volume"] else { return gain }
+        if v.isPointEnvelope { return gain * (v.keys.compactMap(\.value).max() ?? 1) }
+        return gain * (v.base ?? v.keys.first?.value ?? 1)
     }
 }
 
@@ -177,6 +183,19 @@ struct SceneBuilder {
         return Transcript.words(tracks[i], editRate: editRate)
     }
 
+    /// A transition's parameters: plain constants in its `attributes` (shader parameters, colours split
+    /// into `<name>-red/-green/-blue`, bools as 1/0, alongside the flags) [obs, transitions.md TR2/TR3],
+    /// overridden by a `parameters` object when one exists (older guesses, keyframed values).
+    static func transitionParameters(_ o: JSONObject) -> SParams {
+        var p = SParams(o["attributes"]?.object)
+        let extra = SParams(o["parameters"]?.object)
+        for n in extra.names {
+            if p.values[n] == nil { p.names.append(n) }
+            p.values[n] = extra.values[n]
+        }
+        return p
+    }
+
     /// Resolves transitions against `clips`; bypassed ones and ones naming no existing clip are dropped.
     func transitions(_ list: [Transition], clips: [SNode]) -> [STransition] {
         list.compactMap { tr in
@@ -187,7 +206,7 @@ struct SceneBuilder {
             let w = Conventions.transitionWindow(leftEnd: l.map { clips[$0].end }, rightStart: r.map { clips[$0].start },
                                                  duration: tr.duration)
             return STransition(name: tr.name, duration: tr.duration, reverse: tr.reversed,
-                               parameters: SParams(tr.object["parameters"]?.object),
+                               parameters: Self.transitionParameters(tr.object),
                                left: l, right: r, lo: w.lo, hi: w.hi)
         }
     }
@@ -235,8 +254,12 @@ struct SceneBuilder {
             return .video(url: src.url, stream: stream, size: size, cursor: cursor)
         case .image:
             guard let src else { return .unsupported(type: c.kind.typeName, size: canvas) }
-            return .image(url: src.url, size: Conventions.leafSize(source: src.media, trackNumber: stream,
-                                                                     fallback: canvas))
+            let size = Conventions.leafSize(source: src.media, trackNumber: stream, fallback: canvas)
+            if Conventions.isVideoSource(src.media, stream: stream, url: src.url) {
+                // Extend Frame: the frame at `mediaStart` (the clip's last frame) [obs form ED1; inf rendering].
+                return .heldFrame(url: src.url, stream: stream, size: size, at: c.mediaStart)
+            }
+            return .image(url: src.url, size: size)
         case .audio:
             guard let src else { return .unsupported(type: c.kind.typeName, size: .zero) }
             return .audio(url: src.url, stream: stream)
@@ -373,6 +396,10 @@ struct SceneEvaluator {
             return l
         case .image(let url, let size):
             return make(.image(url), size)
+        case .heldFrame(let url, let stream, let size, let at):
+            // Same frame for every t: the segment's duration and trimStartSum do not choose it.
+            return make(.video(FrameRequest(url: url, stream: stream,
+                                            time: Conventions.streamTime(ticks: at, editRate: editRate))), size)
         case .shader(let url, let p, let size):
             let seconds = Conventions.shaderTime(media: n.mediaTime(t), editRate: editRate)
             return make(.shader(url, parameters: p.evaluated(at: kt), time: seconds), size)
@@ -405,6 +432,7 @@ struct SceneEvaluator {
                 content.dynamicCaption = DynamicCaptionRender(frame: frame, style: dc.style)
                 content.text = frame?.text ?? ""
                 content.runs = SDynamicCaption.textRun(content.runs, length: content.text.utf16.count)
+                content.fontSize = dc.baseFontSize
             }
             return make(.callout(content), size)
         case .unsupported(let type, let size):
@@ -466,7 +494,7 @@ struct AudioEvaluator {
             for s in segments where Q.lt(Rational(s.start), mhi) && Q.lt(mlo, Rational(s.end)) {
                 node(s, map: m, lo: mlo, hi: mhi, gain: g, into: &out)
             }
-        case .video, .image, .shader, .callout, .unsupported:
+        case .video, .image, .heldFrame, .shader, .callout, .unsupported:
             return
         }
     }

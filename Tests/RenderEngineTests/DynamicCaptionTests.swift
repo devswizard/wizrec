@@ -67,6 +67,27 @@ private func caption(_ sc: SceneModel, at t: Int64) throws -> CalloutContent {
         #expect(c.fontSize == 96)
     }
 
+    @Test func resizeCalloutPresetsTakeFontAndSizeFromTheRuns() throws {
+        // Camtasia 2026 presets: def.font is a stale "Bebas Neue 128"; the runs say Arial 96 [obs CA2].
+        var def = captionDef(["resize-behavior": "resizeCallout",
+                              "font": ["name": "Bebas Neue", "size": 128.0, "weight": "Regular"]])
+        def["textAttributes"] = ["type": "textAttributeList", "keyframes": [
+            ["time": 0, "endTime": 0, "duration": 0, "value": [
+                ["name": "fontName", "rangeStart": 0, "rangeEnd": 3, "value": "Arial", "valueType": "string"],
+                ["name": "fontSize", "rangeStart": 0, "rangeEnd": 3, "value": 96.0, "valueType": "double"],
+            ]],
+        ]]
+        let c = try caption(try scene(def: def), at: s * 3 / 4)
+        #expect(c.fontSize == 96)
+        #expect(c.runs == [CalloutTextRun(range: 0..<14, fontName: "Arial")])
+        // The fit starts from the run size and keeps the run's font (the box is wide enough here).
+        let (fitted, _) = DynamicCaptionText.fit(c, box: CGRect(x: -800, y: -150, width: 1600, height: 300))
+        #expect(fitted.fontSize == 96 && fitted.runs.first?.fontName == "Arial")
+        // "resizeText" (CP1, earlier WizRec saves) keeps def.font.size.
+        var old = def; old["resize-behavior"] = "resizeText"
+        #expect(try caption(try scene(def: old), at: s * 3 / 4).fontSize == 128)
+    }
+
     @Test func nothingOutsideTheWordsOrTheAudio() throws {
         let sc = try scene(audioStart: s)
         #expect(try caption(sc, at: s / 2).dynamicCaption?.frame == nil)      // audio not started

@@ -19,6 +19,10 @@ struct SDynamicCaption: Sendable {
     var rules: CaptionBlockRules
     /// Paired audio clips, bottom track first.
     var audio: [Audio] = []
+    /// Base font size, points: the `textAttributes` run size for `resize-behavior: "resizeCallout"`
+    /// (`def.font` is a leftover default there [obs CA2]), else `def.font.size`
+    /// (`CaptionBlockRules.baseFontSize`, shared with export).
+    var baseFontSize: Double = 96
 
     /// The caption at parent time `t`: the first paired clip playing at `t`, at its media time.
     func frame(at t: Rational, editRate: Int64) -> DynamicCaptionFrame? {
@@ -28,7 +32,7 @@ struct SDynamicCaption: Sendable {
     }
 
     /// One run over the whole block text with the `def` runs' font, weight, italic and colour (the
-    /// runs' ranges index the placeholder `def.text`, and their fitted `fontSize` belongs to it too).
+    /// runs' ranges index the placeholder `def.text`; the block's size is `baseFontSize`, fitted later).
     static func textRun(_ runs: [CalloutTextRun], length: Int) -> [CalloutTextRun] {
         guard length > 0 else { return [] }
         var r = CalloutTextRun(range: 0..<length)
@@ -55,7 +59,8 @@ struct SCallout: Sendable {
 
     init(_ def: JSONObject) {
         caption = DynamicCaptionStyle.isDynamicCaption(def)
-            ? SDynamicCaption(style: DynamicCaptionStyle(def: def), rules: CaptionBlockRules(def: def)) : nil
+            ? SDynamicCaption(style: DynamicCaptionStyle(def: def), rules: CaptionBlockRules(def: def),
+                             baseFontSize: CaptionBlockRules.baseFontSize(def: def)) : nil
         var strings: [String: String] = [:]
         for (k, v) in def.entries { if let s = v.string { strings[k] = s } }
         self.strings = strings

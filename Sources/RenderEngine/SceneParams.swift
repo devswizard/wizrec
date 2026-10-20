@@ -49,6 +49,26 @@ struct SParam: Sendable, Equatable {
 
     var isAnimated: Bool { !keys.isEmpty }
 
+    /// Every key has zero length: an audio volume point envelope [obs, audio.md §4 AU1].
+    var isPointEnvelope: Bool { !keys.isEmpty && keys.allSatisfy { $0.endTime == $0.time } }
+
+    /// Point-envelope value: linear between points sorted by time, the first value before the first
+    /// point, the last after the last; `defaultValue` unused. Same rule as AudioEngine and
+    /// `TSCProjKit.Parameters.volume(at:)`.
+    func pointValue(at ticks: Double) -> Double? {
+        let pts = keys.compactMap { k in k.value.map { (t: k.time, v: $0) } }.sorted { $0.t < $1.t }
+        guard let first = pts.first, let last = pts.last else { return nil }
+        if ticks <= first.t { return first.v }
+        for i in 1..<pts.count where ticks < pts[i].t {
+            let a = pts[i - 1], b = pts[i]
+            return a.v + (b.v - a.v) * (ticks - a.t) / (b.t - a.t)
+        }
+        return last.v
+    }
+
+    /// `volume` at `ticks`: the point envelope when every key has zero length, else `value(at:)`.
+    func volume(at ticks: Double) -> Double? { isPointEnvelope ? pointValue(at: ticks) : value(at: ticks) }
+
     /// Value at clip-relative `ticks`.
     func value(at ticks: Double) -> Double? {
         guard !keys.isEmpty else { return base }
