@@ -58,6 +58,11 @@ jobs:
             bash -n "$f"
           done
 
+      - name: Resolve packages (Sparkle, pinned in Package.resolved)
+        run: |
+          for i in 1 2 3; do swift package resolve && exit 0; sleep 10; done
+          exit 1
+
       - name: Build
         run: swift build
 

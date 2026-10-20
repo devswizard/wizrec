@@ -30,6 +30,23 @@ Versions below are those of the 2026-10-19 build environment.
 | OpenSSL | `libssl.4.dylib`, `libcrypto.4.dylib` | 4.0.3 | Apache-2.0 | https://openssl-library.org |
 | XZ Utils (liblzma) | `liblzma.5.dylib` | 5.8.4 | 0BSD (liblzma) | https://tukaani.org/xz/ |
 
+### Sparkle (update framework)
+
+`Sparkle.framework` (with its `Autoupdate`, `Updater.app` and XPC services) is embedded in
+`WizRec.app/Contents/Frameworks` in every app bundle, unmodified, from the official Swift
+Package Manager binary release. Pinned in `Package.resolved` (2.10.0 on 2026-10-20).
+
+| Component | Version | Licence | Source |
+|---|---|---|---|
+| Sparkle 2 | 2.10.0 | MIT (© 2006–2013 Andy Matuschak, © 2009–2013 Elgato Systems GmbH, © 2011–2014 Kornel Lesiński, © 2015–2017 Mayur Pawashe, © 2014 C.W. Betts, © 2014 Petroules Corporation, © 2014 Big Nerd Ranch) | https://github.com/sparkle-project/Sparkle |
+| ↳ bsdiff 4.3 (`bspatch.c`, `bsdiff.c`) | — | BSD-2-Clause (© 2003–2005 Colin Percival) | http://www.daemonology.net/bsdiff/ |
+| ↳ sais-lite | 2010-08-07 | MIT (© 2008–2010 Yuta Mori) | https://sites.google.com/site/yuta256/sais |
+| ↳ ed25519 (portable C) | — | zlib (© 2015 Orson Peters) | https://github.com/orlp/ed25519 |
+| ↳ `SUSignatureVerifier.m` | — | BSD-2-Clause (© 2011 Mark Hamlin) | (part of Sparkle) |
+
+The full licence text, including these notices, ships as
+`WizRec.app/Contents/Resources/Licenses/Sparkle/LICENSE`.
+
 If a future build bundles a library that is not listed here, `bundle-dylibs.sh` records it
 in the manifest; add it to this table before publishing (see `docs/RELEASING.md`).
 
@@ -63,7 +80,3 @@ font. Variable fonts were renamed only to drop the `[wght]` brackets from the fi
 Everything else in `Sources/WizRecAssets` (backgrounds, transitions, callout presets, cursor
 and click-effect artwork) and `Design/AppIcon` is original work by Devs Wizard, under
 GPL-3.0-or-later.
-
-## Planned
-
-- **Sparkle** (MIT), the update framework, once it is added (`docs/RELEASING.md`).

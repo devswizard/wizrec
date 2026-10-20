@@ -20,6 +20,10 @@ let package = Package(
         .executable(name: "wizrec-testgen", targets: ["wizrec-testgen"]),
         .executable(name: "wizrec-record", targets: ["wizrec-record"]),
     ],
+    dependencies: [
+        // Sparkle 2 (MIT): app updates, linked into WizRecApp only (DECISIONS 2026-10-20).
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6"),
+    ],
     targets: [
         // FFmpeg (libavcodec/libavformat/libavutil/libswscale), dynamically linked.
         // Homebrew: `brew install ffmpeg`. Used for tscc2 (.trec screen video).
@@ -61,7 +65,8 @@ let package = Package(
         .executableTarget(
             name: "WizRecApp",
             dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine",
-                           "TimelineUI", "Recorder", "AudioEngine", "Exporter", "Captions", "WizRecAssets"]
+                           "TimelineUI", "Recorder", "AudioEngine", "Exporter", "Captions", "WizRecAssets",
+                           .product(name: "Sparkle", package: "Sparkle")]
         ),
         .testTarget(
             name: "TSCProjKitTests",

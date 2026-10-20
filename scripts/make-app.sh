@@ -4,8 +4,8 @@
 #   scripts/make-app.sh            # → build/WizRec.app
 #   build/WizRec.app/Contents/MacOS/WizRec "<project.cmproj>" [--autoplay] [--overlay] [--stats-log]
 #
-# FFmpeg is linked from Homebrew (not bundled yet; that is an M11 task), so the
-# app runs on machines with `brew install ffmpeg`.
+# FFmpeg is linked from Homebrew here, so this bundle runs on machines with
+# `brew install ffmpeg`; scripts/release.sh bundles it for distribution.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -20,6 +20,25 @@ APP=build/WizRec.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/WizRec"
+# Sparkle (MIT, app updates): SwiftPM builds it as a framework next to the binary. It goes to
+# Contents/Frameworks (symlinks preserved) and the executable finds it through the
+# @executable_path/../Frameworks run path. scripts/release/sign.sh re-signs it inside out.
+SPARKLE_FW="$(dirname "$BIN")/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    mkdir -p "$APP/Contents/Frameworks"
+    ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
+    # MIT: the licence (with its bsdiff/sais/ed25519 notices) travels with the binary.
+    for l in .build/artifacts/sparkle/Sparkle/LICENSE .build/checkouts/Sparkle/LICENSE; do
+        if [ -f "$l" ]; then
+            mkdir -p "$APP/Contents/Resources/Licenses/Sparkle"
+            cp "$l" "$APP/Contents/Resources/Licenses/Sparkle/LICENSE"
+            break
+        fi
+    done
+fi
+if ! otool -l "$APP/Contents/MacOS/WizRec" | grep -q "@executable_path/../Frameworks"; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/WizRec"
+fi
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 # SwiftPM resource bundles (e.g. WizRec_WizRecAssets.bundle) go in Contents/Resources, where
 # the modules' locators look first (Bundle.module would look at the .app root, which breaks codesign).
@@ -41,9 +60,11 @@ done
 VERSION=${VERSION:-0.1.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
-# Bundle id is a placeholder until Devs Wizard confirms its domain (see CLAUDE.md "Open decisions");
-# override it with WIZREC_BUNDLE_ID.
+# Bundle id: com.devswizard.WizRec (DECISIONS 2026-10-20); WIZREC_BUNDLE_ID overrides it.
 BUNDLE_ID=${WIZREC_BUNDLE_ID:-com.devswizard.WizRec}
+# Sparkle feed + EdDSA public key from WIZREC_SPARKLE_FEED / WIZREC_SPARKLE_PUBKEY; empty when
+# unset (the updater then stays off). Fails on a half or invalid configuration.
+SPARKLE_KEYS=$(scripts/release/sparkle-info.sh)
 # Type identifiers are our own imported declarations; the role is Editor (M2) and the
 # rank Alternate, so WizRec never claims to be the default app for these files.
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -71,6 +92,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>
+$SPARKLE_KEYS
     <key>NSHumanReadableCopyright</key><string>© 2026 Devs Wizard. GPL-3.0-or-later.</string>
     <key>CFBundleDocumentTypes</key>
     <array>

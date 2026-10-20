@@ -185,6 +185,9 @@
     "Change Caption Style" : {
 
     },
+    "Check for Updates…" : {
+
+    },
     "Choose" : {
 
     },
@@ -697,6 +700,9 @@
 
     },
     "Unstitch" : {
+
+    },
+    "Updates are not configured in this build." : {
 
     },
     "View" : {

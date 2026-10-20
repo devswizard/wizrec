@@ -16,6 +16,8 @@ enum AppEnvironment {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let options = AppEnvironment.options
+        // Scripted runs (--quit-after) never start the updater.
+        if options.quitAfter == nil { AppUpdater.shared.start() }
         for path in options.paths {
             let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
