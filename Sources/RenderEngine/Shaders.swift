@@ -127,42 +127,74 @@ enum Shaders {
         float3 d = select(sqrt(b), ((16.0 * b - 12.0) * b + 4.0) * b, b <= 0.25);
         return select(b + (2.0 * s - 1.0) * (d - b), b - (1.0 - 2.0 * s) * b * (1.0 - b), s <= 0.5);
     }
-    // Separable and non-separable blend functions (PDF / W3C compositing definitions).
-    // b = backdrop, s = source, straight colour 0-1. Mode ids are WizRec's own (BlendModeEffect.Mode).
+    inline float3 wz_burn(float3 b, float3 s) {
+        return select(1.0 - min(1.0, (1.0 - b) / max(s, 1e-6)), float3(0.0), s <= 0.0);
+    }
+    inline float3 wz_dodge(float3 b, float3 s) {
+        return select(min(1.0, b / max(1.0 - s, 1e-6)), float3(1.0), s >= 1.0);
+    }
+    inline float3 wz_vivid(float3 b, float3 s) {
+        return select(wz_dodge(b, 2.0 * (s - 0.5)), wz_burn(b, 2.0 * s), s <= 0.5);
+    }
+    // Blend functions, standard layered-image-editor / W3C compositing definitions [inf].
+    // b = backdrop, s = source, straight colour 0-1. Ids = the project's `mode` numbers
+    // (BlendModeSpec.Mode, BlendModeEffect.md); 1-5 are handled outside (stencils, dissolve).
     inline float3 blend_fn(int mode, float3 b, float3 s) {
         switch (mode) {
-        case 1: return b * s;                                                     // multiply
-        case 2: return b + s - b * s;                                             // screen
-        case 3: return select(b * 2.0 * s, 1.0 - 2.0 * (1.0 - b) * (1.0 - s), b > 0.5);   // overlay
-        case 4: return min(b, s);                                                 // darken
-        case 5: return max(b, s);                                                 // lighten
-        case 6: return select(min(1.0, b / max(1.0 - s, 1e-6)), float3(1.0), s >= 1.0);    // colour dodge
-        case 7: return select(1.0 - min(1.0, (1.0 - b) / max(s, 1e-6)), float3(0.0), s <= 0.0); // colour burn
-        case 8: return select(b * 2.0 * s, 1.0 - 2.0 * (1.0 - b) * (1.0 - s), s > 0.5);   // hard light
-        case 9: return wz_softlight(b, s);                                        // soft light
-        case 10: return abs(b - s);                                               // difference
-        case 11: return b + s - 2.0 * b * s;                                      // exclusion
-        case 12: return wz_setlum(wz_setsat(s, wz_sat(b)), wz_luma(b));           // hue
-        case 13: return wz_setlum(wz_setsat(b, wz_sat(s)), wz_luma(b));           // saturation
-        case 14: return wz_setlum(s, wz_luma(b));                                 // colour
-        case 15: return wz_setlum(b, wz_luma(s));                                 // luminosity
-        case 16: return min(b + s, 1.0);                                          // add (linear dodge)
-        case 17: return max(b + s - 1.0, 0.0);                                    // linear burn
-        case 18: return max(b - s, 0.0);                                          // subtract
+        case 6: return min(b, s);                                                 // darken
+        case 7: return b * s;                                                     // multiply
+        case 8: return wz_burn(b, s);                                             // colour burn
+        case 9: return max(b + s - 1.0, 0.0);                                     // linear burn
+        case 10: return wz_luma(s) < wz_luma(b) ? s : b;                          // darker colour
+        case 11: return max(b, s);                                                // lighten
+        case 12: return b + s - b * s;                                            // screen
+        case 13: return wz_dodge(b, s);                                           // colour dodge
+        case 14: return min(b + s, 1.0);                                          // linear dodge (add)
+        case 15: return wz_luma(s) > wz_luma(b) ? s : b;                          // lighter colour
+        case 16: return select(b * 2.0 * s, 1.0 - 2.0 * (1.0 - b) * (1.0 - s), b > 0.5);   // overlay
+        case 17: return wz_softlight(b, s);                                       // soft light
+        case 18: return select(b * 2.0 * s, 1.0 - 2.0 * (1.0 - b) * (1.0 - s), s > 0.5);   // hard light
+        case 19: return wz_vivid(b, s);                                           // vivid light
+        case 20: return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);                       // linear light
+        case 21: return select(max(b, 2.0 * s - 1.0), min(b, 2.0 * s), s <= 0.5); // pin light
+        case 22: return select(float3(0.0), float3(1.0), b + s >= 1.0);           // hard mix
+        case 23: return abs(b - s);                                               // difference
+        case 24: return b + s - 2.0 * b * s;                                      // exclusion
+        case 25: return max(b - s, 0.0);                                          // subtract
+        case 26: return select(min(b / max(s, 1e-6), 1.0), select(float3(0.0), float3(1.0), b > 0.0), s <= 0.0); // divide
+        case 27: return wz_setlum(wz_setsat(s, wz_sat(b)), wz_luma(b));           // hue
+        case 28: return wz_setlum(wz_setsat(b, wz_sat(s)), wz_luma(b));           // saturation
+        case 29: return wz_setlum(s, wz_luma(b));                                 // colour
+        case 30: return wz_setlum(b, wz_luma(s));                                 // luminosity
         default: return s;                                                        // normal
         }
     }
 
+    // Stable per-pixel threshold in [0, 1) for Dissolve.
+    inline float wz_hash(float2 p) {
+        uint2 q = uint2(p);
+        uint h = q.x * 1973u + q.y * 9277u + 26699u;
+        h = (h ^ (h >> 15)) * 0x2c1b3c6du;
+        h = (h ^ (h >> 12)) * 0x297a2d39u;
+        return float(h ^ (h >> 15)) / 4294967296.0;
+    }
+
     // Layer (texture 0, layer uv) over backdrop (texture 1, screen). q.c0 = (mode, intensity).
-    // Source-over of mix(L, blend(B, L), intensity) with the layer's alpha.
+    // Source-over of mix(L, blend(B, L), intensity) with the layer's alpha. Dissolve (5): each pixel is
+    // fully on or off with probability = alpha (mixed with normal by intensity).
     fragment float4 blend_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]],
                              texture2d<float> L [[texture(0)]], texture2d<float> B [[texture(1)]],
                              sampler smp [[sampler(0)]]) {
         float4 l = L.sample(smp, in.uv);
         float4 b = B.sample(smp, screen_uv(in, q));
         float3 s = unpremul(l);
-        float3 c = mix(s, clamp(blend_fn(int(q.c0.x), unpremul(b), s), 0.0, 1.0), q.c0.y);
         float a = l.a * q.opacity;
+        if (int(q.c0.x) == 5) {
+            float on = wz_hash(in.pos.xy) < a ? 1.0 : 0.0;
+            a = mix(a, on, q.c0.y);
+            return float4(s * a, a);
+        }
+        float3 c = mix(s, clamp(blend_fn(int(q.c0.x), unpremul(b), s), 0.0, 1.0), q.c0.y);
         return float4(c * a, a);
     }
 
