@@ -401,6 +401,7 @@ final class CompositorCore {
         var out = [Item(fill: .texture(b), quad: Self.fullPassQuad)]
         let intensity = Float(Conventions.clamp01(c.intensity))
         // `corner-radius`, callout px: scales with the callout, as the highlighter's does [callouts.md §3.1].
+        // Negative or non-finite is 0 (square box) [WizRec].
         let radius = Float(c.cornerRadius.isFinite ? max(c.cornerRadius, 0) : 0)
         let rounded = SIMD4<Float>(0, radius, 0, 0)
         /// The box's rounded coverage as a pass-sized mask texture (alpha).

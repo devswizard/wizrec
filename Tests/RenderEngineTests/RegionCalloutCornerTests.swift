@@ -103,6 +103,42 @@ private let edges = [(96, 35), (57, 54), (134, 54), (96, 72)]
         #expect(pill.at(57, 54).isGrey && pill.at(96, 35).isGrey && pill.at(60, 38).isStripe)
     }
 
+    @Test func roundingFollowsTheCalloutRotation() throws {
+        // Rotated 90° about the canvas centre the box spans x 76…116, y 14…94; the rounding stays in callout space.
+        var turned = region("TypeWinBlur", radius: 12)
+        turned.transform = CGAffineTransform(rotationAngle: .pi / 2)
+        let img = try render(turned)
+        for (x, y) in [(77, 15), (114, 15), (77, 92), (114, 92)] { #expect(img.at(x, y).isStripe, "corner \(x),\(y)") }
+        for (x, y) in [(96, 15), (77, 54), (114, 54), (96, 92)] { #expect(img.at(x, y).isGrey, "edge \(x),\(y)") }
+        // Spotlight: the rotated hole's corners are dimmed, its edge middles stay lit.
+        var spot = region("TypeWinSpotlight", radius: 12, intensity: 0.5)
+        spot.transform = turned.transform
+        let lit = try render(spot, over: white)
+        let dim = Px(r: 128, g: 128, b: 128, a: 255)
+        for (x, y) in [(77, 15), (114, 92)] { #expect(lit.at(x, y).near(dim, 2), "corner \(x),\(y)") }
+        for (x, y) in [(96, 15), (77, 54)] { #expect(lit.at(x, y) == .white, "edge \(x),\(y)") }
+    }
+
+    /// Radius 0 is the square box, byte for byte; a negative or non-finite radius counts as 0
+    /// [WizRec]. (Checked once against the renderer before rounding existed: identical bytes for all region kinds,
+    /// rotated, at fractional positions and opacity 0.8.)
+    @Test func zeroNegativeAndNonFiniteRadiiAreTheSquareBox() throws {
+        for kind in ["TypeWinBlur", "TypeWinPixelate", "TypeWinSpotlight", "TypeWinHighlighter"] {
+            for invert in [false, true] where invert || kind != "TypeWinHighlighter" {   // plain highlighter: raster
+                func draw(_ r: Double) throws -> GPUTest.Image {
+                    var top = region(kind, radius: r, intensity: 0.4, invert: invert)
+                    top.transform = CGAffineTransform(translationX: 10.5, y: -6.25).rotated(by: 0.3)
+                    top.opacity = 0.8
+                    return try render(top)
+                }
+                let square = try draw(0)
+                for r in [-4.0, .nan, .infinity] {
+                    #expect(try draw(r).bytes == square.bytes, "\(kind) invert \(invert) r \(r)")
+                }
+            }
+        }
+    }
+
     @Test func deterministic() throws {
         for kind in ["TypeWinBlur", "TypeWinPixelate", "TypeWinSpotlight"] {
             let a = try render(region(kind, radius: 6, intensity: 0.5, invert: kind == "TypeWinBlur"))
