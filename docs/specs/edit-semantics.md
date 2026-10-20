@@ -76,6 +76,43 @@ Additional [inf] from E1, kept here for timeline:
   `metadata` and `animationTracks` to both halves unchanged.
 - Each half gets new ids, and Camtasia renumbers everything on save anyway.
 
+## X7 results (automated runtime saves, 2026-10-20)
+
+Camtasia 2026.2.3 performed X7 through menu commands. One single-purpose
+project was used per track type, so that selection by playhead was
+unambiguous (ledger RT-008). Drags were replaced by their menu equivalents:
+
+- **Delete middle piece and close the gap:** *Ripple Delete*.
+- **Move:** *Cut*, then *Paste* at the playhead.
+- **Trim start:** *Edit ▸ Playhead ▸ Trim Start to Playhead*.
+
+Right-edge trims, past-the-edge extensions and the callout track need mouse
+drags, so they were **not** done.
+
+| # | Result | Tag |
+|---|---|---|
+| 1 | **Split `StitchedMedia`: both halves keep every segment.** Only the outer `start`/`duration`/`mediaStart`/`mediaDuration` change. The right half is a new `StitchedMedia` whose segment list is identical to the left's (new ids), with `mediaStart` at the split point. The segments are not partitioned or rebased. This is the reading the assumption rejected. | [obs] `x7v-d-split` |
+| 1b | **Auto-stitch.** After *Split* at 4 s and 8 s and *Ripple Delete* of the middle piece, the two remaining pieces of the same source were saved as **one `StitchedMedia`**, with segments 0–4 s and 8–10 s, with no *Stitch* command. Whether split or ripple-delete triggers it is [?]. The stitched clip's `attributes` gain `gain` 1.0, `mixToMono` false, `loudnessNormalization` true and `sourceFileOffset` 0. Its parameters gain `smoothCursorAcrossEditDuration` 0. | [obs] `x7v-a-cut` |
+| 2 | **Split `Group`: both halves get a full, unchanged copy of the inner tracks.** Only `mediaStart`/`duration` differ. Confirmed twice: once on stills (group-edits.md §5) and once on a video+still group split at 3 s, where the right group got `mediaStart` 3 s and inner copies with new ids. | [obs] `x7g-b-split` |
+| 3 | **Split with transitions.** The transition at the clip's start stays on the left half, and the one at its end moves to the right half: its `leftMedia` becomes the right half's id. | [obs] `x7p-b-split` |
+| 4 | **Split and trim do not touch keyframes, effect windows or behaviour windows.** Both stitched halves keep the 1–2 s scale keyframes, although the right half (media 5–6 s) never reaches them. A Pop Up behaviour keeps `start` 0 and `duration` 5 s on both image halves, and after a trim-start, although each half is shorter. Nothing is pruned. | [obs] `x7v-d-split`, `x7p-b-split`, `x7p-c-trimstart` |
+| 5 | **Images.** `mediaStart` 0 and `mediaDuration` 1 (tick) never change. **A split gives the right half `trimStartSum` = the split offset** (2 s for a split 2 s into the image). Trim-start adds the trimmed amount to `trimStartSum` (2 s, then 3 s after a further 1 s). Extending past the original start was not tested (drag). | [obs] `x7p-b-split`, `x7p-c-trimstart`, `x6-image-trim` |
+| 6 | Trim limits (right edge) | [?] not automated (drag) |
+| 8 | **Move keeps one-sided transitions with their clip.** After Cut/Paste of the right image half (3 → 6 s), its end fade still names it as `leftMedia`. The two-sided case is not yet observed: the Cube transition was not applied, because the panel item name did not match. It is to be repeated. | [obs] one-sided; [?] two-sided |
+| 9 | `UnifiedMedia` | [?] the synthetic test cards have no audio stream; to be repeated with a speech+video source |
+
+Transition entries written by *Transitions ▸ Fade ▸ Add to Selected Media* on
+a single clip [obs]:
+
+- **Two entries.** One is at the start (only `rightMedia` = clip) and one at
+  the end (only `leftMedia` = clip).
+- **Fields.** Each has `duration` 1 s, the `name` `"LuminanceFadeIn"` and
+  `attributes` {`bypass` false, `reverse` false, `trivial` false,
+  `useAudioPreRoll` true, `useVisualPreRoll` true}.
+- **Name.** Whether the panel's "Fade" item is the one Camtasia calls
+  `LuminanceFadeIn` is [inf]: the search matched the item labelled exactly
+  "Fade".
+
 ## X7 — one project, four saves (about 10 minutes)
 
 Use the user's own video (≥ 20 s, with sound) and photo. Every step ends with
