@@ -27,6 +27,9 @@ let usage = """
       wizrec-testgen au2 [--out DIR]
           Write the AU2 loudness signals (48 kHz WAV) and au2-generated.cmproj to
           DIR/research/audio/au2/, with au2.json (our BS.1770 measurements).
+      wizrec-testgen experiments --speech WAV [--out DIR] [--case NAME]...
+          Write the research base projects that the Camtasia automation edits and
+          re-saves (format/, research/*/<name>/), each with <name>.clips.json.
       wizrec-testgen thumbnail PROJECT [-o OUT.png]
           Extract metadata.ProjectThumbnail (Camtasia's render at the playhead) from a
           .cmproj/.tscproj and print its size and the docPrefs playhead.
@@ -113,6 +116,37 @@ if args.first == "ce3" {
             return SourceDescriptor(info: info, src: src, lastModified: mod)
         }
         print("wrote  \(bundle.path)")
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
+
+if args.first == "experiments" {
+    args.removeFirst()
+    var out = TestGen.defaultOutputDirectory
+    if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
+        out = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath, isDirectory: true)
+    }
+    guard let si = args.firstIndex(of: "--speech"), si + 1 < args.count else { fail("experiments needs --speech WAV\n\(usage)") }
+    let speech = URL(fileURLWithPath: (args[si + 1] as NSString).expandingTildeInPath)
+    var only: [String] = []
+    for (i, a) in args.enumerated() where a == "--case" && i + 1 < args.count { only.append(args[i + 1]) }
+    let dirs = [out.appendingPathComponent("_media"), out.appendingPathComponent("_sheet-media")]
+    let find: (String) -> URL? = { name in
+        if name == speech.lastPathComponent { return speech }
+        return dirs.map { $0.appendingPathComponent(name) }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+    do {
+        let pool = MediaPool()
+        for base in Experiments.bases(speech: speech.lastPathComponent) where only.isEmpty || only.contains(base.name) {
+            let url = try await Experiments.write(base, root: out, find: find) { file, src in
+                let info = try await pool.probe(file)
+                let mod = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date) ?? Date()
+                return SourceDescriptor(info: info, src: src, lastModified: mod)
+            }
+            print("wrote  \(url.path)")
+        }
     } catch {
         fail("\(error)")
     }
