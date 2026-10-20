@@ -166,3 +166,14 @@ Dated log. Newest last.
   shader-backgrounds.md §10). We never copy or forge a signature. WizRec
   warns on save when a project uses a WizRec background; the rest of the
   project still opens in Camtasia.
+- **2026-10-20 · Audio aligned to audio.md AU1/AU2 (session 5).** WizRec
+  choices where the spec is silent: Emphasize ducks other tracks to
+  1 − `emphasizeAmount`; WinCompression release is linear at 20 dB per
+  release time; Pitch `effectBlend` is a linear wet/dry mix; normalisation
+  keeps the peak cap until AU2 output can be compared. (audio, approved.)
+- **2026-10-20 · MediaMatte `trackDepth` [WizRec]:** missing → only the
+  track directly below; explicit → that many tracks (10002 = all below).
+- **2026-10-20 · Whisper model choice:** explicit non-English language
+  prefers an installed multilingual large model (large-v3-turbo first);
+  English/auto keep small; a Settings choice wins. `-l bn` output is mapped
+  to Bengali script. (captions, approved.)
