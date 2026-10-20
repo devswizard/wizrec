@@ -92,7 +92,11 @@ WizRec can transcribe captions with [whisper.cpp](https://github.com/ggml-org/wh
 |---|---|---|---|---|---|
 | whisper.cpp CLI | `whisper-cli` (Homebrew `whisper.cpp`) | 1.9.5 | MIT | | |
 | Speech model | `ggml-small.bin` (ggml-org/whisper.cpp models) | small | MIT | 487601967 | `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
+| Speech model | `ggml-large-v3-turbo.bin` (ggml-org/whisper.cpp models) | large-v3-turbo | MIT | 1624555275 | `1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69` |
 | Silero VAD model | `ggml-silero-v5.1.2.bin` (huggingface.co/ggml-org/whisper-vad) | 5.1.2 | MIT | 885098 | `29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf` |
+
+With no model chosen in Settings, English and auto-detect use `small` and other languages a
+large multilingual model (`large-v3-turbo` first) when one is installed.
 
 When a `ggml-silero-*.bin` file is present, WizRec passes it to `whisper-cli --vad` (setting
 `captions.whisper.vad`, on by default); it is not offered as a transcription model.
