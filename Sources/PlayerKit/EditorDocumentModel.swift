@@ -502,14 +502,17 @@ public struct Placement: Equatable, Sendable {
         return Placement(track: tracks.count, needsNewTrack: true)
     }
 
-    /// Length of a source placed at speed 1, ticks: its longest audio/video track; images 5 s [?].
+    /// Length of a source placed at speed 1, ticks: its longest audio/video track; images 5 s [?];
+    /// shader backgrounds (an endless video track) 60 s [obs, shader-backgrounds.md SH2].
     @MainActor
-    public static func naturalDuration(of source: SourceMedia, editRate: Int64, stillSeconds: Double = 5) -> Int64 {
+    public static func naturalDuration(of source: SourceMedia, editRate: Int64, stillSeconds: Double = 5,
+                                       shaderSeconds: Double = 60) -> Int64 {
         let seconds = source.tracks.compactMap { t -> Double? in
             guard t.type != 1, let r = t.range.last, r < Int64.max / 2, t.editRate > 0, r > 0 else { return nil }
             return t.durationSeconds
         }.max()
-        return Int64(((seconds ?? stillSeconds) * Double(editRate)).rounded())
+        let endless = source.tracks.contains { t in t.type == 0 && (t.range.last ?? 0) >= Int64.max / 2 }
+        return Int64(((seconds ?? (endless ? shaderSeconds : stillSeconds)) * Double(editRate)).rounded())
     }
 }
 

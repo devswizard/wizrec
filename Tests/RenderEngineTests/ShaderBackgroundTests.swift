@@ -122,6 +122,30 @@ private func shaderPlan(_ url: URL, _ params: [String: Double] = [:], time: Doub
         #expect(try GPUTest.render(shaderPlan(url, green)).at(96, 54).near(.green, 1))
     }
 
+    @Test func colourStringsFollowTheSH2Rule() throws {
+        func b(_ v: Int) -> Float { Float(v) / 255 }
+        // Six digits: RGB, alpha 1.
+        #expect(ShaderVidFile.hex("5E0CBB") == SIMD4(b(0x5E), b(0x0C), b(0xBB), 1))
+        #expect(ShaderVidFile.hex("#5E0CBB") == SIMD4(b(0x5E), b(0x0C), b(0xBB), 1))
+        // Malformed " 130939": one hex number laid out RRGGBBAA → 00 13 09 39 [obs].
+        let c = try #require(ShaderVidFile.hex(" 130939"))
+        #expect(c == SIMD4(0, b(0x13), b(0x09), b(0x39)))
+        #expect(abs(c.y - 0.0745) < 1e-4 && abs(c.z - 0.0353) < 1e-4 && abs(c.w - 0.2235) < 1e-4)
+        // Eight digits: RRGGBBAA.
+        #expect(ShaderVidFile.hex("FF000080") == SIMD4(1, 0, 0, b(0x80)))
+        #expect(ShaderVidFile.hex("not a colour") == nil && ShaderVidFile.hex("") == nil)
+        #expect(ShaderVidFile.hex("123456789") == nil)
+    }
+
+    @Test func positionParametersUseDotKeys() throws {
+        let json = #"{"name":"t","code":"void main() {}","effectDef":[{"name":"Pos","type":"Position","value":[-5000,5000]}]}"#
+        let file = try ShaderVidFile(data: Data(json.utf8))
+        let u = GLSLTranslator.Uniform(name: "_Pos", type: "vec2")
+        #expect(file.value(for: u, parameters: [:], time: 0) == SIMD4(-5000, 5000, 0, 0))     // file default
+        #expect(file.value(for: u, parameters: ["Pos.x": 10, "Pos.y": -20], time: 0) == SIMD4(10, -20, 0, 0))
+        #expect(file.value(for: u, parameters: ["Pos-x": 3], time: 0) == SIMD4(3, 5000, 0, 0)) // legacy key
+    }
+
     @Test func timeAndImageSizeAreProvided() throws {
         let url = try shaderFile("""
         void main() { _FragColor = vec4(_Time / 10.0, _ImageSize.x / 400.0, _ImageSize.y / 400.0, 1.0); }

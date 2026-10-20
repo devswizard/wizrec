@@ -1,5 +1,6 @@
 import Foundation
 import Metal
+import WizRecAssets
 
 /// A parsed `.tscshadervid` file (`docs/specs/shader-backgrounds.md`). Read from the user's
 /// own copy at render time; never vendored.
@@ -67,11 +68,14 @@ struct ShaderVidFile: Sendable {
         self.defaults = defaults
     }
 
-    /// `"5E0CBB"` → (0x5E, 0x0C, 0xBB)/255 with alpha 1. Extra characters after six digits are ignored.
+    /// A colour `value` string [shader-backgrounds.md §6]:
+    /// - exactly six hex digits (`"5E0CBB"`, optional `#`) → (0x5E, 0x0C, 0xBB)/255 with alpha 1 [obs];
+    /// - anything else made of hex digits (spaces dropped, at most 8 digits) is one hexadecimal number
+    ///   laid out as RRGGBBAA, so `" 130939"` → bytes 00 13 09 39 = (0, 0.0745, 0.0353, 0.2235)
+    ///   [obs value, inf rule: Camtasia stores that file's colour this way].
     static func hex(_ s: String) -> SIMD4<Float>? {
-        let digits = s.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).prefix(6)
-        guard digits.count == 6, let v = UInt32(digits, radix: 16) else { return nil }
-        return SIMD4(Float((v >> 16) & 0xFF) / 255, Float((v >> 8) & 0xFF) / 255, Float(v & 0xFF) / 255, 1)
+        guard let c = AssetColor(shaderText: s) else { return nil }
+        return SIMD4(Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
     }
 
     /// Uniform value for `uniform` from the clip's evaluated `SourceEffect` parameters, falling back to
@@ -88,10 +92,11 @@ struct ShaderVidFile: Sendable {
             }
             return c
         case "vec2", "ivec2":
-            // Position parameters' project form is [?] (SH3): accept `-x/-y` and `0/1`.
+            // Position parameters are `<name>.x` / `<name>.y` on the clip [obs, SH2]; the older
+            // guesses `-x/-y` and `0/1` are still read (earlier WizRec projects).
             var v: SIMD2<Float> = if case .position(let d)? = def { d } else { .zero }
-            if let x = p["\(key)-x"] ?? p["\(key)0"] { v.x = Float(x) }
-            if let y = p["\(key)-y"] ?? p["\(key)1"] { v.y = Float(y) }
+            if let x = p["\(key).x"] ?? p["\(key)-x"] ?? p["\(key)0"] { v.x = Float(x) }
+            if let y = p["\(key).y"] ?? p["\(key)-y"] ?? p["\(key)1"] { v.y = Float(y) }
             return SIMD4(v.x, v.y, 0, 0)
         default:
             let d: Double = if case .scalar(let s)? = def { s } else { 0 }

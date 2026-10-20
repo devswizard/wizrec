@@ -60,13 +60,15 @@ extension SourceDescriptor {
     }
 
     /// Timeline length of this source when placed at speed 1, ticks at `editRate`.
-    /// Images and shaders have no natural length: `stillSeconds` (Camtasia's default image duration is [?]; 5 s).
-    public func naturalDuration(editRate: Int64, stillSeconds: Double = 5) -> Int64 {
+    /// Images have no natural length: `stillSeconds` (Camtasia's default image duration is [?]; 5 s).
+    /// Shader backgrounds (an endless video track) get `shaderSeconds`, 60 s [obs, shader-backgrounds.md SH2].
+    public func naturalDuration(editRate: Int64, stillSeconds: Double = 5, shaderSeconds: Double = 60) -> Int64 {
         let seconds = tracks.compactMap { t -> Double? in
             guard t.type != 1, t.editRate > 0, t.rangeEnd > 0, t.rangeEnd < Int64.max / 2 else { return nil }
             return Double(t.rangeEnd) / Double(t.editRate)
         }.max()
-        return Int64(((seconds ?? stillSeconds) * Double(editRate)).rounded())
+        let endless = tracks.contains { $0.type == 0 && $0.rangeEnd >= Int64.max / 2 }
+        return Int64(((seconds ?? (endless ? shaderSeconds : stillSeconds)) * Double(editRate)).rounded())
     }
 
     /// `(units per second, length in units)` for a stream duration; exact when the CMTime is.
