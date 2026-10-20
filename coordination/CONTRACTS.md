@@ -331,6 +331,13 @@ Frozen stubs: `Sources/AudioEngine/Contract.swift`, `Sources/Exporter/Contract.s
     `cancelAndWait() async` (returns once `run()` stopped and removed its
     partial output; immediate when idle; a finished file is kept). The app
     confirms before closing when it is true.
+  - Session 8 (EXP11-1, additive, approved): `ExportError.encoderStalled(seconds: Int)`
+    = AVAssetWriter accepted nothing for the stall bound (30 s) or did not
+    finish within the finish bound (60 s); the writer is abandoned, the partial
+    file removed, an existing output kept. `ExportError` is `LocalizedError`:
+    `errorDescription` is a sentence for the UI (`.failed(m)` → `m`,
+    `.encoderStalled` → "The encoder stopped responding for N s. …"), which
+    `ExportQueue.describe` shows as is.
 - **Captions**: `SpeechRecognizer` backends: Apple Speech on-device first (no
   new dependency; needs Speech Recognition permission), whisper.cpp second
   (MIT; ask the lead before installing anything or downloading models).
