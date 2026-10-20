@@ -232,7 +232,10 @@ enum GroupEdit {
     /// latest clip end is visible. `track` is an edited inner track of it.
     static func grow(_ loc: ClipLocation, toFit track: JSONObject, _ edits: inout TrackEdits,
                      _ project: Project) throws {
-        var contentEnd = trackClips(track).map { ($0["start"]?.int ?? 0) + ($0["duration"]?.int ?? 0) }.max() ?? 0
+        var contentEnd: Int64 = trackClips(track).map { (c) -> Int64 in
+            let start: Int64 = c["start"]?.int ?? 0, duration: Int64 = c["duration"]?.int ?? 0
+            return start + duration
+        }.max() ?? 0
         // Group clip paths, innermost first; each with the track path holding it.
         let chain = (GroupChain.enclosingClipPaths(loc.trackPath) + [loc.clipPath]).reversed()
         for clipPath in chain {

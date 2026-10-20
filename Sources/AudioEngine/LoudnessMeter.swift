@@ -103,8 +103,9 @@ struct LoudnessMeter: Sendable {
     /// Weighted mean-square energy of each 400 ms gating block (75 % overlap).
     var blockEnergies: [Double] {
         guard subBlocks.count >= 4 else { return [] }
-        return (0...(subBlocks.count - 4)).map { i in
-            (subBlocks[i] + subBlocks[i + 1] + subBlocks[i + 2] + subBlocks[i + 3]) / 4
+        return (0...(subBlocks.count - 4)).map { (i: Int) -> Double in
+            let sum: Double = subBlocks[i] + subBlocks[i + 1] + subBlocks[i + 2] + subBlocks[i + 3]
+            return sum / 4
         }
     }
 

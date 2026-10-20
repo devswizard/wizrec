@@ -52,8 +52,11 @@ import TSCProjKit
         #expect(project.serialized() == bytes)
         #expect(project.sourceBin.count == 3)
         let t0 = project.tracks[0].clips, t1 = project.tracks[1].clips
-        #expect(t0.map(\.start) == [0, 10, 20, 30, 40].map { Int64($0) * 705_600_000 })
-        #expect(t1.map(\.start) == [45 * 705_600_000])
+        let second: Int64 = 705_600_000
+        let starts0: [Int64] = [0, 10, 20, 30, 40].map { (s: Int64) -> Int64 in s * second }
+        let starts1: [Int64] = [45 * second]
+        #expect(t0.map(\.start) == starts0)
+        #expect(t1.map(\.start) == starts1)
         #expect(t0.allSatisfy { $0.kind == ClipKind("AMFile") && $0.duration == 10 * 705_600_000 })
         let norm = t0.map { $0.attributes?["loudnessNormalization"]?.bool }
         #expect(norm == [true, true, true, false, true])

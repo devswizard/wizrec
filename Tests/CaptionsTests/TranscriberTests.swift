@@ -80,7 +80,8 @@ private final class FakeSource: MediaSource {
             #expect(abs(w.start - (start + 0.1)) < 1e-9 && abs(w.end - (start + 0.2)) < 1e-9)
             start += Double(n) / 1000
         }
-        #expect(progress.values == [1.0 / 3, 2.0 / 3, 1])
+        let expectedProgress: [Double] = [1.0 / 3, 2.0 / 3, 1]
+        #expect(progress.values == expectedProgress)
         // A sub-range keeps stream time.
         let part = try await Transcriber(backend: FakeBackend())
             .transcribe(src, stream: 0, range: CMTimeRange(start: CMTime(value: 3, timescale: 1), duration: CMTime(value: 2, timescale: 1)),

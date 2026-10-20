@@ -87,7 +87,11 @@ import Testing
         let r = try await s.stop()
         #expect(r.cursorLog == nil)
         let back = try await readBack(r.screen, type: .video)
-        #expect(back.size.width == 640 * (CaptureSources.displays().first.map { Double($0.pixelWidth) / Double($0.frame.width) } ?? 1))
+        let backingScale: Double = CaptureSources.displays().first.map { (d) -> Double in
+            Double(d.pixelWidth) / Double(d.frame.width)
+        } ?? 1
+        let expectedWidth: Double = 640 * backingScale
+        #expect(Double(back.size.width) == expectedWidth)
     }
 
     @Test func enumeratesWindows() async throws {

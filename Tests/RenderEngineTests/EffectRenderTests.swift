@@ -261,9 +261,10 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
     @Test func perf1080pEightLayersWithEffects() throws {
         let (rq, fr) = solid("w", .white)
         let canvas = CGSize(width: 1920, height: 1080)
-        let layers = (0..<8).map { i in
-            Layer(clipID: Int64(i), content: .video(rq), size: CGSize(width: 960, height: 540),
-                  transform: CGAffineTransform(translationX: Double(i % 4) * 300 - 450, y: Double(i / 4) * 300 - 150),
+        let layers: [Layer] = (0..<8).map { (i: Int) -> Layer in
+            let tx: Double = Double(i % 4) * 300 - 450, ty: Double = Double(i / 4) * 300 - 150
+            return Layer(clipID: Int64(i), content: .video(rq), size: CGSize(width: 960, height: 540),
+                  transform: CGAffineTransform(translationX: tx, y: ty),
                   effects: [fx("Mask", ["mask-width": 800, "mask-height": 450]), fx("RoundCorners", ["radius": 40]),
                             fx("DropShadow", ["angle": 4.71, "offset": 15, "blur": 25, "opacity": 0.3])])
         }

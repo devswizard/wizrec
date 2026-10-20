@@ -77,9 +77,10 @@ final class YUVOutput {
     func encode(from rgb: any MTLTexture, luma: any MTLTexture, chroma: any MTLTexture, fullRange: Bool,
                 commandBuffer: any MTLCommandBuffer) throws {
         // Scale/offset in 0–1 units: x = luma, y = chroma.
-        var params: (SIMD4<Float>, SIMD4<Float>) = fullRange
-            ? (SIMD4(1, 1, 0, 0), SIMD4(0, 128.0 / 255, 0, 0))
-            : (SIMD4(219.0 / 255, 224.0 / 255, 0, 0), SIMD4(16.0 / 255, 128.0 / 255, 0, 0))
+        let fullScale = SIMD4<Float>(1, 1, 0, 0), fullOffset = SIMD4<Float>(0, Float(128) / 255, 0, 0)
+        let videoScale = SIMD4<Float>(Float(219) / 255, Float(224) / 255, 0, 0)
+        let videoOffset = SIMD4<Float>(Float(16) / 255, Float(128) / 255, 0, 0)
+        var params: (SIMD4<Float>, SIMD4<Float>) = fullRange ? (fullScale, fullOffset) : (videoScale, videoOffset)
         for (pipeline, target) in [(lumaPipeline, luma), (chromaPipeline, chroma)] {
             let rp = MTLRenderPassDescriptor()
             rp.colorAttachments[0].texture = target

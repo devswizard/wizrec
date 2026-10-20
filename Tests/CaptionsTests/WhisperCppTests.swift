@@ -234,7 +234,8 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         if let of = value("-of") { #expect(!FileManager.default.fileExists(atPath: (of as NSString).deletingLastPathComponent)) }
 
         let wav = try Data(contentsOf: f.bin.appendingPathComponent("input.wav"))
-        #expect(wav.count == 44 + 3 * 32_000)  // 3 s, 16 kHz, mono, 16-bit (all voiced: nothing cut)
+        let expectedBytes3s: Int = 44 + 3 * 32_000
+        #expect(wav.count == expectedBytes3s)  // 3 s, 16 kHz, mono, 16-bit (all voiced: nothing cut)
         #expect(String(decoding: wav.prefix(4), as: UTF8.self) == "RIFF")
         let rate = wav[24..<28].enumerated().reduce(0) { $0 | Int($1.element) << (8 * $1.offset) }
         let channels = Int(wav[22]) | Int(wav[23]) << 8
@@ -353,7 +354,8 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         #expect(args.firstIndex(of: "-vm").map { args[$0 + 1].hasSuffix("ggml-silero-v5.1.2.bin") } == true)
         // whisper gets the whole buffer: its VAD maps times itself.
         let wav = try Data(contentsOf: f.bin.appendingPathComponent("input.wav"))
-        #expect(wav.count == 44 + 8 * 32_000)
+        let expectedBytes8s: Int = 44 + 8 * 32_000
+        #expect(wav.count == expectedBytes8s)
 
         var off = f.recognizer()
         off.useVAD = false

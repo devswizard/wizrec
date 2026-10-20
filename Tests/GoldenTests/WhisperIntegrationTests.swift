@@ -102,7 +102,8 @@ private struct FakeWhisperCLI {
         let args = fake.args()
         #expect(args.firstIndex(of: "-l").map { args[$0 + 1] } == "en")
         let input = try Data(contentsOf: fake.inputWAV)
-        #expect(input.count == 44 + 2 * 64_000, "4 s at 16 kHz mono 16-bit")
+        let expectedBytes: Int = 44 + 2 * 64_000
+        #expect(input.count == expectedBytes, "4 s at 16 kHz mono 16-bit")
 
         let before = chain.project.serialized()
         try chain.run(ApplyTranscription(sourceID: source, track: 0, words: words))

@@ -122,7 +122,8 @@ struct ParticleTranslationTests {
         """, numVertices: 6, effectDef: sizeDef)
         let p = try GPUTest.render(plan(url)).at(20, 20)
         // Centre of quad 0: natural (200, 200) → _TexCoord.x 0.104; GL gl_FragCoord.y = 1080 − 200 = 880.
-        #expect(abs(p.r - Int((200.0 / 1920 * 4 * 255).rounded())) <= 6)
+        let expectedR: Int = Int((200.0 / 1920.0 * 4.0 * 255.0).rounded())
+        #expect(abs(p.r - expectedR) <= 6)
         #expect(abs(p.g - Int((880.0 / 1080 * 255).rounded())) <= 6)
     }
 

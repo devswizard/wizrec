@@ -34,7 +34,10 @@ import VideoToolbox
         }
         func luma(_ c: SIMD3<Double>) -> Double { 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z }
         func code(_ v: Double) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
-        let (ys, yo, cs, co) = fullRange ? (1.0, 0.0, 1.0, 128.0 / 255) : (219.0 / 255, 16.0 / 255, 224.0 / 255, 128.0 / 255)
+        let ys: Double = fullRange ? 1 : 219.0 / 255
+        let yo: Double = fullRange ? 0 : 16.0 / 255
+        let cs: Double = fullRange ? 1 : 224.0 / 255
+        let co: Double = 128.0 / 255
         var Y: [UInt8] = [], C: [UInt8] = []
         for y in 0..<h { for x in 0..<w { Y.append(code(yo + ys * luma(rgb(x, y)))) } }
         for cy in 0..<((h + 1) / 2) {

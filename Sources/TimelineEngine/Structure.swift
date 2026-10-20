@@ -133,7 +133,10 @@ public final class GroupClips: EditCommand {
         let used = Array(Set(found.map(\.track))).sorted()
         guard let lowest = used.first else { throw EditError.invalid("nothing to group") }
         let gStart = found.map { $0.loc.clip["start"]?.int ?? 0 }.min() ?? 0
-        let gEnd = found.map { ($0.loc.clip["start"]?.int ?? 0) + ($0.loc.clip["duration"]?.int ?? 0) }.max() ?? 0
+        let gEnd: Int64 = found.map { (f) -> Int64 in
+            let start: Int64 = f.loc.clip["start"]?.int ?? 0, duration: Int64 = f.loc.clip["duration"]?.int ?? 0
+            return start + duration
+        }.max() ?? 0
 
         var edits = TrackEdits(project)
         var inner: [JSON] = []
