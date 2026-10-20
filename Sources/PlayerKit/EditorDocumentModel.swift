@@ -5,6 +5,7 @@ import Observation
 import RenderEngine
 import TimelineEngine
 import TSCProjKit
+import WizRecAssets
 
 /// A source-bin entry whose file is not on this machine.
 public struct MissingMedia: Sendable, Equatable, Identifiable {
@@ -296,7 +297,9 @@ public final class EditorDocumentModel {
         let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
         let loudness = await measureLoudness(info: info, src: src)
         let d = SourceDescriptor(info: info, src: src, lastModified: date)
-        let c = CompoundCommand(name: "Import Media", [{ _, _ in AddSource(d) }] + Self.loudnessSteps(addIndex: 0, loudness))
+        let shader = ShaderSourceImport.entries(info: info, url: file)
+        let c = CompoundCommand(name: "Import Media", [{ _, _ in AddSource(d) }] + Self.loudnessSteps(addIndex: 0, loudness)
+                                + ShaderSourceImport.steps(addIndex: 0, shader))
         try perform(c)
         guard let id = (c.steps.first as? AddSource)?.sourceID else { throw EditError.invalid("AddSource returned no id") }
         return id
@@ -347,6 +350,7 @@ public final class EditorDocumentModel {
                                name: String) async throws -> [Int64] {
         var descriptors: [SourceDescriptor] = []
         var measured: [[(track: Int, loudness: SourceLoudness)]] = []
+        var shaders: [[ShaderEffectDefEntry]?] = []
         for file in files {
             let info: MediaInfo
             do { info = try await thumbnailPool.probe(file) } catch {
@@ -356,6 +360,7 @@ public final class EditorDocumentModel {
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
             descriptors.append(SourceDescriptor(info: info, src: src, lastModified: date))
             measured.append(await measureLoudness(info: info, src: src))
+            shaders.append(ShaderSourceImport.entries(info: info, url: file))
         }
         let editRate = project.timebase.editRate
         var builders: [CompoundCommand.Builder] = []
@@ -363,6 +368,7 @@ public final class EditorDocumentModel {
             let addIndex = builders.count
             builders.append { _, _ in AddSource(d) }
             builders += Self.loudnessSteps(addIndex: addIndex, measured[i])
+            builders += ShaderSourceImport.steps(addIndex: addIndex, shaders[i])
             builders.append { project, done in
                 guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
                 // Placement is decided when the step is first applied, after earlier files took their tracks.
@@ -380,6 +386,24 @@ public final class EditorDocumentModel {
             guard let id = (place.steps.last as? InsertClip)?.clipID else { throw EditError.invalid("no clip id") }
             return id
         }
+    }
+
+    /// Places one of WizRec's own backgrounds (`AssetCatalog.backgrounds`) at `ticks`: its
+    /// `.tscshadervid` is written into the bundle (`media/<ts>/<id>.tscshadervid`) and placed like
+    /// an imported file, with the source's `effectDef` and the clip's `sourceEffect` at the
+    /// background's defaults (60 s, `shader-backgrounds.md` §6, SH2). One undo step; returns the clip id.
+    @discardableResult
+    public func placeBackground(_ background: BackgroundAsset, at ticks: Int64, track: Int? = nil) async throws -> Int64 {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-bg-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let file = tmp.appendingPathComponent(background.fileName)
+        try background.shaderVidData().write(to: file, options: .atomic)
+        guard let id = try await importAndPlace([file], at: ticks, track: track,
+                                                name: String(localized: "Add Background")).first else {
+            throw EditError.invalid("no clip id")
+        }
+        return id
     }
 
     /// Places source `sourceID` at `ticks`: on `track` when free there, else the lowest free
@@ -438,6 +462,8 @@ public final class EditorDocumentModel {
                 let addIndex = builders.count
                 builders.append { _, _ in AddSource(d) }
                 builders += Self.loudnessSteps(addIndex: addIndex, loudness)
+                builders += ShaderSourceImport.steps(
+                    addIndex: addIndex, ShaderSourceImport.entries(info: info, url: file))
                 inserts.append(builders.count)
                 builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
                                                  previous: inserts.dropLast().last) { done in

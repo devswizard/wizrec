@@ -416,6 +416,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.movie, .audio, .image, .audiovisualContent]
+            + [UTType(filenameExtension: "tscshadervid")].compactMap { $0 }   // shader backgrounds
         panel.message = "Choose media to add to the project's media bin."
         panel.beginSheetModal(for: window) { [weak self] r in
             guard r == .OK else { return }
