@@ -53,6 +53,8 @@ import WizRecTestSupport
         var e = ProcessInfo.processInfo.environment
         e["WIZREC_SPARKLE_FEED"] = nil
         e["WIZREC_SPARKLE_PUBKEY"] = nil
+        // Hermetic: never the committed release/sparkle.conf, whose key the maintainer fills in.
+        e["WIZREC_SPARKLE_CONF"] = "/nonexistent/sparkle.conf"
         e.merge(env) { $1 }
         let r = try TestProcess.run("/bin/bash", [Self.script.path], environment: e, stderr: .discard)
         return (r.status, r.stdoutText)
@@ -77,5 +79,49 @@ import WizRecTestSupport
         #expect(try run(["WIZREC_SPARKLE_FEED": "http://x.org/a.xml", "WIZREC_SPARKLE_PUBKEY": Self.key]).status != 0)
         #expect(try run(["WIZREC_SPARKLE_FEED": Self.feed, "WIZREC_SPARKLE_PUBKEY": "abc"]).status != 0)
         #expect(try run(["WIZREC_SPARKLE_FEED": Self.feed + "?a=<b>", "WIZREC_SPARKLE_PUBKEY": Self.key]).status != 0)
+    }
+
+    // MARK: release/sparkle.conf (committed feed URL + public key)
+
+    private func runWithConf(_ text: String, env: [String: String] = [:]) throws -> (status: Int32, out: String) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sparkle-conf-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let conf = dir.appendingPathComponent("sparkle.conf")
+        try Data(text.utf8).write(to: conf)
+        var all = env
+        all["WIZREC_SPARKLE_CONF"] = conf.path
+        return try run(all)
+    }
+
+    @Test func confWithoutKeyLeavesTheUpdaterOff() throws {
+        let r = try runWithConf("# comment\nfeed_url = \(Self.feed)\npublic_ed_key =\n")
+        #expect(r.status == 0 && r.out.isEmpty)
+    }
+
+    @Test func confWithKeyEnablesTheUpdater() throws {
+        let r = try runWithConf("feed_url = \(Self.feed)\n\n# the public key\npublic_ed_key = \(Self.key)\n")
+        #expect(r.status == 0)
+        #expect(r.out.contains("<string>\(Self.feed)</string>") && r.out.contains("<string>\(Self.key)</string>"))
+    }
+
+    @Test func confRejectsKeyWithoutFeedAndEnvironmentOverridesAsAPair() throws {
+        #expect(try runWithConf("public_ed_key = \(Self.key)\n").status != 0)
+        #expect(try runWithConf("feed_url = http://x.org/a.xml\npublic_ed_key = \(Self.key)\n").status != 0)
+        let other = "https://other.example.org/appcast.xml"
+        let pair = try runWithConf("feed_url = \(Self.feed)\npublic_ed_key =\n",
+                                   env: ["WIZREC_SPARKLE_FEED": other, "WIZREC_SPARKLE_PUBKEY": Self.key])
+        #expect(pair.status == 0 && pair.out.contains(other))
+        #expect(try runWithConf("feed_url = \(Self.feed)\npublic_ed_key = \(Self.key)\n",
+                                env: ["WIZREC_SPARKLE_PUBKEY": Self.key]).status != 0)
+    }
+
+    @Test func committedConfKeepsTheUpdaterOffOrValid() throws {
+        // The committed file must always produce a valid result: nothing (no key yet) or both keys.
+        let conf = Self.script.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("release/sparkle.conf")
+        let r = try run(["WIZREC_SPARKLE_CONF": conf.path])
+        #expect(r.status == 0)
+        #expect(r.out.isEmpty || (r.out.contains("SUFeedURL") && r.out.contains("SUPublicEDKey")))
     }
 }

@@ -1,14 +1,14 @@
 #!/bin/bash
 # Prints the Sparkle Info.plist entries for make-app.sh. The values come from the committed
-# release/sparkle.conf (feed_url, public_ed_key); the environment overrides each one:
+# release/sparkle.conf (feed_url, public_ed_key); the environment overrides both together:
 #
 #   WIZREC_SPARKLE_FEED     appcast URL (https only), e.g. https://example.org/wizrec/appcast.xml
 #   WIZREC_SPARKLE_PUBKEY   EdDSA public key from Sparkle's generate_keys (base64, 32 bytes)
 #   WIZREC_SPARKLE_CONF     another config file (default: release/sparkle.conf)
 #
 # No public key (the committed state until the maintainer creates one): prints nothing, and
-# the app's updater stays off. A feed set in the environment without a key, a key without a
-# feed, or an invalid value: exits 1, so a release is never built with a half-configured
+# the app's updater stays off. Only one of the two variables set, a key in the file without
+# a feed, or an invalid value: exits 1, so a release is never built with a half-configured
 # updater. The private key is never read here; it stays in the maintainer's keychain
 # (docs/RELEASING.md, "Sparkle").
 set -euo pipefail
@@ -25,19 +25,20 @@ conf() {
   ' "$CONF"
 }
 
-FEED=${WIZREC_SPARKLE_FEED:-$(conf feed_url)}
-KEY=${WIZREC_SPARKLE_PUBKEY:-$(conf public_ed_key)}
-
-if [ -z "$KEY" ]; then
-  if [ -n "${WIZREC_SPARKLE_FEED:-}" ]; then
-    echo "error: WIZREC_SPARKLE_FEED is set but there is no public key (WIZREC_SPARKLE_PUBKEY or public_ed_key in $CONF)" >&2
+if [ -n "${WIZREC_SPARKLE_FEED:-}" ] || [ -n "${WIZREC_SPARKLE_PUBKEY:-}" ]; then
+  # The environment overrides the file as a pair.
+  FEED=${WIZREC_SPARKLE_FEED:-}; KEY=${WIZREC_SPARKLE_PUBKEY:-}
+  if [ -z "$FEED" ] || [ -z "$KEY" ]; then
+    echo "error: set both WIZREC_SPARKLE_FEED and WIZREC_SPARKLE_PUBKEY, or neither (then $CONF is used)" >&2
     exit 1
   fi
-  exit 0   # updater off
-fi
-if [ -z "$FEED" ]; then
-  echo "error: a Sparkle public key is set but no feed URL (WIZREC_SPARKLE_FEED or feed_url in $CONF)" >&2
-  exit 1
+else
+  FEED=$(conf feed_url); KEY=$(conf public_ed_key)
+  [ -z "$KEY" ] && exit 0   # no public key yet: updater off
+  if [ -z "$FEED" ]; then
+    echo "error: $CONF has a public_ed_key but no feed_url" >&2
+    exit 1
+  fi
 fi
 case "$FEED" in
   https://?*) ;;

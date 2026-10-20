@@ -66,8 +66,8 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | `WIZREC_BUNDLE_ID` | `make-app.sh`, `verify-dmg.sh` | `CFBundleIdentifier`; default `com.devswizard.WizRec` |
 | `WIZREC_SIGN_IDENTITY` | `sign.sh` | Codesign identity in the keychain; unset → ad-hoc (`-`). `Developer ID Application: …` → hardened runtime, timestamp, entitlements. Any other identity (self-signed "WizRec Dev") → plain signature, because library validation needs a Team ID |
 | `WIZREC_HARDENED=1` | `sign.sh` | Force hardened runtime for a non-Developer-ID identity |
-| `WIZREC_SPARKLE_FEED` | `make-app.sh` (`sparkle-info.sh`) | Appcast URL (`https://` only) → `SUFeedURL`; overrides `feed_url` in `release/sparkle.conf`. A feed without a key, or an invalid value, fails the build |
-| `WIZREC_SPARKLE_PUBKEY` | `make-app.sh` (`sparkle-info.sh`) | EdDSA public key (base64, 32 bytes) → `SUPublicEDKey`; overrides `public_ed_key` in `release/sparkle.conf`. No key anywhere → updater off |
+| `WIZREC_SPARKLE_FEED` | `make-app.sh` (`sparkle-info.sh`) | Appcast URL (`https://` only) → `SUFeedURL`. Together with `WIZREC_SPARKLE_PUBKEY` it overrides `release/sparkle.conf`; one of the two alone, or an invalid value, fails the build |
+| `WIZREC_SPARKLE_PUBKEY` | `make-app.sh` (`sparkle-info.sh`) | EdDSA public key (base64, 32 bytes) → `SUPublicEDKey`. Neither variable set and no key in `release/sparkle.conf` → updater off |
 | `WIZREC_SPARKLE_CONF` | `sparkle-info.sh`, `update-appcast.sh` | Another config file instead of `release/sparkle.conf` |
 | `WIZREC_ALLOW_BUILD_RPATHS=1` | `verify-dmg.sh` | Run paths outside the bundle are warnings, not errors (DMGs built before 2026-10-20, e.g. v0.1.0) |
 | `NOTARIZE=1` | `release.sh` | Notarize and staple app and DMG. Without `WIZREC_SIGN_IDENTITY` it is skipped with a warning (ad-hoc builds cannot be notarized) |
@@ -172,8 +172,10 @@ public_ed_key =
 Info.plist entries `SUFeedURL` and `SUPublicEDKey`. With `public_ed_key` empty, the committed
 state, it prints nothing and the updater stays off, as in v0.1.0. `WIZREC_SPARKLE_FEED` /
 `WIZREC_SPARKLE_PUBKEY` in the environment (or as repository variables in CI) override the
-file; a feed without a key, a key without a feed, a non-https feed or a key that is not 32
-bytes of base64 fails the build.
+file as a pair; one of them alone, a key in the file without a feed, a non-https feed or a
+key that is not 32 bytes of base64 fails the build. `UpdaterConfigurationTests` cover the
+file and the variables (hermetically: they never read the committed file, except one check
+that it always yields nothing or a valid pair).
 
 **Sparkle: turning updates on (once, the user, on the maintainer Mac).** The only manual
 step: it creates the private key in the login keychain, which no agent or workflow may do.
