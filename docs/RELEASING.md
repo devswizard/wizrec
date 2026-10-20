@@ -205,7 +205,10 @@ for non-sandboxed apps.
   the DMG (`VERIFY=1`). Repository **variables** (public): `WIZREC_BUNDLE_ID` (overrides the
   default), `WIZREC_SPARKLE_FEED`, `WIZREC_SPARKLE_PUBKEY`, `WIZREC_DOWNLOAD_PREFIX`. With the
   secret `SPARKLE_ED_PRIVATE_KEY` as well, it writes a signed `appcast.xml` and uploads it
-  with the DMG. The workflow never publishes or pushes anything.
+  with the DMG. It never publishes a release or pushes anything.
+- `.github/workflows/publish.yml`: turns a draft release public (see "Publishing a
+  release"). Runs on a push to `main` that changes `release/publish`, or by hand. Uses only
+  the workflow's own `GITHUB_TOKEN` (`contents: write`); no secret or variable to set up.
 
 ## Setting up the GitHub remote (user)
 
@@ -213,7 +216,8 @@ The repository has no remote yet. Once the user creates it (e.g. `devswizard/wiz
 
 1. Add it as `origin` and push `main` (decide the git-history rewrite first, see
    `coordination/DECISIONS.md` 2026-10-20).
-2. Actions run on their own: `ci.yml` on pushes and pull requests, `release.yml` on `v*` tags.
+2. Actions run on their own: `ci.yml` on pushes and pull requests, `release.yml` on `v*` tags,
+   `publish.yml` when `release/publish` changes on `main`.
 3. Signing (when a Developer ID exists): secrets `MACOS_CERT_P12` (base64 `.p12`),
    `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY`; notarization: `NOTARY_APPLE_ID`,
    `NOTARY_TEAM_ID`, `NOTARY_PASSWORD` (app-specific password).
@@ -229,8 +233,30 @@ No Apple Developer account: releases are ad-hoc signed and never notarized.
 2. The Release workflow builds the DMG (FFmpeg and Sparkle inside, so users install
    nothing else), runs the DMG smoke test, and attaches `WizRec-<version>.dmg` and
    `SHA256SUMS.txt` to a **draft** GitHub Release using `docs/release-notes-template.md`.
-3. Verify the draft's DMG (below), review the notes (prefilled from the template; update
-   "What's new" for releases after 0.1.0) and publish it.
+3. Review the notes (prefilled from the template; update "What's new" for releases after
+   0.1.0, before tagging).
+4. Request publication: put the tag on the first non-comment line of `release/publish`,
+   commit, and push to `main`. The **Publish release** workflow (`publish.yml`) then runs
+   `scripts/release/publish-release.sh <tag>`, which:
+   - finds the release by tag (waiting up to 75 minutes for the Release workflow when the
+     request is pushed together with the tag);
+   - exits 0 if it is already public (idempotent: re-running, or pushing the file again,
+     changes nothing);
+   - fails if the tag does not exist (publishing would otherwise create it on `main`'s head);
+   - fails if the title or notes contain an AI attribution line (`Co-Authored-By:`,
+     "Generated with …", Claude, Anthropic, Copilot, ChatGPT, OpenAI, the robot emoji);
+   - downloads every asset, checks that each DMG is listed in `SHA256SUMS.txt`, runs
+     `shasum -a 256 -c SHA256SUMS.txt` and `scripts/release/verify-dmg.sh` on each DMG
+     (mount, signature, load paths, launch with `--quit-after 5`);
+   - only then sets `draft: false` (marked latest) and reads the release back.
+
+   By hand: *Actions ▸ Publish release ▸ Run workflow*, with an optional tag (default: the
+   one in `release/publish`) and *dry run* (every check, the draft stays a draft).
+   Locally the same script works with any token that has push access:
+   `GH_TOKEN=… DRY_RUN=1 scripts/release/publish-release.sh v0.1.0` (curl and python3; no
+   `gh`). The token goes to curl through a config on stdin, never on a command line or
+   into the log.
+5. Check the public asset without a token (next section, "Published releases").
 
 ### Verifying a downloaded release asset (no `gh`)
 
@@ -257,3 +283,13 @@ Without a token, download the same DMG from the Release run's workflow artifact 
 sign-in) or rebuild from the tag (check out `v0.1.0`, then `VERIFY=1 scripts/release.sh`).
 `curl` sets no quarantine flag, so this does not exercise the Gatekeeper first-launch
 prompt; for that, download in a browser and open it from Finder.
+
+**Published releases** need no token: the assets have fixed URLs.
+
+```sh
+TAG=v0.1.0 V=0.1.0 D=$(mktemp -d)
+U=https://github.com/devswizard/wizrec/releases/download/$TAG
+(cd "$D" && curl -fsSLO "$U/WizRec-$V.dmg" && curl -fsSLO "$U/SHA256SUMS.txt" \
+  && shasum -a 256 -c SHA256SUMS.txt)
+scripts/release/verify-dmg.sh "$D/WizRec-$V.dmg"
+```

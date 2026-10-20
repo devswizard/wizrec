@@ -1,0 +1,4 @@
+# Publish request: the first line that is not a comment names the tag whose draft GitHub
+# Release goes public. A push to main that changes this file runs
+# .github/workflows/publish.yml (checks, then draft -> public). See docs/RELEASING.md.
+v0.1.0
