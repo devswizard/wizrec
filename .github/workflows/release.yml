@@ -1,6 +1,8 @@
-# Release build: app bundle with FFmpeg inside, signature, optional notarization, DMG.
+# Release build: app bundle with FFmpeg and Sparkle inside, signature, optional notarization,
+# DMG, smoke test (mount + launch), optional signed Sparkle appcast.
 # Runs on version tags and by hand. Signs and notarizes only when the repository secrets
-# exist; otherwise produces an ad-hoc signed DMG artifact. See docs/RELEASING.md.
+# exist; otherwise produces an ad-hoc signed DMG artifact. Never pushes or publishes
+# anything: the DMG (and appcast.xml) are workflow artifacts. See docs/RELEASING.md.
 name: Release
 
 on:
@@ -80,6 +82,22 @@ jobs:
             --password "$PASSWORD" --keychain "$RUNNER_TEMP/wizrec.keychain-db"
           echo "profile=wizrec-ci" >> "$GITHUB_OUTPUT"
 
+      - name: Sparkle appcast key (only when the secret and variables exist)
+        id: sparkle
+        env:
+          ED_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          FEED: ${{ vars.WIZREC_SPARKLE_FEED }}
+          PREFIX: ${{ vars.WIZREC_DOWNLOAD_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ED_KEY" ] || [ -z "$FEED" ] || [ -z "$PREFIX" ]; then
+            echo "No Sparkle key/feed/download prefix: no appcast."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$ED_KEY" > "$RUNNER_TEMP/sparkle-ed.key"
+          echo "enabled=1" >> "$GITHUB_OUTPUT"
+
       - name: Build release
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -87,15 +105,26 @@ jobs:
           WIZREC_NOTARY_PROFILE: ${{ steps.notary.outputs.profile }}
           WIZREC_BUNDLE_ID: ${{ vars.WIZREC_BUNDLE_ID }}
           NOTARIZE: ${{ steps.notary.outputs.profile != '' && '1' || '0' }}
+          # Public values (repository variables); both unset → the app's updater is off.
+          WIZREC_SPARKLE_FEED: ${{ vars.WIZREC_SPARKLE_FEED }}
+          WIZREC_SPARKLE_PUBKEY: ${{ vars.WIZREC_SPARKLE_PUBKEY }}
+          SPARKLE: ${{ steps.sparkle.outputs.enabled == '1' && '1' || '0' }}
+          SPARKLE_KEY_FILE: ${{ steps.sparkle.outputs.enabled == '1' && format('{0}/sparkle-ed.key', runner.temp) || '' }}
+          WIZREC_DOWNLOAD_PREFIX: ${{ vars.WIZREC_DOWNLOAD_PREFIX }}
+          VERIFY: "1"
         run: scripts/release.sh
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: WizRec-${{ steps.version.outputs.version }}
-          path: build/WizRec-*.dmg
+          path: |
+            build/WizRec-*.dmg
+            build/updates/appcast.xml
           if-no-files-found: error
 
-      - name: Remove temporary keychain
+      - name: Remove temporary keychain and keys
         if: always()
-        run: security delete-keychain "$RUNNER_TEMP/wizrec.keychain-db" 2>/dev/null || true
+        run: |
+          security delete-keychain "$RUNNER_TEMP/wizrec.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/sparkle-ed.key"
