@@ -64,25 +64,32 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-19, end of build session 4)
+## Current state (2026-10-20, end of build session 5)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 4 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 5 snapshot, follow-ups,
   user's pending items).
-- Done and merged: M0–M3 (incl. inner group tracks + media drops into open
-  groups), M7 recorder (real capture confirmed by user), M8 audio, M9 export
-  (parallel audio prefetch; release build ≈5× real time 1080p H.264, ProRes
-  demo 25.7 s in 3.1 s), M10 captions (Apple Speech confirmed live;
-  whisper.cpp backend via `whisper-cli` subprocess, untested live), M11
-  assets/scripts/docs/CI (fixture thumbnails stripped, asset audit test,
-  env-only signing with ad-hoc fallback); most of M4–M6 rendering incl.
-  particle shader backgrounds. MediaEngine: HDR10/HLG → SDR tone mapping
-  [WizRec]; ProRes/MPEG-2/MPEG-4p2 decode in software only; HW and SW lanes
-  byte-identical. 812 tests green (20 known issues = golden-harness and
-  LoadGate self-tests). No WIP branches, no worktrees.
-- Still blocked on the user: Camtasia sessions 1 and 2 reference exports
-  (golden gates for M1/M4/M5/M6, effect/caption/audio/group-edit/particle
-  specs), whisper.cpp + model, GitHub remote, bundle ID, Developer ID,
-  Sparkle approval, git-history decision for the old fixture thumbnail.
+- Done and merged: M0–M3, M7 recorder, M8 audio (now aligned to Camtasia
+  2026.2.3 AU1/AU2: exact effect names/defaults, fades as volume points,
+  dual-mono loudness at the mix rate), M9 export (ProRes demo 25.7 s in
+  3.0 s), M10 captions (whisper.cpp 1.9.5 live-tested; VAD timing; Bengali
+  via large-v3-turbo; CA1/CA2 caption rules), M11 (Sparkle 2.10.0 wired, off
+  until a feed/key exist; self-signed DMG verified; CI ready for a remote);
+  M4–M6 rendering with all 31 blend modes, matte modes, Border/Reflection,
+  CO3 callouts, Extend Frame held frames, Metal HDR tone map for playback
+  (4K60 HEVC PQ 34 → 478 fps); group/split/trim/ungroup/marker rules from
+  observed Camtasia saves (X3/X5/X7/X8). Automated UI checks of the built app
+  (`scripts/ui-checks/`). 979 tests green (23 known issues =
+  golden-harness and LoadGate self-tests).
+- Camtasia here is a **trial**: export only offers "with/without watermark",
+  so there are still **no reference exports**; golden parity (M1/M4/M5/M6)
+  and every look/timing question stay open. Save-only experiments were
+  automated (researcher, DECISIONS 2026-10-20); the export-only leftovers
+  are listed at the end of `docs/testing/camtasia-session-2.md`.
+- Camtasia rejects WizRec `.tscshadervid` backgrounds (signed files only);
+  WizRec warns on save.
+- Still blocked on the user: licensed reference exports, GitHub remote,
+  Developer ID + notary profile, Sparkle feed host + keys, git-history
+  rewrite decision.
 
 ### M0 (2026-10-19)
 
