@@ -25,7 +25,7 @@ public struct SheetCell: Codable, Sendable, Equatable {
 /// sheet.json        this manifest (written by `wizrec-testgen sheets`)
 /// <case>.cmproj/    the project; Camtasia's Save adds metadata.ProjectThumbnail + docPrefs
 /// reference.png     the user's Export Frame at the playhead (full canvas size)
-/// reference.mp4     only for movie sheets (EF6)
+/// reference.mp4     only for movie sheets (EF6); a ProRes reference.mov is preferred
 /// ```
 public struct SheetManifest: Codable, Sendable, Equatable {
     public var caseName: String
@@ -51,8 +51,13 @@ public struct SheetManifest: Codable, Sendable, Equatable {
     /// Canvas size, px.
     public var width: Int
     public var height: Int
-    /// Minimum SSIM, per cell and for the whole frame (CLAUDE.md M4: 0.95).
+    /// Minimum colour SSIM, per cell and for the whole frame (CLAUDE.md M4: 0.95; per
+    /// sheet from `TestGen.sheetThresholds`).
     public var ssimMin: Double
+    /// Optional whole-frame PSNR floor, dB (RGB); enforced only against `psnrReference`.
+    public var psnrMin: Double?
+    /// Reference file name `psnrMin` was calibrated on; nil: any reference.
+    public var psnrReference: String?
     public var cells: [SheetCell]
     /// What to check by eye in Camtasia.
     public var checklist: String
@@ -60,7 +65,8 @@ public struct SheetManifest: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case caseName = "case", group, summary, status, project, requires, referenceImage, referenceMovie,
-             movieFrames, playheadFrame, fps, width, height, ssimMin, cells, checklist, generator
+             movieFrames, playheadFrame, fps, width, height, ssimMin, psnrMin, psnrReference, cells, checklist,
+             generator
     }
 
     public static func load(_ url: URL) throws -> SheetManifest {
@@ -521,12 +527,14 @@ extension TestGen {
         let fm = FileManager.default
         let caseDir = outDir.appendingPathComponent("\(sheet.group)/\(sheet.name)", isDirectory: true)
         try fm.createDirectory(at: caseDir, withIntermediateDirectories: true)
+        let threshold = TestGen.sheetThreshold(for: "\(sheet.group)/\(sheet.name)")
         var manifest = SheetManifest(
             caseName: sheet.name, group: sheet.group, summary: sheet.summary, status: sheet.status,
             project: sheet.isPlaceholder ? nil : "\(sheet.name).cmproj", requires: sheet.requires,
             referenceImage: "reference.png", referenceMovie: sheet.movieFrames == nil ? nil : "reference.mp4",
             movieFrames: sheet.movieFrames, playheadFrame: sheet.playheadFrame, fps: 30, width: 1920, height: 1080,
-            ssimMin: 0.95, cells: sheet.cells, checklist: sheet.checklist, generator: version)
+            ssimMin: threshold.ssimMin, psnrMin: threshold.psnr?.dB, psnrReference: threshold.psnr?.reference,
+            cells: sheet.cells, checklist: sheet.checklist, generator: version)
         guard let build = sheet.build else {
             manifest.project = nil
             try manifest.write(to: caseDir.appendingPathComponent("sheet.json"))

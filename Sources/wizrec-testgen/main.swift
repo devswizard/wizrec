@@ -166,11 +166,18 @@ if args.first == "sheets" {
             let caseDir = out.appendingPathComponent("\(sheet.group)/\(sheet.name)")
             let bundle = caseDir.appendingPathComponent("\(sheet.name).cmproj")
             if !force, let saved = try? ProjectBundle(url: bundle), ProjectThumbnail.pngData(in: saved.project) != nil {
-                print("keep   \(sheet.name) (saved by Camtasia; --force to rebuild)")
+                // Keep the bundle, but bring sheet.json's thresholds up to date.
+                let file = caseDir.appendingPathComponent("sheet.json")
+                if var m = try? SheetManifest.load(file) {
+                    let t = TestGen.sheetThreshold(for: "\(sheet.group)/\(sheet.name)")
+                    (m.ssimMin, m.psnrMin, m.psnrReference) = (t.ssimMin, t.psnr?.dB, t.psnr?.reference)
+                    try m.write(to: file)
+                }
+                print("keep   \(sheet.name) (saved by Camtasia; thresholds updated; --force to rebuild)")
                 continue
             }
             try TestGen.write(sheet, media: media, to: out)
-            let refs = ["reference.png", "reference.mp4"].filter { fm.fileExists(atPath: caseDir.appendingPathComponent($0).path) }
+            let refs = ["reference.png", "reference.mp4", "reference.mov"].filter { fm.fileExists(atPath: caseDir.appendingPathComponent($0).path) }
             let note = refs.isEmpty ? "" : "  [\(refs.joined(separator: ", ")) exists: re-export if the sheet changed]"
             print(sheet.isPlaceholder ? "hold   \(caseDir.path) (placeholder, after EF0)" : "wrote  \(bundle.path)\(note)")
         }

@@ -30,7 +30,26 @@ artefacts (rendered / reference / diff4x / SSIM PNGs) go to `$GOLDEN_OUT`
 frame. How to make the exports: `reference-exports.md` (frames) and
 `camtasia-session-2.md` (sheets).
 
+## ProRes references (`reference.mov`)
+
+Camtasia's H.264 exports are not bit-reproducible, so PSNR on them drifts
+between exports. Where a ProRes export exists, put it next to the MP4 as
+`reference.mov`: golden cases and movie sheets compare against the `.mov`
+when present and fall back to `reference.mp4` (`ReferenceFile.resolve`).
+`GOLDEN_PREFER=mp4` forces the MP4. The harness logs which file it compared
+(`golden <case>: comparing against reference.mov`).
+
+Measured on WizRec's own render as the reference (self-tests): ProRes 422 HQ
+keeps PSNR at 64–67 dB on EF6 (H.264 20 Mbit/s: 53–68 dB) and ≥ 45 dB on
+`keyframes-linear` at 960×540.
+
 ## Setting `psnrMin` (only from real data)
+
+Floors are tied to the file they were measured on: `PSNRFloor(dB:reference:)`
+writes `psnrMin` + `psnrReference` into `golden.json` / `sheet.json`, and the
+harness enforces the floor only when it compares that same file (a ProRes floor
+never gates an MP4). Sheets use `TestGen.sheetThresholds["<group>/<case>"]`
+(`SheetThreshold(ssimMin:psnr:)`, default SSIM 0.95, no PSNR floor).
 
 The golden manifests gate on SSIM (0.97 frames, 0.95 sheets) and the marker
 centroid. `psnrMin` is `nil` everywhere until real references exist. The hook:
@@ -38,15 +57,20 @@ centroid. `psnrMin` is `nil` everywhere until real references exist. The hook:
 1. `scripts/golden.sh --calibrate` writes
    `$GOLDEN_OUT/calibration/<case>.json` with `minSSIM`, `minPSNR` and
    `suggestedPsnrMin` (lowest PSNR over the compared frames − 1 dB, rounded
-   down to 0.5 dB) and prints a summary.
+   down to 0.5 dB) and prints a summary, plus paste-ready Swift entries for
+   `TestGen.psnrMinByCase` and `TestGen.sheetThresholds`. Sheets record
+   `minCellSSIM` too.
 2. Review the failing/odd cases first: never calibrate on a case that fails
    SSIM.
-3. Copy the values into `TestGen.psnrMinByCase`
+3. Copy the entries into `TestGen.psnrMinByCase` / `TestGen.sheetThresholds`
    (`Sources/TestGenKit/TestGen.swift`, marked `TODO(S3-QA-1)`).
-4. `swift run wizrec-testgen --force` rewrites each `golden.json` with the new
-   floor (it never touches `reference.mp4`).
+4. `swift run wizrec-testgen --force` rewrites each `golden.json` with the
+   new floor; `swift run wizrec-testgen sheets` updates the thresholds in each
+   `sheet.json`, keeping Camtasia-saved bundles (no `--force` needed). Neither
+   touches `reference.*`.
 5. `scripts/golden.sh` again; commit the `TestGen` change with the numbers in
    the message.
 
-The unit test `psnrMinStaysUnsetWithoutReferences` fails if someone sets a
-floor before step 3; update it in the same commit.
+The unit tests `psnrMinStaysUnsetWithoutReferences` and
+`sheetThresholdsStayDefaultWithoutReferences` fail if someone sets a floor
+before step 3; update them in the same commit.

@@ -8,6 +8,8 @@ import TSCProjKit
 /// golden.json          this manifest (written by wizrec-testgen)
 /// <case>.cmproj/       the project, with its media under media/<ts>/
 /// reference.mp4        the user's Camtasia export (1920×1080, 30 fps)
+/// reference.mov        optional ProRes export of the same, preferred when present
+///                      (`ReferenceFile.resolve`)
 /// ```
 public struct GoldenManifest: Codable, Sendable, Equatable {
     /// Case name (`"case"` in JSON).
@@ -30,6 +32,9 @@ public struct GoldenManifest: Codable, Sendable, Equatable {
     public var ssimMin: Double
     /// Optional minimum PSNR per frame, dB (RGB).
     public var psnrMin: Double?
+    /// Reference file name `psnrMin` was calibrated on (`reference.mov` …): the floor is
+    /// enforced only when the harness compares against that file. nil: any reference.
+    public var psnrReference: String?
     /// Frame (as a string) → what a correct render shows.
     public var expectations: [String: String]
     /// Timeline frame (as a string) → source frame of clip A the export must show
@@ -40,15 +45,17 @@ public struct GoldenManifest: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case caseName = "case", summary, project, reference, fps, width, height, durationFrames, frames, ssimMin,
-             psnrMin, expectations, sourceFrames, generator
+             psnrMin, psnrReference, expectations, sourceFrames, generator
     }
 
     public init(caseName: String, summary: String, project: String, reference: String, fps: Int, width: Int,
                 height: Int, durationFrames: Int, frames: [Int], ssimMin: Double, psnrMin: Double?,
-                expectations: [String: String], sourceFrames: [String: Int]? = nil, generator: String) {
+                psnrReference: String? = nil, expectations: [String: String], sourceFrames: [String: Int]? = nil,
+                generator: String) {
         self.caseName = caseName; self.summary = summary; self.project = project; self.reference = reference
         self.fps = fps; self.width = width; self.height = height; self.durationFrames = durationFrames
-        self.frames = frames; self.ssimMin = ssimMin; self.psnrMin = psnrMin; self.expectations = expectations
+        self.frames = frames; self.ssimMin = ssimMin; self.psnrMin = psnrMin; self.psnrReference = psnrReference
+        self.expectations = expectations
         self.sourceFrames = sourceFrames; self.generator = generator
     }
 
@@ -63,6 +70,50 @@ public struct GoldenManifest: Codable, Sendable, Equatable {
     }
 }
 
+/// A PSNR floor calibrated on one reference file.
+public struct PSNRFloor: Sendable, Equatable {
+    /// Minimum PSNR, dB (RGB).
+    public var dB: Double
+    /// Reference file it was measured on (`reference.mov`, `reference.mp4`, `reference.png`).
+    /// Camtasia's H.264 exports are not bit-reproducible, so a floor measured on a ProRes
+    /// file never gates an MP4 comparison.
+    public var reference: String
+    public init(dB: Double, reference: String) { self.dB = dB; self.reference = reference }
+}
+
+/// Thresholds for one effect/callout sheet (default: colour SSIM 0.95, no PSNR floor).
+public struct SheetThreshold: Sendable, Equatable {
+    /// Minimum colour SSIM, whole frame and per cell.
+    public var ssimMin: Double
+    /// Optional whole-frame PSNR floor.
+    public var psnr: PSNRFloor?
+    public init(ssimMin: Double = 0.95, psnr: PSNRFloor? = nil) { self.ssimMin = ssimMin; self.psnr = psnr }
+}
+
+/// Which reference file the golden harness compares against.
+public enum ReferenceFile {
+    /// The file to compare for a declared reference. A sibling `.mov` (ProRes: decodes the
+    /// same on every run) wins over a declared `.mp4` unless `prefer == "mp4"`
+    /// (env `GOLDEN_PREFER=mp4`). Falls back to whichever exists; nil when neither does.
+    public static func resolve(in directory: URL, declared: String,
+                               prefer: String? = ProcessInfo.processInfo.environment["GOLDEN_PREFER"]) -> URL? {
+        let main = directory.appendingPathComponent(declared)
+        var candidates = [main]
+        if main.pathExtension.lowercased() == "mp4" {
+            let mov = main.deletingPathExtension().appendingPathExtension("mov")
+            candidates = prefer == "mp4" ? [main, mov] : [mov, main]
+        }
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Whether a floor calibrated on the file named `calibratedOn` gates a comparison
+    /// against `used` (nil `calibratedOn`: any file).
+    public static func floorApplies(calibratedOn: String?, used: URL) -> Bool {
+        guard let calibratedOn else { return true }
+        return calibratedOn == used.lastPathComponent
+    }
+}
+
 /// Generates the golden test projects and their synthetic media.
 public enum TestGen {
     public static let version = "0.1.0"
@@ -74,10 +125,18 @@ public enum TestGen {
     /// (`suggestedPsnrMin` = lowest PSNR − 1 dB), copy the values here, then rewrite the
     /// manifests with `swift run wizrec-testgen --force` (keeps `reference.mp4`).
     /// Never set these from WizRec-rendered stand-ins. See docs/testing/golden-rerun.md.
-    public static let psnrMinByCase: [String: Double] = [:]
+    /// `scripts/golden.sh --calibrate` prints paste-ready entries.
+    public static let psnrMinByCase: [String: PSNRFloor] = [:]
 
-    /// `psnrMinByCase[name]`; `nil` until calibrated.
-    public static func psnrMin(for name: String) -> Double? { psnrMinByCase[name] }
+    /// `psnrMinByCase[name]?.dB`; `nil` until calibrated.
+    public static func psnrMin(for name: String) -> Double? { psnrMinByCase[name]?.dB }
+
+    /// Per-sheet thresholds keyed `<group>/<case>` (`effects/ef2-roundcorners`); absent
+    /// sheets get `SheetThreshold()`. Same rule as `psnrMinByCase`: real reference data only.
+    public static let sheetThresholds: [String: SheetThreshold] = [:]
+
+    /// `sheetThresholds[key]`, or the default.
+    public static func sheetThreshold(for key: String) -> SheetThreshold { sheetThresholds[key] ?? SheetThreshold() }
 
     /// Default output: next to the repo, never inside it.
     public static var defaultOutputDirectory: URL {
@@ -152,6 +211,7 @@ public enum TestGen {
             caseName: testCase.name, summary: testCase.summary, project: "\(testCase.name).cmproj",
             reference: "reference.mp4", fps: 30, width: 1920, height: 1080,
             durationFrames: testCase.durationFrames, frames: testCase.frames, ssimMin: 0.97, psnrMin: TestGen.psnrMin(for: testCase.name),
+            psnrReference: TestGen.psnrMinByCase[testCase.name]?.reference,
             expectations: Dictionary(uniqueKeysWithValues: testCase.expectations.map { ("\($0.key)", $0.value) }),
             sourceFrames: testCase.sourceFrames.isEmpty ? nil
                 : Dictionary(uniqueKeysWithValues: testCase.sourceFrames.map { ("\($0.key)", $0.value) }),
