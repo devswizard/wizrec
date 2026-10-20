@@ -47,9 +47,29 @@ project. Camtasia evidently uses it to pick the frame for the effect tile
 [inf]. MotionBlurPreview uses `metadata.EffectPreviewTime` (2.8, which looks
 like seconds) for the same purpose [obs value; inf meaning].
 
+### X8 results (runtime saves, 2026-10-20)
+
+- *Modify ▸ Markers ▸ Add Timeline Marker* at 2 s, and the *Shift+M*
+  shortcut with a clip selected at 4 s, both wrote **timeline** markers:
+  `timeline.parameters.toc` with keyframes at 2 s and 4 s, each named
+  **"Marker"** (the default name) [obs].
+- `parameters` was inserted into `timeline` between `trackAttributes` and
+  `captionAttributes`, as in K1 [obs].
+- **Ripple delete does not move timeline markers.** With a marker at 8 s,
+  ripple-deleting 2 s of media at 4–6 s shifted the clips left by 2 s, but
+  the marker stayed at 8 s [obs]. WizRec's ripple commands must leave
+  `toc` alone.
+
 ## 2. Clip (media) markers
 
-**[?]** No clip marker exists in the corpus.
+**Camtasia 2026.2.3 (Mac) offers no way to create clip markers** [obs, X8]:
+
+- The *Markers* menu holds only *Add Timeline Marker* and *Remove All*.
+- The context menus of audio and video clips have no marker entry.
+- *M*, *Ctrl+Shift+M* and *Option+M* on a selected clip wrote nothing.
+
+No clip marker exists in the corpus either. The rest of this section is
+the reading rule for older or Windows-authored projects.
 
 Working assumption, consistent with §1 and with every other per-clip
 parameter: a clip marker is a keyframe of `clip.parameters.toc`, with the
@@ -73,5 +93,5 @@ child [?].
   add `interp`.
 - Key order inside `timeline`: in both samples `parameters` comes after
   `trackAttributes` and before `captionAttributes` [obs].
-- Moving or ripple-deleting on the timeline shifts timeline markers after
-  the edit point [inf; Camtasia's ripple behaviour on markers is [?]].
+- Ripple edits do **not** move timeline markers (X8) [obs]. New markers are
+  named "Marker" by default.

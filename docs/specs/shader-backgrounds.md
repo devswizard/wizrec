@@ -221,9 +221,11 @@ VMFile {
 - **Doubles keep their name**, e.g. `MidPointX`, `Speed`. They carry
   `uiHints {userInterfaceType, unitType}`, where `unitType` 1 means
   percentage [obs].
-- **Position parameters.** Their form in a project is [?], because no project
-  uses a shader with a `Position` parameter. The likely form is
-  `<name>-x`/`<name>-y` or `<name>0`/`<name>1`. Experiment SH3.
+- **Position parameters** become **two** scalar parameters, `<name>.x` and
+  `<name>.y` (with a dot), each `{type: "double", defaultValue, interp:
+  "linr"}` and no `uiHints` [obs, SH2 2026-10-20: `dustmotes` `Pos` →
+  `Pos.x` −5000, `Pos.y` 5000]. The file's 2-element `value` is the default.
+  No z parameter is written.
 - **Every parameter is animatable** with `interp: "linr"` [obs]. Evaluate it
   at the clip's time like any other parameter (`time-mapping.md` §6).
 - **Missing parameter.** Use the file's `effectDef` default [inf]. For a
@@ -236,8 +238,32 @@ VMFile {
   - the array ends with a synthetic entry, `{name: "sourceFileType", type:
     "string", defaultValue: "tscshadervid", …}`.
 
-  The numeric codes for `"radians"` and `"directional"` are [?]. When WizRec
-  writes a new shader source, it should copy this layout [inf].
+  Full code table [obs, SH2 2026-10-20: Camtasia imported three of its own
+  backgrounds and saved]:
+
+  | File hint | `type` in sourceBin | `scalingType` | `unitType` | `userInterfaceType` | Other |
+  |---|---|---|---|---|---|
+  | `Color` | "Color" | 3 | 0 | 6 | `defaultValue` [r, g, b, a] |
+  | double, no hints | "double" | 0 | 0 | 0 | `minValue`/`maxValue` copied |
+  | `unitType: "percentage"` | "double" | 0 | **1** | 0 | |
+  | `unitType: "radians"` | "double" | 0 | **3** | (see next row) | |
+  | `userInterfaceType: "directional"` | "double" | 0 | (as above) | **2** | A missing range is written as `minValue` 0.0, `maxValue` 0.0 |
+  | `type: "Position"` | "Position" | **1** | 0 | **5** | `defaultValue` [x, y, **0.0**] (a z of 0 is appended) |
+  | (synthetic last entry) | "string" | 0 | 0 | 0 | `name` "sourceFileType", `defaultValue` "tscshadervid", `minValue`/`maxValue` "" |
+
+  On the clip, `uiHints` repeats `userInterfaceType` and `unitType` for
+  doubles only (for example `{userInterfaceType: 2, unitType: 0}` on a
+  directional double); colours and positions have no `uiHints` [obs].
+
+  **Malformed colour strings.** One bundled file writes a colour as
+  `" 130939"` (7 characters, with a leading space). Camtasia stored it as
+  [0, 0.0745, 0.0353, 0.2235], that is, bytes 00 13 09 39. The text is read
+  as one hexadecimal number laid out as RRGGBBAA, so the short value lands
+  in green, blue and alpha [obs value; inf rule]. A well-formed 6-digit value
+  gives RGB with alpha 1. WizRec should reproduce this so that such files
+  look the same [inf].
+
+  When WizRec writes a new shader source, it should copy this layout [inf].
 
 ## 7. Colour handling
 
@@ -275,9 +301,17 @@ saved in the project is the reference render.
   (timeline time).
 - **SH2: particle base.** Add "Star Field" (or any particle background) alone
   on a track, with the playhead at 3 s. Save as `sh2-particles.cmproj`.
-- **SH3: position parameter.** Same "Star Field" clip. In Properties, change
-  its position-type parameter (the one with an on-canvas handle), then save
-  as `sh3-position.cmproj`.
+- **SH3: position parameter.** Answered at file level by SH2 (§6). Its
+  on-canvas mapping (which pixel `Pos` refers to) still needs a render [?].
+- **Note (2026-10-20).** SH1 and the render half of SH2 relied on the saved
+  `ProjectThumbnail` as a reference render. That is not allowed under the
+  trial export gate (DECISIONS 2026-10-20), so they stay open: the `_Time`
+  origin and the particle target's initial contents remain [?].
+- **SH2 import facts** [obs]. A background dragged from the media bin onto
+  the timeline becomes a 60 s clip. Its `metadata` gains `lockAspectRatio`
+  true and `default-scale` "1". `sourceEffect.parameters` lists every
+  `effectDef` entry with its default, in file order, and ends with
+  `sourceFileType`.
 
 ## 10. Camtasia does not accept WizRec background files (acceptance check, 2026-10-20)
 
