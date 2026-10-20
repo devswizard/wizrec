@@ -24,7 +24,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # make-app.sh numbers builds with `git rev-list --count HEAD`
 
@@ -116,7 +116,7 @@ jobs:
         run: scripts/release.sh
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: WizRec-${{ steps.version.outputs.version }}
           path: |
@@ -132,7 +132,8 @@ jobs:
         run: |
           files=(build/WizRec-*.dmg)
           [ -f build/updates/appcast.xml ] && files+=(build/updates/appcast.xml)
-          shasum -a 256 build/WizRec-*.dmg > build/SHA256SUMS.txt
+          # Bare file names, so `shasum -a 256 -c SHA256SUMS.txt` works next to the download.
+          (cd build && shasum -a 256 WizRec-*.dmg > SHA256SUMS.txt)
           files+=(build/SHA256SUMS.txt)
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber

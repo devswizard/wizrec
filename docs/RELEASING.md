@@ -36,7 +36,9 @@ scripts/release/verify-dmg.sh build/WizRec-0.1.0.dmg            # smoke-test an 
 `verify-dmg.sh` mounts the image read-only (hidden from Finder), checks the bundle ID, the
 strict signature, the embedded `Sparkle.framework` and that nothing links into Homebrew, then
 launches the app from the image with `--quit-after 5` and expects a clean exit. Measured
-2026-10-20: 21 MB DMG, launch-and-quit in 6–7 s, both ad-hoc and "WizRec Dev".
+2026-10-20: 21 MB DMG, launch-and-quit in 6–7 s, both ad-hoc and "WizRec Dev". On macOS 27
+with `diskutil image` (APFS, ULFO): 20.9 MB (UDZO via hdiutil: 22.1 MB), launch-and-quit
+in 5–7 s, no deprecation warnings; every make/verify tool combination passes.
 
 A signed, notarized release (maintainer machine):
 
@@ -68,6 +70,7 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | `SPARKLE_KEY_FILE`, `SPARKLE_ACCOUNT` | `appcast.sh` | Private key from a file (CI) instead of the login keychain; keychain account name |
 | `SPARKLE_BIN`, `SPARKLE_OUT` | `appcast.sh` | Sparkle tools (default: SwiftPM artifact `.build/artifacts/sparkle/Sparkle/bin`); output folder (default `build/updates`) |
 | `VERIFY=1` | `release.sh` | Run `verify-dmg.sh` on the finished DMG |
+| `WIZREC_DMG_TOOL` | `make-dmg.sh`, `verify-dmg.sh` | `auto` (default), `diskutil` or `hdiutil`. `auto` uses `diskutil image` where it exists (macOS 27 deprecates `hdiutil create/attach/detach`) and falls back to `hdiutil` (older macOS, CI runners without it) |
 | `DRY_RUN=1` | `sign.sh`, `notarize.sh` | Print commands only |
 
 ## Steps
@@ -78,7 +81,7 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | 2 | `scripts/release/bundle-dylibs.sh` | Copies Homebrew FFmpeg **and every transitive dylib** (x264, x265, LAME, dav1d, libvpx, opus, SVT-AV1, OpenSSL, …) into `Contents/Frameworks`, rewrites install names to `@rpath/…`, adds `@executable_path/../Frameworks`, copies each library's licence files into `Contents/Resources/Licenses/<formula>/` with `MANIFEST.txt`, fails if anything still points into `/opt/homebrew` |
 | 3 | `scripts/release/sign.sh` | Signs the dylibs, then Sparkle inside out (`Installer.xpc`, `Downloader.xpc` keeping its entitlements, `Autoupdate`, `Updater.app`, the framework), then the app. Developer ID: hardened runtime, timestamp, `WizRec.entitlements` (camera, microphone). Self-signed: plain. No identity: ad-hoc |
 | 4 | `scripts/release/notarize.sh` | `notarytool submit --wait` with a keychain profile, then `stapler staple` and `spctl` |
-| 5 | `scripts/release/make-dmg.sh` | UDZO image with the app, an `/Applications` link, `LICENSE.txt` and `THIRD_PARTY_NOTICES.md` |
+| 5 | `scripts/release/make-dmg.sh` | Read-only image with the app, an `/Applications` link, `LICENSE.txt` and `THIRD_PARTY_NOTICES.md`: `diskutil image create from` (APFS, lzfse `ULFO`) where available, else `hdiutil create` (HFS+, zlib `UDZO`); checksum-verified with `hdiutil verify` (not deprecated) |
 | 6 | `sign.sh` + `notarize.sh` on the DMG | Only with a real identity |
 | 7 | `scripts/release/verify-dmg.sh` | Only with `VERIFY=1`: mount, check, launch `--quit-after 5` |
 | 8 | `scripts/release/appcast.sh` | Only with `SPARKLE=1` (see below) |
@@ -193,7 +196,7 @@ for non-sandboxed apps.
   `Package.resolved` with retries). It also checks that
   the shell scripts parse. Golden, perf, capture, speech and whisper suites stay off; tests
   needing the user's projects or Camtasia skip. The asset audit runs as part of `swift test`.
-  Nothing runs until the repository has a GitHub remote.
+  Actions use their Node 24 majors (`checkout@v7`, `cache@v6`, `upload-artifact@v7`).
 - `.github/workflows/release.yml`: on a `v*` tag or by hand. Builds an ad-hoc signed DMG and
   uploads it as a workflow artifact. When the repository has the secrets
   `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY` (and, for notarization,
