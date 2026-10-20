@@ -317,8 +317,14 @@ public enum TimelineTimecode {
         // Frames since the start of the current second: floor(remainder × fps).
         let rem = t - totalSeconds * rate
         let (prod, overflow) = rem.multipliedReportingOverflow(by: fpsNum)
-        let f = overflow ? Int64(Double(rem) * Double(fpsNum) / (Double(rate) * Double(fpsDen)))
-                         : prod / (rate * fpsDen)
+        let f: Int64
+        if overflow {
+            let num: Double = Double(rem) * Double(fpsNum)
+            let den: Double = Double(rate) * Double(fpsDen)
+            f = Int64(num / den)
+        } else {
+            f = prod / (rate * fpsDen)
+        }
         let nominal = max(1, Int64((Double(fpsNum) / Double(fpsDen)).rounded(.up)))
         let ff = min(max(f, 0), nominal - 1)
         return (totalSeconds / 3600, (totalSeconds / 60) % 60, totalSeconds % 60, ff)

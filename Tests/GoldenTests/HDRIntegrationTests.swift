@@ -72,7 +72,7 @@ private func meanAbsDiff(_ a: RGBAImage, _ b: RGBAImage) -> Double {
     return Double(sum) / Double(max(n, 1))
 }
 
-@Suite(.serialized, .timeLimit(.minutes(3)),
+@Suite(.serialized, .timeLimit(.minutes(6)),
        .enabled(if: ffmpeg != nil && MTLCreateSystemDefaultDevice() != nil, "needs ffmpeg and a Metal device"))
 @MainActor struct HDRIntegrationTests {
     /// A clip of each transfer renders the same twice (fresh pools) and its ProRes 4444 export

@@ -84,7 +84,7 @@ private func onsets(_ x: [Float], start: Double, threshold: Float = 0.2) -> [Dou
     return out
 }
 
-@Suite(.serialized, .timeLimit(.minutes(3)), .enabled(if: MTLCreateSystemDefaultDevice() != nil, "needs a Metal device"))
+@Suite(.serialized, .timeLimit(.minutes(6)), .enabled(if: MTLCreateSystemDefaultDevice() != nil, "needs a Metal device"))
 @MainActor struct ExportSyncIntegrationTests {
     /// Every click (6 over 6 s, so several audio chunks) sits at its timeline time ± 1 frame
     /// in H.264/AAC and ProRes/PCM exports, and the video frame at each click shows the card

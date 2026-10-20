@@ -77,7 +77,7 @@ private struct ExportFixture {
 /// Index of the first sample whose magnitude exceeds `threshold`.
 private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex { abs($0) > threshold } }
 
-@Suite(.serialized, .timeLimit(.minutes(2))) @MainActor struct ExportIntegrationTests {
+@Suite(.serialized, .timeLimit(.minutes(6))) @MainActor struct ExportIntegrationTests {
 
     /// Exported frame N shows what the preview renderer draws at frame N (SSIM ≥ 0.95 through
     /// H.264) and the same source frame (barcode), across a split and a gap.

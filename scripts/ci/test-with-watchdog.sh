@@ -6,13 +6,15 @@
 #
 #   TEST_DEADLINE_SECONDS  whole run (default 1500)
 #   TEST_STALL_SECONDS     no test finished for this long → treat as a hang (default 300)
+#   TEST_LOG               log file (default test.log)
+# Extra arguments go to `swift test` (e.g. --filter, --skip, --no-parallel).
 set -uo pipefail
 deadline="${TEST_DEADLINE_SECONDS:-1500}"
 stall="${TEST_STALL_SECONDS:-300}"
 log="${TEST_LOG:-test.log}"
 here="$(cd "$(dirname "$0")" && pwd)"
 
-swift test --skip-build > "$log" 2>&1 &
+swift test --skip-build "$@" > "$log" 2>&1 &
 pid=$!
 start=$(date +%s)
 last_count=0

@@ -22,7 +22,7 @@ jobs:
   build-and-test:
     name: swift build + test (macOS arm64)
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -89,7 +89,10 @@ jobs:
           fi
           echo "::notice title=build-tests::took $(( $(date +%s) - start )) s"
 
-      - name: Test
+      # Media-heavy suites encode and decode through AVFoundation/VideoToolbox. On GitHub's
+      # 3-core macOS VMs several such sessions at once stalled inside CoreMedia (writers and
+      # readers never finished), so those suites run one test at a time in their own step.
+      - name: Test (all but media I/O, parallel)
         timeout-minutes: 30
         env:
           REFS_DIR: ""
@@ -98,4 +101,18 @@ jobs:
           WIZREC_SPEECH_TESTS: ""
           WIZREC_WHISPER_TESTS: ""
           TEST_DEADLINE_SECONDS: "1500"
-        run: scripts/ci/test-with-watchdog.sh
+          TEST_LOG: test-core.log
+        run: scripts/ci/test-with-watchdog.sh --skip '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests)\.'
+
+      - name: Test (media I/O, serial)
+        if: success() || failure()
+        timeout-minutes: 50
+        env:
+          REFS_DIR: ""
+          WIZREC_PERF: ""
+          WIZREC_CAPTURE_TESTS: ""
+          WIZREC_SPEECH_TESTS: ""
+          WIZREC_WHISPER_TESTS: ""
+          TEST_DEADLINE_SECONDS: "2700"
+          TEST_LOG: test-media.log
+        run: scripts/ci/test-with-watchdog.sh --no-parallel --filter '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests)\.'
