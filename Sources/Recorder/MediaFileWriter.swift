@@ -16,9 +16,20 @@ final class MediaFileWriter: @unchecked Sendable {
         case audio
     }
 
-    enum WriterError: Error, Equatable {
+    enum WriterError: Error, Equatable, CustomStringConvertible {
         case unsupportedFormat(String)
         case failed(String)
+        /// `finishWriting` did not call back within `seconds` s; the file was abandoned and removed.
+        case encoderStalled(seconds: Int)
+
+        var description: String {
+            switch self {
+            case .unsupportedFormat(let m): "unsupported format: \(m)"
+            case .failed(let m): m
+            case .encoderStalled(let s):
+                "the encoder stopped responding for \(s) s; the file was not finished and was removed"
+            }
+        }
     }
 
     let url: URL
@@ -34,11 +45,24 @@ final class MediaFileWriter: @unchecked Sendable {
 
     /// When false (tests, offline feeds) `append` waits for the encoder instead of dropping.
     let realTime: Bool
+    /// `finishWriting` must call back within this many seconds, else `finish` throws
+    /// `WriterError.encoderStalled`.
+    let finishTimeout: TimeInterval
+    /// Test seam: wraps the AVAssetWriter that `finish` talks to (e.g. one that never finishes).
+    private let wrapWriter: (@Sendable (AVAssetWriter) -> any MediaWriterControl)?
 
-    init(url: URL, kind: Kind, realTime: Bool = true) {
+    /// Default `finishTimeout`, seconds.
+    static let defaultFinishTimeout: TimeInterval = 60
+    /// How long a failed writer's `cancelWriting` is awaited before it is left running, seconds.
+    static let cancelTimeout: TimeInterval = 10
+
+    init(url: URL, kind: Kind, realTime: Bool = true, finishTimeout: TimeInterval = MediaFileWriter.defaultFinishTimeout,
+         wrapWriter: (@Sendable (AVAssetWriter) -> any MediaWriterControl)? = nil) {
         self.url = url
         self.kind = kind
         self.realTime = realTime
+        self.finishTimeout = finishTimeout
+        self.wrapWriter = wrapWriter
     }
 
     /// Samples written so far.
@@ -74,27 +98,33 @@ final class MediaFileWriter: @unchecked Sendable {
     }
 
     /// Ends the track at recording time `end` and closes the file. Returns false (and leaves no
-    /// file) when nothing was ever appended.
+    /// file) when nothing was ever appended. Waits at most `finishTimeout` seconds for the
+    /// encoder: a stuck one throws `WriterError.encoderStalled` and the file is removed.
     func finish(at end: CMTime) async throws -> Bool {
         let state: (AVAssetWriter, AVAssetWriterInput)? = lock.withLock {
             finished = true
             guard let writer, let input else { return nil }
             return (writer, input)
         }
+        let control: (any MediaWriterControl)? = state.map { wrapWriter?($0.0) ?? $0.0 }
         if let error = lock.withLock({ self.error }) {
-            state?.0.cancelWriting()
+            if let control { await MediaWriterWait.cancel(control, timeout: Self.cancelTimeout) }
             throw WriterError.failed(String(describing: error))
         }
-        guard let (writer, input) = state, writer.status == .writing else {
+        guard let (writer, input) = state, let control, control.status == .writing else {
             try? FileManager.default.removeItem(at: url)
             return false
         }
         input.markAsFinished()
         let last = lock.withLock { _lastTime } ?? .zero
         writer.endSession(atSourceTime: CMTimeMaximum(end, last))
-        await writer.finishWriting()
-        if writer.status != .completed {
-            throw WriterError.failed(writer.error.map { String(describing: $0) } ?? "status \(writer.status.rawValue)")
+        guard await MediaWriterWait.finish(control, timeout: finishTimeout) else {
+            MediaWriterWait.abandon(control)
+            try? FileManager.default.removeItem(at: url)
+            throw WriterError.encoderStalled(seconds: Int(finishTimeout.rounded(.up)))
+        }
+        if control.status != .completed {
+            throw WriterError.failed(control.error.map { String(describing: $0) } ?? "status \(control.status.rawValue)")
         }
         return true
     }
@@ -246,5 +276,82 @@ final class AudioPipeline: Sendable {
         let duration = CMSampleBufferGetDuration(buffer)
         guard let t = clock.map(hostTime, duration: duration) else { return }
         writer.append(buffer, at: t)
+    }
+}
+
+/// The parts of `AVAssetWriter` that `MediaFileWriter.finish` uses. Production passes the real
+/// writer; tests inject one whose `finishWriting` never calls back.
+protocol MediaWriterControl: AnyObject {
+    var status: AVAssetWriter.Status { get }
+    var error: (any Error)? { get }
+    func finishWriting(completionHandler handler: @escaping @Sendable () -> Void)
+    func cancelWriting()
+}
+
+extension AVAssetWriter: MediaWriterControl {}
+
+/// Bounded waits on `AVAssetWriter` callbacks (board EXP11-1). The timer runs on a Dispatch
+/// queue, so it fires even when the Swift cooperative pool is starved.
+enum MediaWriterWait {
+    /// Calls `finishWriting` and waits at most `timeout` seconds for its callback; true when it
+    /// came in time. After a timeout, `abandon` the writer (a stuck writer may block a
+    /// synchronous `cancelWriting` too).
+    nonisolated(nonsending) static func finish(_ writer: any MediaWriterControl, timeout: TimeInterval) async -> Bool {
+        nonisolated(unsafe) let w = writer
+        return await bounded(timeout) { done in w.finishWriting { done() } }
+    }
+
+    /// Runs `cancelWriting` on a background queue and waits at most `timeout` seconds for it.
+    @discardableResult
+    nonisolated(nonsending) static func cancel(_ writer: any MediaWriterControl, timeout: TimeInterval) async -> Bool {
+        nonisolated(unsafe) let w = writer
+        return await bounded(timeout) { done in
+            DispatchQueue.global(qos: .utility).async {
+                w.cancelWriting()
+                done()
+            }
+        }
+    }
+
+    /// Runs `cancelWriting` on a background queue without waiting.
+    static func abandon(_ writer: any MediaWriterControl) {
+        nonisolated(unsafe) let w = writer
+        DispatchQueue.global(qos: .utility).async { w.cancelWriting() }
+    }
+
+    /// Runs `start`, which calls its argument once when the work is done. True when that
+    /// happened within `timeout` seconds; a later call is ignored.
+    nonisolated(nonsending) static func bounded(_ timeout: TimeInterval,
+                                                _ start: (@escaping @Sendable () -> Void) -> Void) async -> Bool {
+        let once = ResumeOnce()
+        return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            once.arm(c)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + max(timeout, 0)) {
+                once.resume(false)
+            }
+            start { once.resume(true) }
+        }
+    }
+}
+
+/// Resumes a continuation exactly once, from the work or the timer, whichever comes first.
+// @unchecked Sendable: every stored property is read and written under `lock`.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var resumed = false
+
+    func arm(_ c: CheckedContinuation<Bool, Never>) {
+        lock.withLock { continuation = c }
+    }
+
+    func resume(_ value: Bool) {
+        let c: CheckedContinuation<Bool, Never>? = lock.withLock {
+            guard !resumed else { return nil }
+            resumed = true
+            defer { continuation = nil }
+            return continuation
+        }
+        c?.resume(returning: value)
     }
 }

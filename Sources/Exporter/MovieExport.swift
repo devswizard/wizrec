@@ -114,14 +114,15 @@ struct AudioPump {
 }
 
 /// Fails an export whose writer accepts nothing for `limit` seconds (instead of spinning forever
-/// if AVAssetWriter's interleaving ever waits on input we cannot give it).
+/// if AVAssetWriter's interleaving ever waits on input we cannot give it, or the encoder hangs).
 struct StallWatch {
     var last = Date()
-    var limit: TimeInterval = 30
+    /// Seconds without progress before `check()` throws `ExportError.encoderStalled`.
+    var limit: TimeInterval = WriterTimeouts().stall
     mutating func progressed() { last = Date() }
     func check() throws {
         if Date().timeIntervalSince(last) > limit {
-            throw ExportError.failed("writer stalled for \(Int(limit)) s")
+            throw ExportError.encoderStalled(seconds: Int(limit.rounded(.up)))
         }
     }
 }
@@ -135,6 +136,10 @@ extension ExportSession {
     static let audioPrefetchDepth = 8
     /// True mixes audio inline in the writer loop instead of on a prefetch task (tests compare the two).
     @TaskLocal static var serialAudio = false
+    /// Bounds of the waits on AVAssetWriter (tests shorten them).
+    @TaskLocal static var writerTimeouts = WriterTimeouts()
+    /// Test seam replacing the AVAssetWriter calls that can hang; empty in production.
+    @TaskLocal static var writerHooks = WriterHooks()
 
     /// Writes a movie: video from the render path, plus the project mix when available.
     func writeMovie(to url: URL, fileType: AVFileType, codec: VideoCodec, resolved r: ResolvedExport) async throws {
@@ -179,8 +184,35 @@ extension ExportSession {
             throw ExportError.failed(writer.error.map { "\($0)" } ?? "startWriting failed")
         }
         writer.startSession(atSourceTime: .zero)
-        var finished = false
-        defer { if !finished { writer.cancelWriting() } }
+        let hooks = Self.writerHooks, timeouts = Self.writerTimeouts
+        let watched = hooks.writer(writer)
+        do {
+            try await encodeMovie(writer: writer, watched: watched, video: video, adaptor: adaptor,
+                                  feed: feed, audio: audio, codec: codec, timing: timing,
+                                  hooks: hooks, timeouts: timeouts)
+        } catch {
+            await cleanUp(watched, after: error, timeouts: timeouts)
+            throw error
+        }
+    }
+
+    /// Cancels the writer of a failed export. After a stall it is abandoned (cancelled in the
+    /// background, never awaited); otherwise `cancelWriting` is awaited at most `timeouts.cancel` s.
+    func cleanUp(_ writer: any FinishableWriter, after error: any Error, timeouts: WriterTimeouts) async {
+        if case ExportError.encoderStalled = error {
+            WriterWait.abandon(writer)
+        } else {
+            await WriterWait.cancel(writer, timeout: timeouts.cancel)
+        }
+    }
+
+    /// Feeds rendered frames and the mix into a started `writer` and finishes the file.
+    /// `watched` is `writer` (or the test seam's wrapper) for status, finish and cancel.
+    private func encodeMovie(writer: AVAssetWriter, watched: any FinishableWriter, video: AVAssetWriterInput,
+                             adaptor: AVAssetWriterInputPixelBufferAdaptor, feed: AudioFeed?,
+                             audio: AVAssetWriterInput?, codec: VideoCodec, timing: FrameTiming,
+                             hooks: WriterHooks, timeouts: WriterTimeouts) async throws {
+        let frameCount = timing.frameCount
 
         // Frames render in order with `pipelineDepth` in flight (fetch n+1 while the GPU draws n
         // and the writer encodes n-1); RenderPipeline fetches strictly in frame order.
@@ -204,7 +236,7 @@ extension ExportSession {
         // audio ≤ `audioLead` s ahead, and mark audio finished as soon as its feed ends.
         var pump = AudioPump(feed: feed, input: audio, prefetch: !Self.serialAudio, depth: Self.audioPrefetchDepth)
         defer { pump.cancel() }
-        var stall = StallWatch()
+        var stall = StallWatch(limit: timeouts.stall)
 
         for n in 0..<frameCount {
             if isCancelled { throw ExportError.cancelled }
@@ -212,11 +244,13 @@ extension ExportSession {
             if straight { Self.unpremultiply(frame.pixelBuffer) }
             let pts = timing.presentationTime(frame: n)
             while true {
-                try checkWriter(writer)
-                if try await pumpAudio(&pump, until: pts.seconds + Self.audioLead) { stall.progressed(); continue }
-                if video.isReadyForMoreMediaData { break }
+                try checkWriter(watched)
+                if try await pumpAudio(&pump, until: pts.seconds + Self.audioLead, hooks: hooks) {
+                    stall.progressed(); continue
+                }
+                if hooks.isReady(video) { break }
                 // The writer wants more audio before it takes more video: give it past the lead.
-                if try await pumpAudio(&pump, until: .infinity) { stall.progressed(); continue }
+                if try await pumpAudio(&pump, until: .infinity, hooks: hooks) { stall.progressed(); continue }
                 try stall.check()
                 try await pause()
             }
@@ -229,27 +263,26 @@ extension ExportSession {
         pipeDone = true
         video.markAsFinished()
         while !pump.done {
-            try checkWriter(writer)
-            if try await pumpAudio(&pump, until: .infinity) { stall.progressed(); continue }
+            try checkWriter(watched)
+            if try await pumpAudio(&pump, until: .infinity, hooks: hooks) { stall.progressed(); continue }
             try stall.check()
             try await pause()
         }
         let end = max(timing.duration, pump.source == nil ? .zero : CMTime(value: pump.total, timescale: CMTimeScale(pump.sampleRate)))
         writer.endSession(atSourceTime: end)
-        try await finish(writer)
-        finished = true
+        try await finish(watched, timeout: timeouts.finish)
     }
 
     /// Appends one audio chunk if the input is ready and audio is < `seconds` ahead, or marks the
     /// input finished once all samples are written. Returns true when it did something.
-    func pumpAudio(_ pump: inout AudioPump, until seconds: Double) async throws -> Bool {
+    func pumpAudio(_ pump: inout AudioPump, until seconds: Double, hooks: WriterHooks) async throws -> Bool {
         guard !pump.done, let source = pump.source, let input = pump.input else { return false }
         if pump.written >= pump.total {
             input.markAsFinished()
             pump.done = true
             return true
         }
-        guard pump.writtenSeconds < seconds, input.isReadyForMoreMediaData else { return false }
+        guard pump.writtenSeconds < seconds, hooks.isReady(input) else { return false }
         if isCancelled { throw ExportError.cancelled }
         let chunk: AudioChunk?
         switch source {
@@ -275,18 +308,19 @@ extension ExportSession {
         guard input.append(sb) else { throw ExportError.failed("audio append failed") }
     }
 
-    func checkWriter(_ writer: AVAssetWriter) throws {
+    func checkWriter(_ writer: any FinishableWriter) throws {
         if isCancelled { throw ExportError.cancelled }
         if writer.status == .failed || writer.status == .cancelled {
             throw ExportError.failed(writer.error.map { "\($0)" } ?? "writer status \(writer.status.rawValue)")
         }
     }
 
-    /// `finishWriting` bridged to async; throws if the file did not complete.
-    func finish(_ writer: AVAssetWriter) async throws {
-        nonisolated(unsafe) let w = writer
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            w.finishWriting { c.resume() }
+    /// `finishWriting` bridged to async, waiting at most `timeout` seconds. Throws
+    /// `ExportError.encoderStalled` when the callback does not come in time (the writer is then
+    /// abandoned), `ExportError.failed` if the file did not complete.
+    func finish(_ writer: any FinishableWriter, timeout: TimeInterval) async throws {
+        guard await WriterWait.finish(writer, timeout: timeout) else {
+            throw ExportError.encoderStalled(seconds: Int(timeout.rounded(.up)))
         }
         guard writer.status == .completed else {
             throw ExportError.failed(writer.error.map { "\($0)" } ?? "writer status \(writer.status.rawValue)")

@@ -29,21 +29,28 @@ extension ExportSession {
             throw ExportError.failed(writer.error.map { "\($0)" } ?? "startWriting failed")
         }
         writer.startSession(atSourceTime: .zero)
-        var finished = false
-        defer { if !finished { writer.cancelWriting() } }
-        let total = Double(max(feed.totalSamples, 1))
-        while !feed.isFinished {
-            while !input.isReadyForMoreMediaData {
-                try checkWriter(writer)
-                try await pause()
+        let hooks = Self.writerHooks, timeouts = Self.writerTimeouts
+        let watched = hooks.writer(writer)
+        do {
+            var stall = StallWatch(limit: timeouts.stall)
+            let total = Double(max(feed.totalSamples, 1))
+            while !feed.isFinished {
+                while !hooks.isReady(input) {
+                    try checkWriter(watched)
+                    try stall.check()
+                    try await pause()
+                }
+                try await appendAudioChunk(&feed, into: input)
+                stall.progressed()
+                report(Double(feed.writtenSeconds * Double(feed.sampleRate)) / total * 0.99)
             }
-            try await appendAudioChunk(&feed, into: input)
-            report(Double(feed.writtenSeconds * Double(feed.sampleRate)) / total * 0.99)
+            input.markAsFinished()
+            writer.endSession(atSourceTime: CMTime(value: feed.totalSamples, timescale: CMTimeScale(feed.sampleRate)))
+            try await finish(watched, timeout: timeouts.finish)
+        } catch {
+            await cleanUp(watched, after: error, timeouts: timeouts)
+            throw error
         }
-        input.markAsFinished()
-        writer.endSession(atSourceTime: CMTime(value: feed.totalSamples, timescale: CMTimeScale(feed.sampleRate)))
-        try await finish(writer)
-        finished = true
     }
 
     /// Writes the project mix over `range` as MP3 (libavcodec `libmp3lame`, CBR per `MP3Encoder.bitrate`,
