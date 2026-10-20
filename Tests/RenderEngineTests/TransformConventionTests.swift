@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
+import TSCProjKit
 @testable import RenderEngine
 
 /// Clip geometry keys per `docs/specs/transform.md` (§1, §4, §11).
@@ -45,5 +46,18 @@ struct TransformConventionTests {
 
     @Test func transformKeysCoverTheNewGeometryKeys() {
         #expect(Set(Conventions.transformKeys).isSuperset(of: ["rotation0", "rotation1", "rotation2", "shear0"]))
+    }
+}
+
+/// Menu animations as Camtasia writes them (`docs/specs/animation.md` §1).
+struct MenuAnimationTests {
+    @Test func negativeStartAndMissingInterpEaseInOut() throws {
+        // Playhead 0.5 s into a clip: one 1 s segment −0.5 s → +0.5 s, no `interp` anywhere [obs].
+        let s = 705_600_000.0
+        let raw = #"{"type":"double","defaultValue":1.0,"keyframes":[{"time":-352800000,"endTime":352800000,"value":0.0,"duration":705600000}]}"#
+        let p = try #require(SParam(JSON.parse(Data(raw.utf8))))
+        #expect(p.keys.first?.easeInOut == true)                     // missing interp → eioe [inf]
+        #expect(abs((p.value(at: 0) ?? -1) - 0.5) < 1e-12)           // half-way at clip time 0
+        #expect(p.value(at: s / 2) == 0 && p.value(at: -s) == 1)
     }
 }
