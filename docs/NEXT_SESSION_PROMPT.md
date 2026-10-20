@@ -1,13 +1,36 @@
 You are the LEAD of the WizRec multi-agent team (free, open-source GPL-3.0 macOS
 screen recorder & editor by Devs Wizard that opens/saves Camtasia .cmproj projects).
+Repo: https://github.com/devswizard/wizrec (public).
 
 I explicitly opt in to multi-agent orchestration: use the Agent tool to spawn
 background agents (subagent_type general-purpose, isolation "worktree",
 run_in_background true), let them talk to each other with SendMessage, and use a
-workflow if useful. Goal (session 6): golden parity M1/M4/M5/M6 and every
-look/timing question that needs Camtasia exports (if I delivered them), M11
-release (remote, signing, Sparkle feed) if I delivered those inputs, plus the
-session-5 follow-ups. All code through session 5 is merged.
+workflow if useful. I want automated solutions: decide sensible defaults yourself
+and only ask me what truly needs me.
+
+GOAL (session 7), in priority order:
+1. CI green on GitHub (runner: Xcode 26.6 / Swift 6.3.3, older than local
+   Swift 6.4). Failures so far were Swift-6.3-only: slow type-checks ("unable
+   to type-check this expression in reasonable time"), CGFloat→Double in tuple
+   returns, ambiguous Data.withUnsafeBytes. CI publishes the toolchain and the
+   build/test errors as annotations, readable without login:
+   `curl -s https://api.github.com/repos/devswizard/wizrec/actions/runs?per_page=1`
+   → job id → `/check-runs/<job>/annotations`. Fix every error, push, repeat
+   until green. Locally, `-Xfrontend -warn-long-expression-type-checking=40`
+   finds candidates (6.3 can be 20–50× slower than 6.4 on the same line).
+2. First release v0.1.0: after CI is green, push tag `v0.1.0`; the Release
+   workflow builds the ad-hoc signed DMG (FFmpeg + Sparkle inside; users need
+   no Xcode/Homebrew) and attaches it to a DRAFT GitHub Release. Verify the
+   run; fill "What's new" from BOARD; tell me to publish (I publish).
+3. Follow-ups (no user input needed): inspector controls for a shader
+   background's `sourceEffect` params; write `metadata.ShaderVidSource` and the
+   group `RevBackground` like Camtasia (docs/specs/shader-backgrounds.md);
+   scripted mouse double-click check on library tiles; Node 20 deprecation in
+   workflows (actions/checkout, actions/cache → current majors);
+   `hdiutil` → `diskutil image` on macOS 27 in release scripts.
+4. Only if I delivered licensed Camtasia reference exports: golden parity
+   M1/M4/M5/M6 and every look/timing question in "Still needs a licensed
+   export" at the end of docs/testing/camtasia-session-2.md.
 
 READ FIRST, in order:
 1. CLAUDE.md (hard rules, architecture, milestones, current state)
@@ -15,80 +38,65 @@ READ FIRST, in order:
    items, §4 team setup, §5 clean-room wall, §6 lessons
 3. coordination/AGENT_BRIEF.md, BOARD.md, CONTRACTS.md, DECISIONS.md
 
-STEP 0 (you alone): CHECK what you can yourself first; decide sensibly where a
-default exists; ask me ONCE, in one batched question, only about what you
-could not verify or decide. Never nag again.
-- Check yourself: `scripts/golden.sh --status` (reference.mov/.mp4 under
-  ~/WorkDir/vibe_coding/camtasia_rea_refs/); whether the Camtasia export still
-  shows the "with/without watermark" choice is NOT yours to test (only the
-  researcher drives Camtasia); `git remote -v`; `security find-identity -v
-  -p codesigning` (a "Developer ID Application" identity?); whisper models in
-  ~/Library/Application Support/WizRec/models/ (small, silero VAD,
-  large-v3-turbo are installed).
-- Already decided (do not ask): SwiftPM + scripts; bundle ID
-  com.devswizard.WizRec; Sparkle approved (off until feed/key); Metal tone map
-  for playback; save-only Camtasia automation by the researcher.
-- Ask only what is still open (HANDOFF §3): licensed reference exports
-  delivered? thumbnails OK as interim references? Sparkle feed host +
-  generate_keys done? (Remote exists: devswizard/wizrec; no Developer ID —
-  ad-hoc DMGs, decided.) Manual checks ED2–ED4 / CA1 text / VoiceOver done?
+STEP 0 (you alone): CHECK, don't ask, wherever you can.
+- `git status` / `git log origin/main..main`: if local main is ahead (e.g. the
+  app8 merge: shader effectDef on import, Backgrounds tab, accessible library
+  tiles, ⌘W on the export sheet), push it.
+- `scripts/golden.sh --status` (reference exports under
+  ~/WorkDir/vibe_coding/camtasia_rea_refs/); the latest CI run's result and
+  annotations; `git worktree list`.
+- Already decided (never ask): SwiftPM + scripts; bundle ID
+  com.devswizard.WizRec; no Apple Developer account → ad-hoc DMGs, never
+  notarized (README documents right-click ▸ Open); Sparkle wired, off until a
+  feed exists; Metal tone map for playback; history already rewritten — never
+  push local `agent/*` branches (they carry the old pre-rewrite history).
+- Ask me ONCE, batched, only: licensed reference exports delivered? saved
+  Camtasia thumbnails OK as interim references? Sparkle feed host (e.g. GitHub
+  Pages appcast) + `generate_keys` done? Manual checks ED2–ED4 / CA1 text done?
 
 STEP 1 (you alone):
-- `git status` on main must be clean; `swift build && swift test` (expect
-  979 tests, 23 known issues = 21 golden-harness + 2 LoadGate self-tests; sum
-  the "Test run with N tests" lines across runners).
-- `git worktree list`: session-5 worktrees are all merged; remove each after
-  checking it is clean (the four stopped agents' worktrees — researcher6,
-  timeline6, media6, app6 — hold only WIP already carried into the *7
-  branches); `git worktree prune`. Keep branches. Remove
+- `swift build && swift test` on main: expect 996 tests, 23 known issues
+  (21 golden-harness + 2 LoadGate self-tests); sum the "Test run with N tests"
+  lines across runners.
+- Remove stale worktrees after checking each is clean and merged (the stopped
+  session-5 agents' worktrees researcher6/timeline6/media6/app6 hold only WIP
+  already carried into *7 branches; qa6/render6 may be locked — unlock first);
+  `git worktree prune`; keep branches. Remove
   ~/WorkDir/vibe_coding/camtasia_rea_refs/.gui.lock if left behind.
 
-STEP 2: spawn up to 8 agents in one message. Each prompt: "Read
-coordination/AGENT_BRIEF.md first", its name, `git switch -c agent/<name>8 main`,
-its tasks, "commit small and often". Send every agent a ROSTER message and
-record it in coordination/ROSTER.md. Add the tasks to BOARD.md.
+STEP 2: spawn up to 6 agents in one message (CI fixing stays with you). Each
+prompt: "Read coordination/AGENT_BRIEF.md first", its name,
+`git switch -c agent/<name>9 main`, its tasks, "commit small and often; never
+push". Record addresses in coordination/ROSTER.md, tasks in BOARD.md.
+- ship: release v0.1.0 (after you report CI green), workflow Node 20 bumps,
+  `diskutil image`, verify the draft Release DMG mounts and launches
+  (`--quit-after 5`); Sparkle appcast on GitHub Pages only if I said yes.
+- app: shader-background inspector controls, ShaderVidSource/RevBackground
+  metadata (with timeline rules), mouse double-click UI check.
+- qa: integration tests for every merge; flaky watch; and the moment
+  references exist, `scripts/golden.sh` then `--calibrate`.
+- researcher + render (+ audio/captions): ONLY if I delivered licensed
+  exports — specs from the exports (wall-reviewed by you), then parity.
 
-Always spawn:
-- qa: integration tests for every merge; the moment references exist run
-  `scripts/golden.sh`, then `--calibrate` and paste the printed psnrMin
-  entries; flaky watch.
-- app: follow-ups — write a shader source's `effectDef`/`sourceEffect` on
-  import/library placement via `ShaderSourceLayout` (with timeline), ⌘W with
-  the export sheet open, VoiceOver labels on library tiles (NSView-backed
-  tile if needed), rounded corners for blur/pixelate/spotlight callouts (with
-  render).
+RULES: clean room (only the researcher may use REA or drive Camtasia; you
+review every spec before publishing; implementers never read
+docs/ledger/EVIDENCE.md); nothing licensing-related (never touch the trial
+watermark or export gate); no TechSmith assets in the repo; user projects
+read-only for agents (tests on temp copies); projects only via
+TSCProjKit/TimelineEngine; Swift 6 strict concurrency and **Swift 6.3
+compatible** (the CI toolchain); tests for every public behaviour; timing
+tests gated by WIZREC_PERF=1, measured in release; permission-bound tests
+never run by default; GUI lock `camtasia_rea_refs/.gui.lock` (mkdir) for any
+GUI driving. Only you merge into main (`git merge --no-ff`, full `swift test`
+green first; Package.swift conflicts: keep both sides), push main, edit
+BOARD.md and talk to me; approve every API_CHANGE; batch NEED_USER. Push only
+`main` and tags. Don't push while a CI run is in progress unless it's the fix
+for that run (concurrency cancels the older run).
 
-Spawn only if I delivered the input:
-- researcher (only agent allowed REA/Camtasia; talks only to main): turn the
-  licensed exports into spec updates — eioe fit, Border/Reflection/tilt/
-  shear/stencil/LuminanceFadeIn looks, transition windows, particle canvas
-  (SH1/SH2), behaviour timing, caption layout, normalisation output (AU2),
-  BT.709 vs sRGB tag, key-cap styles. I review every spec at the wall.
-- render: golden parity (SSIM ≥ 0.97 effect-free, ≥ 0.95 effects) against
-  the references; replace provisional looks from the new specs.
-- audio / captions: normalisation output and caption layout from specs.
-- ship: CI on the remote (verify GPU tests on the paravirtual Metal runner),
-  ad-hoc release DMG via GitHub Releases, Sparkle feed + appcast if the host
-  exists. Never push local `agent/*` branches (old pre-rewrite history).
-
-RULES: clean room (only the researcher may use REA or drive Camtasia; specs
-reviewed by you before publishing; implementers never read
-docs/ledger/EVIDENCE.md), nothing licensing-related (never touch the trial
-watermark or the export gate), no TechSmith assets in the repo, user projects
-read-only for agents (tests on temp copies), projects only via
-TSCProjKit/TimelineEngine, Swift 6 strict concurrency, tests for every public
-behaviour, timing tests gated by WIZREC_PERF=1 and measured in release,
-permission-bound tests never run by default. GUI lock
-`camtasia_rea_refs/.gui.lock` (mkdir) for any agent driving the GUI. At most
-~8 concurrent agents. Only you merge into main (`git merge --no-ff`, full
-`swift test` green first; Package.swift conflicts: keep both sides), edit
-BOARD.md and talk to me; approve every API_CHANGE; batch NEED_USER.
-Determinism: compare frames on ProRes exports.
-
-REPORT after each merge: one line per agent (landed / in progress / blocked).
-Demo milestones in the built app (scripts/make-app.sh) on a COPY of
-~/Documents/demo project.cmproj (--snapshot-dir/--snapshot-at, `--export
+REPORT after each merge or CI run: one line per agent (landed / in progress /
+blocked) + CI status. Demo in the built app (scripts/make-app.sh) on a COPY
+of ~/Documents/demo project.cmproj (--snapshot-dir/--snapshot-at, `--export
 <file> --export-preset "MOV ProRes 422"`, always `--quit-after <s>`).
 At the end: update CLAUDE.md "Current state", docs/HANDOFF.md (new §0
 snapshot), BOARD.md, ROSTER.md, DECISIONS.md, rewrite this file, remove
-finished worktrees, and give me the remaining NEED_USER list.
+finished worktrees, push main, and give me the remaining NEED_USER list.
