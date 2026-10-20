@@ -1,6 +1,7 @@
 import CoreMedia
 import Foundation
 import MediaEngine
+import TestGenKit
 import Testing
 import TSCProjKit
 @testable import AudioEngine
@@ -179,4 +180,39 @@ private func normalisedRMS(lufs: Double, peak: Double, project: Bool = true, sou
     // sample peak 0.1 → +2 dB to reach −18.
     let r = try await normalisedRMS(lufs: 100, peak: -1)
     #expect(abs(20 * log10(r) - 2) < 0.1)
+}
+
+// MARK: Source measurement like Camtasia's stored values (audio.md §2.1, AU2)
+
+@Test func sourceMeasurementMatchesCamtasiaStoredValues() async throws {
+    // The AU2 signals (mono, 48 kHz, 16-bit; regenerated, deterministic) and what Camtasia 2026.2.3
+    // stored for them on save: integratedLUFS, peakLevel (linear).
+    let dir = try Synth.tempDir()
+    let cases: [(String, [Float], Double, Double, Double)] = [
+        ("a.wav", AudioSignals.pinkNoise(seconds: 10, lufs: -40, peakLimit: -20, seed: 0xA), -37.2512483366092, 0.0473308339715004, 0.2),
+        ("b.wav", AudioSignals.clickTrain(seconds: 10, lufs: -30, peak: -1), -26.945935759826, 0.891246914863586, 0.1),
+        // MediaEngine's resampler reads the quiet pink 0.13 LU louder. Loud pink: Camtasia reads
+        // 0.35 LU lower than dual-mono at 44.1 kHz [?] (audio.md §2.1).
+        ("c.wav", AudioSignals.pinkNoise(seconds: 10, lufs: -10, peakLimit: -0.5, seed: 0xC), -7.54978312205293, 1.03471958637238, 0.45),
+    ]
+    let pool = MediaPool(diskCacheDirectory: nil)
+    for (name, x, lufs, peak, tol) in cases {
+        let u = dir.appendingPathComponent(name)
+        try AudioSignals.writeWAV(x, to: u)
+        let m = try #require(try await SourceLoudness.measure(pool: pool, url: u, stream: 0, mixRate: 44_100))
+        #expect(abs(m.integratedLUFS - lufs) < tol, "\(name): \(m.integratedLUFS) vs \(lufs)")
+        // Sample peak after resampling to 44.1 kHz (not the 48 kHz peak, not true peak). The
+        // resamplers differ, so the loud pink's +0.30 dBFS reads +0.47 here: within 0.25 dB.
+        #expect(abs(20 * log10(m.peakLevel / peak)) < 0.25,"\(name): peak \(m.peakLevel) vs \(peak)")
+        // Mono counts as dual mono: +3 LU over a plain BS.1770 mono reading at 48 kHz.
+        let plain = AudioSignals.integratedLUFS(x)
+        #expect(m.integratedLUFS - plain > 2.5 && m.integratedLUFS - plain < 3.5)
+    }
+}
+
+@Test func missingSourceMeasuresNil() async throws {
+    let dir = try Synth.tempDir()
+    let m = try await SourceLoudness.measure(pool: MediaPool(diskCacheDirectory: nil),
+                                             url: dir.appendingPathComponent("absent.wav"), stream: 0)
+    #expect(m == nil)
 }
