@@ -96,17 +96,38 @@ enum Shaders {
         return in.pos.xy / max(q.c1.xy, float2(1.0));
     }
 
-    fragment float4 screen_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]],
-                              texture2d<float> t [[texture(0)]], sampler smp [[sampler(0)]]) {
-        return t.sample(smp, screen_uv(in, q)) * q.opacity;
+    // Coverage of the quad's full rect (q.full, local px) rounded by corner radius r (local px, clamped to
+    // half the short side). Only the four corner squares are shaped (antialiased over one target px);
+    // straight edges stay the quad's own, so r <= 0 is exactly the square box.
+    inline float wz_round_cov(VOut in, constant Quad& q, float r) {
+        float2 lo = q.full.xy, hi = q.full.zw;
+        float2 b = (hi - lo) * 0.5;
+        float rr = clamp(r, 0.0, min(b.x, b.y));
+        float2 p = mix(lo, hi, in.g) - (lo + hi) * 0.5;
+        float2 k = abs(p) - b + rr;
+        float d = length(max(k, 0.0)) - rr;
+        float w = max(fwidth(d), 1e-4);
+        float cov = clamp(0.5 - d / w, 0.0, 1.0);
+        return (rr <= 0.0 || k.x <= 0.0 || k.y <= 0.0) ? 1.0 : cov;
     }
 
-    // Blocks of q.c0.x target px, each showing the colour at its centre.
+    // q.c0.y = corner radius, local px (0: square).
+    fragment float4 screen_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]],
+                              texture2d<float> t [[texture(0)]], sampler smp [[sampler(0)]]) {
+        return t.sample(smp, screen_uv(in, q)) * q.opacity * wz_round_cov(in, q, q.c0.y);
+    }
+
+    // White coverage of the quad's rounded rect: a region mask. q.c0.y = corner radius, local px.
+    fragment float4 round_mask_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]]) {
+        return float4(q.opacity * wz_round_cov(in, q, q.c0.y));
+    }
+
+    // Blocks of q.c0.x target px, each showing the colour at its centre. q.c0.y = corner radius, local px.
     fragment float4 pixelate_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]],
                                 texture2d<float> t [[texture(0)]], sampler smp [[sampler(0)]]) {
         float b = max(q.c0.x, 1.0);
         float2 px = (floor(in.pos.xy / b) + 0.5) * b;
-        return t.sample(smp, px / max(q.c1.xy, float2(1.0))) * q.opacity;
+        return t.sample(smp, px / max(q.c1.xy, float2(1.0))) * q.opacity * wz_round_cov(in, q, q.c0.y);
     }
 
     inline float3 unpremul(float4 c) { return c.a > 0.0 ? c.rgb / c.a : float3(0.0); }
