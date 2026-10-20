@@ -215,3 +215,14 @@ Dated log. Newest last.
   `RevLook`) never travel with a nested clip, `ShaderVidSource` does, and a
   pasted background sets no `RevBackground`. Open for a save-only researcher
   experiment: what Camtasia does in each case.
+- **2026-10-20 · CI test layout (session 7):** GitHub's 3-core macOS VMs stall
+  when several AVFoundation/VideoToolbox sessions run at once, so CI runs the
+  media suites (Golden, Recorder, Exporter, MediaEngine, PlayerKit, Perf)
+  `--no-parallel` in a second step and the rest in parallel; `@MainActor`
+  tests never wait synchronously on AVFoundation (async `MediaWriter`);
+  every test wait is bounded; VM-only gates via
+  `TestEnvironment.isVirtualMachine`; GPU timing asserts need
+  `WIZREC_PERF=1`. First green run: 17 (`37b384c`).
+- **2026-10-20 · v0.1.0 (session 7):** tag on the CI-green commit `37b384c`;
+  the Release workflow attached the ad-hoc DMG to a draft Release. The user
+  publishes it.

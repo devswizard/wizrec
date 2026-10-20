@@ -295,7 +295,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | SHIP9-1 | ship | done | actions/checkout, cache, upload-artifact on current majors (no Node 20) |
 | SHIP9-2 | ship | done | `diskutil image` when available, hdiutil fallback; local DMG mounts + launches |
 | SHIP9-3 | ship | done | v0.1.0 release notes (What's new, install, known limits) |
-| SHIP9-4 | ship | claimed | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
+| SHIP9-4 | ship | done | tag v0.1.0 → draft Release with DMG + SHA256SUMS; DMG mounts and launches |
 | APP9-1 | app | done | inspector controls for a shader background's `sourceEffect` params |
 | APP9-2 | app | done | `ShaderVidSource` / group `RevBackground` metadata + timeline rules |
 | APP9-3 | app | done | scripted mouse double-click UI check on library tiles |

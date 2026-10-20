@@ -80,6 +80,10 @@ This is for the **lead session** that continues the WizRec build. Read
   - test reader loops (`readBack`, `decodeAudio`, `MovieFrameReader`) could
     run on a private thread with a deadline;
   - quit with several unsaved documents under `--quit-after` (untested path);
+  - release: the app binary keeps an Xcode back-deploy `LC_RPATH`
+    (harmless; `bundle-dylibs.sh` could `install_name_tool -delete_rpath`);
+    ship9 verified the v0.1.0 DMG from the tag (20.9 MB, SHA-256
+    `ea5a7809…80dc`, launches the demo copy, no Homebrew/Xcode link paths);
   - Swift 6.3 slow spots left: CanvasRenderer:43, EditorDocumentModel:117,
     ClassicCaptions:138, EditorWindowController+Export:22 (all < 75 ms);
   - Sparkle appcast (GitHub Pages) once the user has keys;
