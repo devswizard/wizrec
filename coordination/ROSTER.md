@@ -44,5 +44,6 @@ captions, app.
 | captions | af316ccda71a0a936 | `agent/captions6` |
 | ship | a5ee05d5f4a6cf8fc | `agent/ship6` |
 | app | a77d60dc311613a18 | `agent/app6` |
+| timeline | a2e24b396c4b39da3 | `agent/timeline6` |
 
-Spawn later (waiting on specs): timeline, audio.
+Spawn later (waiting on specs): audio.

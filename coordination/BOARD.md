@@ -248,7 +248,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | id | owner | status | acceptance |
 |---|---|---|---|
 | S5-RES-1 | researcher | blocked (trial watermark gate on export; needs activated Camtasia or user exports) | Automated Camtasia exports of the 15 golden cases + 11 sheets into `camtasia_rea_refs/<case>/reference.mp4` (+ ProRes `reference.mov` where possible); `scripts/golden.sh --status` shows them; watermark check |
-| S5-RES-2 | researcher | open | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
+| S5-RES-2 | researcher | batch 1 published (group edits, effect catalog, animation, behaviours, transform) | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
 | S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
 | S5-MED-1 | media | done (4K ProRes 4444 23.9→57–63 fps, 422 HQ ≥ 112 fps) | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
 | S5-MED-2 | media+render | done (Metal tone map byte-identical; 4K60 HEVC PQ 34→478 fps; playback pool .gpu) | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
@@ -256,7 +256,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | S5-CAP-1 | captions | live test + timing fixes done; CA1/CA2 waits on spec | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
 | S5-SHIP-1 | ship | done (Sparkle 2.10.0 off when unconfigured, self-signed DMG verified) | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
 | S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |
-| S5-TL-1 | timeline | waiting spec | Replace [inf] group-edit rules with X5 results |
+| S5-TL-1 | timeline | in progress (group-edits.md published) | Replace [inf] group-edit rules with X5 results |
 | S5-AUD-1 | audio | waiting spec | Replace [inf]/[WizRec] audio rules with AU1/AU2 spec |
 
 ## Session 5 merges
@@ -266,3 +266,4 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - ship6: Sparkle 2.10.0 (off when unconfigured), `UpdaterConfiguration`, signed embedding, `verify-dmg.sh`, CI/release workflows ready, bundle ID `com.devswizard.WizRec`.
 - captions6: whisper.cpp 1.9.5 live green; word times kept out of silences (Silero VAD or energy compaction), silent audio skipped, VAD model not listed as transcription model. 841 tests green.
 - render6: Metal HDR tone map in the playback pool (byte-identical to CPU; 4K60 PQ 34 → 478 fps, HLG 29 → 496 fps); composite GPU 0.25 ms 1080p / 0.92 ms 4K. 848 tests green.
+- researcher6 batch 1 (wall-reviewed): group-edits.md, effects/catalog.md, Border/Reflection params, animation.md, behaviours defaults, transform X2; `wizrec-testgen experiments|shadervids`. 848 green.
