@@ -196,11 +196,30 @@ public enum HDRToneMapping: Sendable, Equatable {
     case gpu
 }
 
+/// Full-size HDR frames a `MediaPool` tone-mapped, by path (thumbnails are not counted).
+public struct ToneMapStats: Sendable, Equatable {
+    /// Frames tone-mapped by the Metal kernel.
+    public var gpuFrames: Int
+    /// Frames tone-mapped on the CPU in a `.cpu` pool.
+    public var cpuFrames: Int
+    /// Frames tone-mapped on the CPU although the pool asked for `.gpu` (no Metal device,
+    /// unsupported picture format, kernel error).
+    public var cpuFallbackFrames: Int
+
+    public init(gpuFrames: Int = 0, cpuFrames: Int = 0, cpuFallbackFrames: Int = 0) {
+        self.gpuFrames = gpuFrames; self.cpuFrames = cpuFrames; self.cpuFallbackFrames = cpuFallbackFrames
+    }
+}
+
 /// Opens and caches media sources and decoded frames. One per document.
 public actor MediaPool {
     public let cacheLimitBytes: Int
     /// Tone mapping of HDR video frames (`.cpu` unless the pool serves interactive playback).
     public nonisolated let hdrToneMapping: HDRToneMapping
+    /// Counts tone-mapped frames of this pool's sources.
+    nonisolated let toneMapCounter = ToneMapCounter()
+    /// Full-size HDR frames tone-mapped so far, by path (diagnostics, tests). Not reset by `purge()`.
+    public nonisolated var toneMapStats: ToneMapStats { toneMapCounter.stats }
 
     var sources: [URL: Task<any MediaSource, Error>] = [:]
     var cache: FrameCache
@@ -255,9 +274,10 @@ public actor MediaPool {
     /// Opens (or returns the already open) source for `url`.
     public func source(for url: URL) async throws -> any MediaSource {
         if let t = sources[url] { return try await t.value }
-        let toneMapping = hdrToneMapping
+        let toneMapping = hdrToneMapping, counter = toneMapCounter
         let t = Task.detached(priority: .userInitiated) { () throws -> any MediaSource in
-            try openSource(try await Prober.probeDetailed(url), hdrToneMapping: toneMapping)
+            try openSource(try await Prober.probeDetailed(url), hdrToneMapping: toneMapping,
+                           toneMapCounter: counter)
         }
         sources[url] = t
         do {

@@ -8,10 +8,12 @@ import ImageIO
 import VideoToolbox
 
 /// Opens the right `MediaSource` for a probed file.
-func openSource(_ probe: ProbeResult, hdrToneMapping: HDRToneMapping = .cpu) throws -> any MediaSource {
+func openSource(_ probe: ProbeResult, hdrToneMapping: HDRToneMapping = .cpu,
+                toneMapCounter: ToneMapCounter? = nil) throws -> any MediaSource {
     let info = probe.info
     switch info.kind {
-    case .movie, .recording: return FFMediaSource(info: info, map: probe.map, hdrToneMapping: hdrToneMapping)
+    case .movie, .recording: return FFMediaSource(info: info, map: probe.map, hdrToneMapping: hdrToneMapping,
+                                                           toneMapCounter: toneMapCounter)
     case .image: return ImageSource(info: info)
     case .shader: return ShaderSource(info: info)
     case .unknown: throw MediaError.unsupported("unrecognised media: \(info.url.lastPathComponent)")
@@ -26,9 +28,11 @@ actor FFMediaSource: MediaSource {
     private var audioDecoders: [Int: AudioDecoder] = [:]
     /// Where HDR frames are tone-mapped.
     nonisolated let hdrToneMapping: HDRToneMapping
+    /// The owning pool's tone-map counter.
+    nonisolated let toneMapCounter: ToneMapCounter?
 
-    init(info: MediaInfo, map: StreamMap, hdrToneMapping: HDRToneMapping = .cpu) {
-        self.info = info; self.map = map; self.hdrToneMapping = hdrToneMapping
+    init(info: MediaInfo, map: StreamMap, hdrToneMapping: HDRToneMapping = .cpu, toneMapCounter: ToneMapCounter? = nil) {
+        self.info = info; self.map = map; self.hdrToneMapping = hdrToneMapping; self.toneMapCounter = toneMapCounter
     }
 
     /// Container index of public stream `stream` after checking its kind.
@@ -43,7 +47,7 @@ actor FFMediaSource: MediaSource {
     private func videoDecoder(_ stream: Int) throws -> VideoStreamDecoder {
         if let d = video[stream] { return d }
         let d = try VideoStreamDecoder(url: info.url, streamIndex: try containerIndex(stream, kind: .video),
-                                   hdrToneMapping: hdrToneMapping)
+                                   hdrToneMapping: hdrToneMapping, toneMapCounter: toneMapCounter)
         video[stream] = d
         return d
     }

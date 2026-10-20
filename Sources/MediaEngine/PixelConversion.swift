@@ -76,6 +76,9 @@ final class FrameConverter {
     private let toneMapper: ToneMapper?
     /// Metal tone mapper for `.gpu` pools (nil: CPU). Dropped after its first failure.
     private var gpuToneMapper: MetalToneMapper?
+    /// The pool asked for `.gpu`: CPU frames count as fallbacks.
+    private let gpuRequested: Bool
+    private let toneMapCounter: ToneMapCounter?
     /// Full-size tone-mapped frames awaiting a scale (thumbnails of HDR streams).
     private var hdrPool: BGRAPool?
     /// HDR pictures with no bi-planar equivalent are first resampled to 4:4:4 10-bit.
@@ -89,7 +92,11 @@ final class FrameConverter {
 
     /// Converter for the stream described by `par`. `hdrToneMapping` picks where full-size HDR
     /// frames are tone-mapped (scaled thumbnails always use the CPU reference).
-    init(par: UnsafeMutablePointer<AVCodecParameters>, hdrToneMapping: HDRToneMapping = .cpu) {
+    /// `toneMapCounter` counts full-size tone-mapped frames by path.
+    init(par: UnsafeMutablePointer<AVCodecParameters>, hdrToneMapping: HDRToneMapping = .cpu,
+         toneMapCounter: ToneMapCounter? = nil) {
+        self.toneMapCounter = toneMapCounter
+        self.gpuRequested = hdrToneMapping == .gpu
         codecID = par.pointee.codec_id
         sharesGPUConversion = Self.gpuConvertedCodecs.contains(codecID)
         tags = VTPictureDecoder.colourAttachments(par)
@@ -109,6 +116,8 @@ final class FrameConverter {
         tags = [:]
         fullRange = false
         toneMapper = nil
+        gpuRequested = false
+        toneMapCounter = nil
     }
 
     /// The stream is HDR (PQ or HLG) and is tone-mapped to SDR.
@@ -144,12 +153,14 @@ final class FrameConverter {
             if let gpu = gpuToneMapper {
                 do {
                     try gpu.convert(src, into: dst)
+                    toneMapCounter?.count(.gpu)
                     return dst
                 } catch {
                     gpuToneMapper = nil // unsupported here: the CPU reference from now on
                 }
             }
             try tm.convert(src, into: dst)
+            toneMapCounter?.count(gpuRequested ? .cpuFallback : .cpu)
             return dst
         }
         if let src = try yuvSource(frame) { return try transferVT(src) }

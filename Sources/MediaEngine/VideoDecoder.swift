@@ -23,11 +23,12 @@ actor VideoDecoder {
     private let core: VideoDecodeCore
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    init(url: URL, streamIndex: Int, allowHardware: Bool = true, hdrToneMapping: HDRToneMapping = .cpu) throws {
+    init(url: URL, streamIndex: Int, allowHardware: Bool = true, hdrToneMapping: HDRToneMapping = .cpu,
+         toneMapCounter: ToneMapCounter? = nil) throws {
         self.streamIndex = streamIndex
         self.queue = DispatchSerialQueue(label: "wizrec.media.video.\(streamIndex)", qos: .userInitiated)
         let core = try VideoDecodeCore(url: url, streamIndex: streamIndex, allowHardware: allowHardware,
-                                       hdrToneMapping: hdrToneMapping)
+                                       hdrToneMapping: hdrToneMapping, toneMapCounter: toneMapCounter)
         self.core = core
         self.isHardwareCapable = core.usingHardware
     }
@@ -104,12 +105,15 @@ actor VideoStreamDecoder {
 
     /// Where HDR frames are tone-mapped (both lanes alike).
     nonisolated let hdrToneMapping: HDRToneMapping
+    nonisolated let toneMapCounter: ToneMapCounter?
 
-    init(url: URL, streamIndex: Int, hdrToneMapping: HDRToneMapping = .cpu) throws {
+    init(url: URL, streamIndex: Int, hdrToneMapping: HDRToneMapping = .cpu, toneMapCounter: ToneMapCounter? = nil) throws {
         self.url = url
         self.streamIndex = streamIndex
         self.hdrToneMapping = hdrToneMapping
-        let first = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: true, hdrToneMapping: hdrToneMapping)
+        self.toneMapCounter = toneMapCounter
+        let first = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: true, hdrToneMapping: hdrToneMapping,
+                                     toneMapCounter: toneMapCounter)
         if first.isHardwareCapable {
             hw = first
         } else {
@@ -120,7 +124,8 @@ actor VideoStreamDecoder {
 
     private func softwareLane() throws -> VideoDecoder {
         if let sw { return sw }
-        let d = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: false, hdrToneMapping: hdrToneMapping)
+        let d = try VideoDecoder(url: url, streamIndex: streamIndex, allowHardware: false, hdrToneMapping: hdrToneMapping,
+                                 toneMapCounter: toneMapCounter)
         sw = d
         return d
     }
@@ -250,7 +255,8 @@ final class VideoDecodeCore {
     /// Seek ahead instead of decoding through when the target is this far past the decoder (seconds).
     private let seekAheadThreshold = 0.25
 
-    init(url: URL, streamIndex: Int, allowHardware: Bool = true, hdrToneMapping: HDRToneMapping = .cpu) throws {
+    init(url: URL, streamIndex: Int, allowHardware: Bool = true, hdrToneMapping: HDRToneMapping = .cpu,
+         toneMapCounter: ToneMapCounter? = nil) throws {
         self.url = url
         self.streamIndex = streamIndex
         let fc = try FormatContext(url: url)
@@ -273,7 +279,7 @@ final class VideoDecodeCore {
             kf.sort()
         }
         self.keyframes = kf
-        self.converter = FrameConverter(par: par, hdrToneMapping: hdrToneMapping)
+        self.converter = FrameConverter(par: par, hdrToneMapping: hdrToneMapping, toneMapCounter: toneMapCounter)
 
         if allowHardware, Self.asyncVideoToolboxEnabled,
            let vt = VTPictureDecoder(par: par, depth: Self.asyncDepth) {
