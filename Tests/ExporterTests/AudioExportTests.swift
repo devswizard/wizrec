@@ -90,20 +90,22 @@ func decodeAudio(_ url: URL) async throws -> (samples: [Float], rate: Double, st
     #expect(reader.startReading())
     var samples: [Float] = []
     var rate = 0.0, start: Double?
-    while let sb = out.copyNextSampleBuffer() {
+    // Pulled on a private thread: a stuck reader fails with `PullStalled` (QA11-1).
+    try await BlockingPull.samples("decode audio of \(url.lastPathComponent)", reader: reader, output: out) { sb in
         if start == nil { start = CMSampleBufferGetPresentationTimeStamp(sb).seconds }
         guard let fd = CMSampleBufferGetFormatDescription(sb),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd)?.pointee,
-              let block = CMSampleBufferGetDataBuffer(sb) else { continue }
+              let block = CMSampleBufferGetDataBuffer(sb) else { return true }
         rate = asbd.mSampleRate
         let ch = Int(asbd.mChannelsPerFrame)
         var len = 0
         var ptr: UnsafeMutablePointer<CChar>?
         CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &len, dataPointerOut: &ptr)
-        guard let ptr else { continue }
-        ptr.withMemoryRebound(to: Float.self, capacity: len / 4) { f in
+        guard let ptr else { return true }
+        ptr.withMemoryRebound(to: Float.self, capacity: len / 4) { (f: UnsafeMutablePointer<Float>) -> Void in
             for i in stride(from: 0, to: len / 4, by: ch) { samples.append(f[i]) }
         }
+        return true
     }
     return (samples, rate, start ?? 0)
 }

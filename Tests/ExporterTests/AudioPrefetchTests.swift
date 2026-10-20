@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import TestGenKit
 import Testing
 @testable import Exporter
 
@@ -14,16 +15,19 @@ func trackBytes(_ url: URL, _ mediaType: AVMediaType) async throws -> (data: Dat
     reader.add(out)
     #expect(reader.startReading())
     var data = Data(), times: [CMTime] = []
-    while let sb = out.copyNextSampleBuffer() {
+    // Pulled on a private thread: a stuck reader fails with `PullStalled` (QA11-1).
+    try await BlockingPull.samples("\(mediaType.rawValue) bytes of \(url.lastPathComponent)", reader: reader, output: out) { sb in
         times.append(CMSampleBufferGetPresentationTimeStamp(sb))
-        guard let block = CMSampleBufferGetDataBuffer(sb) else { continue }
+        guard let block = CMSampleBufferGetDataBuffer(sb) else { return true }
         let len = CMBlockBufferGetDataLength(block)
         var chunk = Data(count: len)
-        let status = chunk.withUnsafeMutableBytes { raw in
-            CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: len, destination: raw.baseAddress!)
+        let status = chunk.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) -> OSStatus in
+            guard let base = raw.baseAddress else { return kCMBlockBufferBadPointerParameterErr }
+            return CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: len, destination: base)
         }
         #expect(status == noErr)
         data.append(chunk)
+        return true
     }
     #expect(reader.status == .completed)
     return (data, times)
