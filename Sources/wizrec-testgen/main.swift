@@ -8,6 +8,7 @@ import PlayerKit
 import TestGenKit
 import TimelineEngine
 import TSCProjKit
+import WizRecAssets
 
 let usage = """
     usage:
@@ -30,6 +31,9 @@ let usage = """
       wizrec-testgen experiments --speech WAV [--out DIR] [--case NAME]...
           Write the research base projects that the Camtasia automation edits and
           re-saves (format/, research/*/<name>/), each with <name>.clips.json.
+      wizrec-testgen shadervids DIR
+          Write every WizRec background as a .tscshadervid file into DIR (for the
+          Camtasia acceptance check).
       wizrec-testgen thumbnail PROJECT [-o OUT.png]
           Extract metadata.ProjectThumbnail (Camtasia's render at the playhead) from a
           .cmproj/.tscproj and print its size and the docPrefs playhead.
@@ -116,6 +120,23 @@ if args.first == "ce3" {
             return SourceDescriptor(info: info, src: src, lastModified: mod)
         }
         print("wrote  \(bundle.path)")
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
+
+if args.first == "shadervids" {
+    args.removeFirst()
+    guard let dir = args.first else { fail("shadervids needs an output directory\n\(usage)") }
+    let out = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        for bg in AssetCatalog.backgrounds {
+            let url = out.appendingPathComponent(bg.fileName)
+            try bg.shaderVidData().write(to: url, options: .atomic)
+            print("wrote  \(url.path)")
+        }
     } catch {
         fail("\(error)")
     }

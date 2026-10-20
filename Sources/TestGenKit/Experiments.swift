@@ -73,6 +73,15 @@ public enum Experiments {
                     ExperimentClip(media: 0, track: 4, start: 0, label: "t4-video"),
                 ]),
             ExperimentBase(
+                name: "one-video-base", group: "format", summary: "X7/X8/ED: clip A alone on track 0 at 0 s.",
+                media: [clipA], clips: [ExperimentClip(media: 0, track: 0, start: 0, label: "video")]),
+            ExperimentBase(
+                name: "video-photo-base", group: "format", summary: "X7 group track: clip A on track 0 and the card on track 1, both at 0 s.",
+                media: [clipA, card], clips: [
+                    ExperimentClip(media: 0, track: 0, start: 0, label: "video"),
+                    ExperimentClip(media: 1, track: 1, start: 0, label: "photo"),
+                ]),
+            ExperimentBase(
                 name: "ef0-base", group: "research/effects",
                 summary: "EF0: 40 grey stills end to end on track 0 (one effect each, applied from the menu).",
                 media: [grey], clips: seq(40, media: 0, labels: [])),
