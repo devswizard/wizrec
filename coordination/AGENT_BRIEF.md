@@ -59,8 +59,9 @@ macOS screen recorder and editor by Devs Wizard that opens and saves Camtasia
   working on other tasks.
 - `Package.swift` is lead-owned: change it only for your own targets and list
   the change in `REVIEW`.
-- Commits: small, imperative subject, ending with
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Commits: small, imperative subject. **No AI co-author or attribution
+  lines** (no `Co-Authored-By: Claude…`, no "Generated with…"): the user's
+  rule for everything that reaches GitHub.
 - Before every `REVIEW`: `git rebase main`, then `swift build && swift test`
   all green, with no new warnings. The ld warnings saying FFmpeg was "built
   for newer macOS" are pre-existing.
