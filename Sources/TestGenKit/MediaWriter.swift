@@ -83,9 +83,19 @@ public enum MediaWriter {
         AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
     ] }
 
+    /// One encode at a time, process-wide. On GitHub's 3-core macOS VMs, several writers
+    /// finishing at once (parallel tests) never got their `finishWriting` callback, and the
+    /// blocked threads (the main thread among them) stalled the whole test run.
+    private static let encodeLock = NSLock()
+    /// Longest wait for the input to take a frame, and for `finishWriting` (seconds).
+    private static let readyTimeout: TimeInterval = 60
+    private static let finishTimeout: TimeInterval = 120
+
     private static func writeMovie(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,
                                    height: Int, fps: Int, frameCount: Int,
                                    draw: (Int, CGContext) -> Void) throws -> MovieInfo {
+        encodeLock.lock()
+        defer { encodeLock.unlock() }
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
         let timescale = Int32(fps * 1000)
@@ -108,8 +118,13 @@ public enum MediaWriter {
         writer.startSession(atSourceTime: .zero)
 
         for n in 0..<frameCount {
+            let readyBy = Date(timeIntervalSinceNow: readyTimeout)
             while !input.isReadyForMoreMediaData {
                 if writer.status == .failed { break }
+                if Date() > readyBy {
+                    writer.cancelWriting()
+                    throw MediaWriterError.writeFailed("input not ready for frame \(n) after \(Int(readyTimeout)) s")
+                }
                 Thread.sleep(forTimeInterval: 0.001)
             }
             guard writer.status == .writing else { break }
@@ -143,7 +158,11 @@ public enum MediaWriter {
         writer.endSession(atSourceTime: CMTime(value: CMTimeValue(frameCount) * 1000, timescale: CMTimeScale(timescale)))
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
-        done.wait()
+        if done.wait(timeout: .now() + finishTimeout) == .timedOut {
+            writer.cancelWriting()
+            throw MediaWriterError.writeFailed("finishWriting gave no answer after \(Int(finishTimeout)) s "
+                                               + "(writer status \(writer.status.rawValue))")
+        }
         guard writer.status == .completed else {
             throw MediaWriterError.writeFailed(writer.error.map { "\($0)" } ?? "status \(writer.status.rawValue)")
         }
