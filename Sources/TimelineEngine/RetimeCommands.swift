@@ -41,8 +41,10 @@ public final class RippleTrim: EditCommand {
 ///   the drop point on that layout].
 /// - A destination clip that straddles `start` makes `apply` throw (drop on
 ///   a clip edge). On a magnetic track the clip goes to the nearest boundary.
-/// - One-sided transitions on the clip travel with it; two-sided ones that
-///   reference it are removed.
+/// - One-sided transitions on the clip travel with it; a two-sided one is
+///   split into a one-sided half that stays on the other clip and one that
+///   travels with this clip ([obs] for Cut/Paste, transitions.md TR2; [inf]
+///   for ripple move).
 @MainActor
 public final class RippleMove: EditCommand {
     public let clipID: Int64
@@ -73,12 +75,17 @@ public final class RippleMove: EditCommand {
 
         var travelling: [JSON] = []
         if let tr = source["transitions"]?.array {
-            tr.items.removeAll { t in
-                guard let o = t.object else { return false }
+            tr.items = tr.items.compactMap { t in
+                guard let o = t.object else { return t }
                 let l = o["leftMedia"]?.int, r = o["rightMedia"]?.int
-                guard l == clipID || r == clipID else { return false }
-                if l == nil || r == nil { travelling.append(t) }
-                return true
+                guard l == clipID || r == clipID else { return t }
+                if l == nil || r == nil { travelling.append(t); return nil }
+                // Two-sided: split into one-sided halves (transitions.md TR2).
+                let stays = o.copy(), moves = o.copy()
+                stays[l == clipID ? "leftMedia" : "rightMedia"] = nil
+                moves[l == clipID ? "rightMedia" : "leftMedia"] = nil
+                travelling.append(.object(moves))
+                return .object(stays)
             }
         }
 

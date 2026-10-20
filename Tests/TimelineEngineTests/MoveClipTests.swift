@@ -45,7 +45,7 @@ import TSCProjKit
     try expectReversible(touch, on: p)
 }
 
-@MainActor @Test func moveCarriesFadesAndDropsBrokenTransitions() throws {
+@MainActor @Test func moveCarriesFadesAndSplitsBrokenTransitions() throws {
     let transitions = """
     [{"name" : "Fade", "duration" : 10, "rightMedia" : 10},
      {"name" : "RadialWipe", "duration" : 10, "leftMedia" : 10, "rightMedia" : 11},
@@ -59,11 +59,12 @@ import TSCProjKit
     try expectReversible(move, on: p)
     try move.apply(to: p)
     try expectTracks(p, tracks(
+        // The two-sided wipe splits: 11 keeps a start half in place [obs, TR2].
         track(0, [leaf(11, start: 100, dur: 100)],
-              transitions: #"[{"name" : "Fade", "duration" : 10, "leftMedia" : 11}]"#),
-        // The destination had no "transitions" key: it is appended.
+              transitions: #"[{"name" : "RadialWipe", "duration" : 10, "rightMedia" : 11}, {"name" : "Fade", "duration" : 10, "leftMedia" : 11}]"#),
+        // The destination had no "transitions" key: it is appended; 10 takes the end half.
         #"{"trackIndex" : 1, "medias" : [\#(leaf(10, start: 0, dur: 100))], "parameters" : {}, "#
-            + #""transitions" : [{"name" : "Fade", "duration" : 10, "rightMedia" : 10}]}"#
+            + #""transitions" : [{"name" : "Fade", "duration" : 10, "rightMedia" : 10}, {"name" : "RadialWipe", "duration" : 10, "leftMedia" : 10}]}"#
     ))
 }
 
@@ -72,13 +73,14 @@ import TSCProjKit
     let p = try makeProject(tracks: tracks(track(0, [
         leaf(9, start: 0, dur: 20), leaf(10, start: 40, dur: 60), leaf(11, start: 100, dur: 100),
     ], transitions: transitions)))
-    // Moving 10 left by 10 breaks the contact with 11: transition removed.
+    // Moving 10 left by 10 breaks the contact with 11: the transition splits
+    // into an end half on 10 (appended) and a start half on 11 (in place).
     let apart = MoveClip(clipID: 10, toTrack: 0, start: 30)
     try expectReversible(apart, on: p)
     try apart.apply(to: p)
     try expectTracks(p, tracks(track(0, [
         leaf(9, start: 0, dur: 20), leaf(10, start: 30, dur: 60), leaf(11, start: 100, dur: 100),
-    ], transitions: "[]")))
+    ], transitions: #"[{"name" : "RadialWipe", "duration" : 10, "rightMedia" : 11}, {"name" : "RadialWipe", "duration" : 10, "leftMedia" : 10}]"#)))
     try apart.revert(on: p)
 
     // A no-op move keeps it.

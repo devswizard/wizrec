@@ -56,9 +56,10 @@ import TSCProjKit
     try expectReversible(move, on: p)
     try move.apply(to: p)
     try expectTracks(p, tracks(
-        track(0, [leaf(10, start: 0, dur: 100), leaf(12, start: 100, dur: 50)], transitions: "[]"),
+        track(0, [leaf(10, start: 0, dur: 100), leaf(12, start: 100, dur: 50)],
+              transitions: #"[{"name" : "Cube", "duration" : 5, "rightMedia" : 12}]"#),
         track(1, [leaf(20, start: 0, dur: 30), leaf(11, start: 30, dur: 50), leaf(21, start: 80, dur: 30)],
-              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}]"#)))
+              transitions: #"[{"name" : "Fade", "duration" : 5, "rightMedia" : 11}, {"name" : "Cube", "duration" : 5, "leftMedia" : 11}]"#)))
     try move.revert(on: p)
     expectRejected(RippleMove(clipID: 11, toTrack: 1, start: 10), on: p, .invalid(""))  // inside clip 20
     // Same track: start is read after the gap closes.
