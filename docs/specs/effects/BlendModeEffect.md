@@ -24,7 +24,7 @@ blended overlapping RGB discs [inf]. Clip metadata says
 
 | Name | Type | Value | Meaning |
 |---|---|---|---|
-| `mode` | constant int | 12 | Blend-mode enum [?]. Overlapping pure R, G and B discs over a photo make the classic additive-colour diagram under *Screen*, *Lighten* or *Add* (linear dodge). 12 is likely one of these [inf, weak] |
+| `mode` | constant int | 12 | Blend-mode enum, table below. 12 = *Screen* [obs] |
 | `intensity` | animatable double | keyframed 0 → 1 → 0 | Mix between normal compositing (0) and the blended result (1) [inf] |
 | `invert` | constant int | 0 | [?] Inverts the layer before blending, or inverts the range |
 | `channel`, `shadowRampStart/End`, `highlightRampStart/End` | constant | 0; 0, 0; 1, 1 | The shared range block (`ColorAdjustment.md`) |
@@ -50,10 +50,39 @@ layer never disappears. This matches BlendModePreview, which ramps
 the first version of this formula scaled the alpha by `i`, which hid the
 layer at i = 0. Wait for EF5 before treating this as settled.)
 
-- **Mode numbering.** The usual Photoshop/PDF list (normal, darken,
-  multiply, colour burn, linear burn, lighten, screen, colour dodge, linear
-  dodge, overlay, soft light, hard light, …, difference, exclusion, hue,
-  saturation, colour, luminosity) is the candidate set. The numbering is [?].
+- **Mode numbering** [obs, RT-015, 2026-10-20]. Each entry of the
+  Properties *Mode* pop-up was chosen on its own clip in Camtasia 2026.2.3
+  and the project was saved. The pop-up lists 31 modes in six groups:
+
+  | `mode` | UI name | `mode` | UI name |
+  |---|---|---|---|
+  | 0 | Normal | 16 | Overlay |
+  | 5 | Dissolve | 17 | Soft Light |
+  | 6 | Darken | 18 | Hard Light |
+  | 7 | Multiply | 19 | Vivid Light |
+  | 8 | Color Burn | 20 | Linear Light |
+  | 9 | Linear Burn | 21 | Pin Light |
+  | 10 | Darker Color | 22 | Hard Mix |
+  | 11 | Lighten | 23 | Difference |
+  | **12** | **Screen** (default when added from the menu) | 24 | Exclusion |
+  | 13 | Color Dodge | 25 | Subtract |
+  | 14 | Linear Dodge (Add) | 26 | Divide |
+  | 15 | Lighter Color | 27 | Hue |
+  | 1 | Stencil Alpha | 28 | Saturation |
+  | 2 | Silhouette Alpha | 29 | Color |
+  | 3 | Stencil Luma | 30 | Luminosity |
+  | 4 | Silhouette Luma | | |
+
+  - 1–4 are the four "stencil/silhouette" modes, which the pop-up lists
+    last. They act as mattes rather than colour blends: stencil keeps what
+    lies below where this layer is opaque (or bright), and silhouette cuts
+    it out [inf from the names]. Their effect on the layer's own pixels is
+    [?].
+  - The names and their order follow the common layered-image editor
+    convention, so the standard formulas for each mode apply (sRGB-encoded,
+    per channel; Hue/Saturation/Color/Luminosity in the usual
+    non-separable form) [inf]. Values outside 0–30 are [?].
+  - Changing the mode changes nothing else in the effect [obs].
 - What B is inside a group: the group's own canvas or the full scene [inf:
   the group canvas].
 
