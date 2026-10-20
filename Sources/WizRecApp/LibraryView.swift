@@ -1,5 +1,6 @@
 import PlayerKit
 import SwiftUI
+import TimelineEngine
 import TimelineUI
 
 /// What the library panel can ask the editor to do.
@@ -13,12 +14,13 @@ struct LibraryActions {
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, effects, transitions
+        case media, effects, audio, transitions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
             case .media: "Media"
             case .effects: "Effects"
+            case .audio: "Audio"
             case .transitions: "Transitions"
             }
         }
@@ -43,6 +45,9 @@ struct SidebarView: View {
             case .effects:
                 LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
                             hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
+            case .audio:
+                LibraryList(items: Self.audioItems(), kind: .audio, apply: library.apply,
+                            hint: "Double-click to add to the selected clips' audio. Captions adds empty captions to type into.")
             case .transitions:
                 LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
                             hint: "Drag a transition onto the cut between two clips or a clip's start or end, or double-click to add it at the playhead cut or to the selected clips.")
@@ -54,6 +59,24 @@ struct SidebarView: View {
         TimelineLibrary.effects.map {
             LibraryItem(name: $0.name, title: $0.displayName, symbol: symbol(effect: $0.name),
                         note: $0.isRendered ? nil : String(localized: "not previewed"))
+        }
+    }
+
+    /// The Audio Effects panel items, in Camtasia's panel order (`AudioPanelItem`).
+    static func audioItems() -> [LibraryItem] {
+        AudioPanelItem.allCases.map { LibraryItem(name: $0.rawValue, title: $0.displayName, symbol: symbol(audio: $0)) }
+    }
+
+    static func symbol(audio: AudioPanelItem) -> String {
+        switch audio {
+        case .aiNoiseRemoval: "waveform.badge.minus"
+        case .audioCompression: "arrow.down.right.and.arrow.up.left"
+        case .captions: "captions.bubble"
+        case .clipSpeed: "speedometer"
+        case .emphasize: "speaker.wave.3"
+        case .fadeIn: "speaker.wave.1"
+        case .fadeOut: "speaker.slash"
+        case .pitch: "tuningfork"
         }
     }
 
@@ -100,7 +123,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition }
+    enum Kind { case effect, transition, audio }
     var name: String
     var title: String
     var symbol: String
@@ -120,10 +143,12 @@ struct LibraryList: View {
     @State private var query = ""
     private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 8)]
 
-    private var type: String {
+    /// Drag pasteboard type; nil for audio items (double-click only: the timeline takes no audio drops).
+    private var type: String? {
         switch kind {
         case .effect: TimelineUI.TimelineView.effectType.rawValue
         case .transition: TimelineUI.TimelineView.transitionType.rawValue
+        case .audio: nil
         }
     }
 
@@ -184,12 +209,12 @@ struct LibraryList: View {
         .contentShape(Rectangle())
         .help(item.note.map { "\(item.title) — \($0): kept in the project, not drawn yet" } ?? item.title)
         .onTapGesture(count: 2) { if !apply(kind, item.name) { NSSound.beep() } }
-        .onDrag { Self.provider(type: type, name: item.name) }
+        .onDrag { type.map { Self.provider(type: $0, name: item.name) } ?? NSItemProvider() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.title)
         .accessibilityValue(item.note ?? "")
-        .accessibilityHint(kind == .effect ? "Double-click to add to the selected clips"
-                           : "Double-click to add at the cut under the playhead or to the selected clips")
+        .accessibilityHint(kind == .transition ? "Double-click to add at the cut under the playhead or to the selected clips"
+                           : "Double-click to add to the selected clips")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { _ = apply(kind, item.name) }
     }

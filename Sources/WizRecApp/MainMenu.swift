@@ -54,6 +54,9 @@ enum MainMenu {
                                keyEquivalent: String(UnicodeScalar(NSBackspaceCharacter).map { Character($0) } ?? "\u{8}"))
         del.keyEquivalentModifierMask = []
         edit.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: String(localized: "Add Audio Point"),
+                     action: #selector(EditorWindowController.addAudioPoint(_:)), keyEquivalent: "")
         add(edit, to: main)
 
         let clip = NSMenu(title: String(localized: "Clip"))

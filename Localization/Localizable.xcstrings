@@ -59,6 +59,9 @@
     "About WizRec" : {
 
     },
+    "Add Audio Point" : {
+
+    },
     "Add Captions" : {
 
     },
@@ -553,6 +556,9 @@
     "Select All" : {
 
     },
+    "Select a clip with audio under the playhead." : {
+
+    },
     "Select a dynamic caption on the timeline." : {
 
     },
@@ -560,6 +566,9 @@
 
     },
     "Select clips on the timeline first, or drag the effect onto a clip." : {
+
+    },
+    "Select clips with audio on the timeline first." : {
 
     },
     "Selected clips" : {

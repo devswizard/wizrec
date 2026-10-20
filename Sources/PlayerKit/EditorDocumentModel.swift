@@ -224,8 +224,12 @@ public final class EditorDocumentModel {
     }
 
     private static func command(for changes: [ParameterChange]) -> any EditCommand {
-        let steps = changes.map { ch in
-            SetParameter(clipID: ch.clipID, parameter: ch.name, value: ch.value, keyframeAt: ch.keyframeAt)
+        // Volume keyframes are audio points: Camtasia's point shape, not eased windows.
+        let steps: [any EditCommand] = changes.map { ch in
+            if ch.name == "volume", let at = ch.keyframeAt {
+                return SetVolumePoint(clipID: ch.clipID, at: at, value: ch.value)
+            }
+            return SetParameter(clipID: ch.clipID, parameter: ch.name, value: ch.value, keyframeAt: ch.keyframeAt)
         }
         if steps.count == 1, let only = steps.first { return only }
         return CompoundCommand(name: "Change Property", steps.map { s in { _, _ in s } })
@@ -290,10 +294,39 @@ public final class EditorDocumentModel {
         }
         let src = try bundle.importFile(file)
         let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-        let add = AddSource(SourceDescriptor(info: info, src: src, lastModified: date))
-        try perform(add)
-        guard let id = add.sourceID else { throw EditError.invalid("AddSource returned no id") }
+        let loudness = await measureLoudness(info: info, src: src)
+        let d = SourceDescriptor(info: info, src: src, lastModified: date)
+        let c = CompoundCommand(name: "Import Media", [{ _, _ in AddSource(d) }] + Self.loudnessSteps(addIndex: 0, loudness))
+        try perform(c)
+        guard let id = (c.steps.first as? AddSource)?.sourceID else { throw EditError.invalid("AddSource returned no id") }
         return id
+    }
+
+    /// Loudness of each audio stream of an imported file (`src` in the bundle), measured the way
+    /// Camtasia fills `sourceTracks[i].integratedLUFS` / `peakLevel` (`SourceLoudness`), with the
+    /// stream index (= source track). Streams that cannot be measured are left out; their tracks
+    /// keep `AddSource`'s placeholders (100 / -1), which mean "not measured".
+    func measureLoudness(info: MediaInfo, src: String) async -> [(track: Int, loudness: SourceLoudness)] {
+        let url = bundle.directory.appendingPathComponent(src).standardizedFileURL
+        let rate = audioScene.sampleRate ?? SourceLoudness.defaultMixRate
+        var out: [(track: Int, loudness: SourceLoudness)] = []
+        for s in info.streams where s.kind == .audio {
+            if let m = try? await SourceLoudness.measure(pool: thumbnailPool, url: url, stream: s.index, mixRate: rate) {
+                out.append((s.index, m))
+            }
+        }
+        return out
+    }
+
+    /// `SetSourceLoudness` steps for the source added by step `addIndex` of the same compound.
+    static func loudnessSteps(addIndex: Int, _ loudness: [(track: Int, loudness: SourceLoudness)]) -> [CompoundCommand.Builder] {
+        loudness.map { m in
+            { _, done in
+                guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
+                return SetSourceLoudness(sourceID: id, track: m.track, integratedLUFS: m.loudness.integratedLUFS,
+                                         peakLevel: m.loudness.peakLevel)
+            }
+        }
     }
 
     /// Imports `file` and places it at `ticks` (track preference as in `insertSource`), as one undo step.
@@ -313,6 +346,7 @@ public final class EditorDocumentModel {
     public func importAndPlace(_ files: [URL], at ticks: Int64, track: Int? = nil,
                                name: String) async throws -> [Int64] {
         var descriptors: [SourceDescriptor] = []
+        var measured: [[(track: Int, loudness: SourceLoudness)]] = []
         for file in files {
             let info: MediaInfo
             do { info = try await thumbnailPool.probe(file) } catch {
@@ -321,12 +355,14 @@ public final class EditorDocumentModel {
             let src = try bundle.importFile(file)
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
             descriptors.append(SourceDescriptor(info: info, src: src, lastModified: date))
+            measured.append(await measureLoudness(info: info, src: src))
         }
         let editRate = project.timebase.editRate
         var builders: [CompoundCommand.Builder] = []
         for (i, d) in descriptors.enumerated() {
             let addIndex = builders.count
             builders.append { _, _ in AddSource(d) }
+            builders += Self.loudnessSteps(addIndex: addIndex, measured[i])
             builders.append { project, done in
                 guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
                 // Placement is decided when the step is first applied, after earlier files took their tracks.
@@ -398,8 +434,10 @@ public final class EditorDocumentModel {
                 let src = try bundle.importFile(file)
                 let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
                 let d = SourceDescriptor(info: info, src: src, lastModified: date)
+                let loudness = await measureLoudness(info: info, src: src)
                 let addIndex = builders.count
                 builders.append { _, _ in AddSource(d) }
+                builders += Self.loudnessSteps(addIndex: addIndex, loudness)
                 inserts.append(builders.count)
                 builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
                                                  previous: inserts.dropLast().last) { done in
