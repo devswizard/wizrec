@@ -278,3 +278,34 @@ saved in the project is the reference render.
 - **SH3: position parameter.** Same "Star Field" clip. In Properties, change
   its position-type parameter (the one with an on-canvas handle), then save
   as `sh3-position.cmproj`.
+
+## 10. Camtasia does not accept WizRec background files (acceptance check, 2026-10-20)
+
+The files come from `wizrec-testgen shadervids`, which writes every
+WizRecAssets background as a `.tscshadervid`. Camtasia 2026.2.3 was driven
+by UI automation, with saves only.
+
+| Test | Result | Tag |
+|---|---|---|
+| *File ▸ Import ▸ Media* of `wizrec-aurora.tscshadervid` | Alert "Import Error: The following files are not supported or damaged". Nothing is added | [obs] |
+| Control: the same import of one of Camtasia's own bundled backgrounds | Accepted silently. Camtasia copies the file into the project's `media/<ts>/` folder and writes a full `effectDef` on the source (§6 layout) | [obs] |
+| Opening a project whose `sourceBin` points to a WizRec background inside the bundle (otherwise identical to the control project) | The project opens with the alert "Files not supported: The following files are not supported by Camtasia Editor: wizrec-aurora.tscshadervid". The control project opens with no alert | [obs] |
+| The same with `version` written as a number (1.0) instead of the string "1.0" | Still rejected | [obs] |
+| Saving the project after the alert | The source entry is **kept**. Its `src` is rewritten to a relative path that points back into the *original* bundle, and the file is not copied into the new bundle. The rest of the project saves normally | [obs] |
+| Cause | Every accepted file carries a vendor `signature` (ES512). A WizRec file has none, and the only other difference (the version's type) is ruled out. Camtasia evidently accepts only signed background files | [inf, strong] |
+
+Consequences for WizRec:
+
+- WizRec backgrounds **cannot** be made to play in Camtasia. Forging or
+  copying a vendor signature is out of scope and is not attempted.
+- A project that uses a WizRec background still opens in Camtasia. The user
+  gets one "not supported" alert and the background clip shows as
+  unavailable; all other content is intact [obs].
+- When saving a project that uses a WizRec background, WizRec should warn
+  that Camtasia will not show those backgrounds [inf].
+- When WizRec opens a project that Camtasia re-saved, the background's `src`
+  may point outside the bundle, at the earlier bundle's `media/` folder. The
+  existing missing-media relink (`ProjectBundle.missingMedia()`) covers this
+  [obs].
+- WizRec must accept unsigned files itself and must ignore `signature`
+  (§1).
