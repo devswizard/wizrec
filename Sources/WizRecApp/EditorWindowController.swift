@@ -11,6 +11,7 @@ import TimelineEngine
 import TimelineUI
 import TSCProjKit
 import UniformTypeIdentifiers
+import WizRecAssets
 
 /// The editor window: media bin | canvas + transport | inspector, timeline below.
 ///
@@ -362,6 +363,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// cut at the playhead, else both edges of each selected clip (one undo step each).
     func applyLibraryItem(_ kind: LibraryItem.Kind, _ name: String) -> Bool {
         if kind == .audio, let item = AudioPanelItem(rawValue: name) { return applyAudioItem(item) }
+        if kind == .callout, let preset = AssetCatalog.callout(id: name) { return insertCallout(preset) }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
@@ -383,6 +385,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         var ok = false
         run(item.displayName) { try model.perform(c); ok = true }
+        return ok
+    }
+
+    /// Annotations library double-click: the callout at the playhead (5 s, above the clips
+    /// there), selected. One undo step.
+    func insertCallout(_ preset: CalloutPreset) -> Bool {
+        let c = CalloutInsertion.command(preset, project: model.project, playhead: engine.currentTicks)
+        var ok = false
+        run(String(localized: "Add Callout")) { try model.perform(c); ok = true }
+        if let id = c.clipID { select([id]) }
         return ok
     }
 

@@ -61,7 +61,8 @@ let package = Package(
             dependencies: ["TestGenKit", "TSCProjKit", "TimelineEngine", "MediaEngine", "PlayerKit", "WizRecAssets"]
         ),
         // Player logic (clock, frame snapping, audio mix, playback pipeline), testable without UI.
-        .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine", "AudioEngine"]),
+        .target(name: "PlayerKit", dependencies: ["TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine", "AudioEngine",
+                                                  "WizRecAssets"]),
         .executableTarget(
             name: "WizRecApp",
             dependencies: ["PlayerKit", "TSCProjKit", "MediaEngine", "RenderEngine", "TimelineEngine",
@@ -86,7 +87,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlayerKitTests",
-            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit"]
+            dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit", "WizRecAssets"]
         ),
         .testTarget(
             name: "GoldenTests",

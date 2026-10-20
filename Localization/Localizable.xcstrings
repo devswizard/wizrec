@@ -62,6 +62,9 @@
     "Add Audio Point" : {
 
     },
+    "Add Callout" : {
+
+    },
     "Add Captions" : {
 
     },
@@ -101,6 +104,9 @@
     "Apply" : {
 
     },
+    "Arrows & Lines" : {
+
+    },
     "As preset" : {
 
     },
@@ -119,10 +125,16 @@
     "Background color" : {
 
     },
+    "Blur & Highlight" : {
+
+    },
     "Box behind the word" : {
 
     },
     "Box color" : {
+
+    },
+    "Bubbles" : {
 
     },
     "Cancel" : {
@@ -659,6 +671,9 @@
 
     },
     "Stitch Selected Media" : {
+
+    },
+    "Text" : {
 
     },
     "Text color" : {
