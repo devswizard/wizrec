@@ -43,8 +43,9 @@ import VideoToolbox
         for cy in 0..<((h + 1) / 2) {
             for cx in 0..<((w + 1) / 2) {
                 let x = 2 * cx, y = 2 * cy
-                let m = (rgb(x - 1, y) + 2 * rgb(x, y) + rgb(x + 1, y)
-                         + rgb(x - 1, y + 1) + 2 * rgb(x, y + 1) + rgb(x + 1, y + 1)) / 8
+                let top: SIMD3<Double> = rgb(x - 1, y) + 2 * rgb(x, y) + rgb(x + 1, y)
+                let bottom: SIMD3<Double> = rgb(x - 1, y + 1) + 2 * rgb(x, y + 1) + rgb(x + 1, y + 1)
+                let m: SIMD3<Double> = (top + bottom) / 8
                 let l = luma(m)
                 C.append(code(co + cs * (m.z - l) / 1.8556))
                 C.append(code(co + cs * (m.x - l) / 1.5748))

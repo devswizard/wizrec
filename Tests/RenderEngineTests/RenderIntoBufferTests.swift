@@ -45,7 +45,7 @@ import TSCProjKit
         guard let data = img.dataProvider?.data as Data? else { return [] }
         let w = img.width, rb = img.bytesPerRow
         var out = [UInt8](repeating: 0, count: w * img.height * 4)
-        data.withUnsafeBytes { raw in
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             for y in 0..<img.height {
                 for i in 0..<(w * 4) { out[y * w * 4 + i] = raw[y * rb + i] }
             }
