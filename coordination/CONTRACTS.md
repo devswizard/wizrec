@@ -185,6 +185,15 @@ byte-identical revert.
   playback lanes.
 - Playback throughput for high clip speeds (async `VTDecompressionSession`),
   plus a documented "nearest decoded frame" policy the player can opt into.
+- HDR tone mapping (S5-MED-2, 2026-10-20): `public enum HDRToneMapping
+  { case cpu, gpu }`, `MediaPool.init(..., hdrToneMapping: = .cpu)`.
+  `.cpu` (`ToneMapper`) is the reference: export, thumbnails, golden tests.
+  `.gpu` (`MetalToneMapper`, `ToneMappingMetal.swift`, same LUTs and
+  arithmetic order) is for the playback pool only. Tolerance: max |Δ| ≤ 1
+  code per channel, ≥ 99.9 % identical (tested); measured byte-identical on
+  Apple silicon. Per-frame CPU fallback when Metal is missing or a buffer is
+  unsupported. 4K60 10-bit HEVC PQ/HLG playback decode + tone map ≈ 480 fps
+  (`.gpu`) vs ≈ 30 fps (`.cpu`), release.
 
 ## TimelineUI
 

@@ -39,6 +39,12 @@ private func snapshot(_ dir: URL) -> [String: String] {
         #expect(doc.audioSampleRate == 44100)
     }
 
+    @Test func playbackPoolTonemapsOnGPUThumbnailsOnCPU() throws {
+        let doc = try EditorDocumentModel(url: fixture)
+        #expect(doc.pool.hdrToneMapping == .gpu)
+        #expect(doc.thumbnailPool.hdrToneMapping == .cpu)
+    }
+
     @Test func engineTransportOnFixture() throws {
         let doc = try EditorDocumentModel(url: fixture)
         let e = doc.makeEngine(audio: false)
