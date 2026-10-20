@@ -1,5 +1,6 @@
 import Foundation
 import Metal
+import WizRecAssets
 
 /// A parsed `.tscshadervid` file (`docs/specs/shader-backgrounds.md`). Read from the user's
 /// own copy at render time; never vendored.
@@ -73,18 +74,8 @@ struct ShaderVidFile: Sendable {
     ///   laid out as RRGGBBAA, so `" 130939"` → bytes 00 13 09 39 = (0, 0.0745, 0.0353, 0.2235)
     ///   [obs value, inf rule: Camtasia stores that file's colour this way].
     static func hex(_ s: String) -> SIMD4<Float>? {
-        let body = s.hasPrefix("#") ? String(s.dropFirst()) : s
-        func channels(_ v: UInt32, alpha: Bool) -> SIMD4<Float> {
-            alpha ? SIMD4(Float(v >> 24) / 255, Float((v >> 16) & 0xFF) / 255, Float((v >> 8) & 0xFF) / 255, Float(v & 0xFF) / 255)
-                : SIMD4(Float((v >> 16) & 0xFF) / 255, Float((v >> 8) & 0xFF) / 255, Float(v & 0xFF) / 255, 1)
-        }
-        if body.count == 6, body.allSatisfy(\.isHexDigit), let v = UInt32(body, radix: 16) {
-            return channels(v, alpha: false)
-        }
-        let digits = body.filter { $0 != " " }
-        guard !digits.isEmpty, digits.count <= 8, digits.allSatisfy(\.isHexDigit), let v = UInt32(digits, radix: 16)
-        else { return nil }
-        return channels(v, alpha: true)
+        guard let c = AssetColor(shaderText: s) else { return nil }
+        return SIMD4(Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
     }
 
     /// Uniform value for `uniform` from the clip's evaluated `SourceEffect` parameters, falling back to

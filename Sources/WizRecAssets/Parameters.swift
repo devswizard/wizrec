@@ -93,7 +93,7 @@ public struct AssetParameter: Sendable, Hashable {
 
     /// The scalar keys this parameter takes in a project's `parameters` dictionary, with the default
     /// values: colours split into `<name>-red/-green/-blue/-alpha` (0–1), positions into
-    /// `<name>-x/-y` (px), booleans as 0/1 [shader-backgrounds.md §6].
+    /// `<name>.x` / `<name>.y` (with a dot; no z) [obs, SH2], booleans as 0/1 [shader-backgrounds.md §6].
     public var projectDefaults: [PresetValue] {
         switch defaultValue {
         case .double(let v): return [PresetValue(name, v)]
@@ -101,7 +101,7 @@ public struct AssetParameter: Sendable, Hashable {
         case .color(let c):
             return [PresetValue("\(name)-red", c.red), PresetValue("\(name)-green", c.green),
                     PresetValue("\(name)-blue", c.blue), PresetValue("\(name)-alpha", c.alpha)]
-        case .position(let x, let y): return [PresetValue("\(name)-x", x), PresetValue("\(name)-y", y)]
+        case .position(let x, let y): return [PresetValue("\(name).x", x), PresetValue("\(name).y", y)]
         }
     }
 }
