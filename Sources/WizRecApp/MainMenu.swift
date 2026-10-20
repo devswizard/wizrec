@@ -81,8 +81,16 @@ enum MainMenu {
         engines.addItem(.separator())
         engines.addItem(withTitle: String(localized: "Caption Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Speech Engine"), action: nil, keyEquivalent: "").submenu = engines
-        captions.addItem(withTitle: String(localized: "Add Dynamic Captions"),
-                         action: #selector(EditorWindowController.addDynamicCaptions(_:)), keyEquivalent: "")
+        // One item per gallery preset; the index travels as representedObject.
+        let presets = NSMenu(title: String(localized: "Add Dynamic Captions"))
+        for (i, p) in DynamicCaptionPreset.all.enumerated() {
+            let item = presets.addItem(withTitle: p.displayName,
+                                       action: #selector(EditorWindowController.addDynamicCaptions(_:)), keyEquivalent: "")
+            item.representedObject = i
+        }
+        captions.addItem(withTitle: String(localized: "Add Dynamic Captions"), action: nil, keyEquivalent: "").submenu = presets
+        captions.addItem(withTitle: String(localized: "Add Captions"),
+                         action: #selector(EditorWindowController.addEmptyCaptions(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Dynamic Caption Style…"),
                          action: #selector(EditorWindowController.editDynamicCaptionStyle(_:)), keyEquivalent: "")
         captions.addItem(.separator())

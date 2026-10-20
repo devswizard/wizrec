@@ -59,6 +59,9 @@
     "About WizRec" : {
 
     },
+    "Add Captions" : {
+
+    },
     "Add Dynamic Captions" : {
 
     },
@@ -99,6 +102,9 @@
 
     },
     "Automatic" : {
+
+    },
+    "Automatic (%arg)" : {
 
     },
     "Back" : {
@@ -550,9 +556,6 @@
     "Select a dynamic caption on the timeline." : {
 
     },
-    "Select a transcribed audio clip on the timeline." : {
-
-    },
     "Select an audio clip, or a clip with audio, on the timeline." : {
 
     },
@@ -662,9 +665,6 @@
 
     },
     "Transcribe Selected Audio" : {
-
-    },
-    "Transcribe the clip first (Captions ▸ Transcribe Selected Audio)." : {
 
     },
     "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas." : {

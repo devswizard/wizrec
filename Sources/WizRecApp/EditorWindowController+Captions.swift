@@ -19,14 +19,20 @@ extension EditorWindowController {
             ui.show(String(localized: "Select an audio clip, or a clip with audio, on the timeline."))
             return
         }
-        transcription = Task { [weak self] in await self?.transcribe(targets) }
+        transcription = Task { [weak self] in
+            guard let self, await self.transcribe(targets) > 0 else { return }
+            self.ui.show(String(localized: "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas."), seconds: 8)
+        }
     }
 
     @objc func cancelTranscription(_ sender: Any?) {
         transcription?.cancel()
     }
 
-    private func transcribe(_ targets: [CaptionTarget]) async {
+    /// Transcribes `targets` one by one (each one undo step); returns how many succeeded.
+    /// Problems and cancellation are reported above the canvas.
+    @discardableResult
+    private func transcribe(_ targets: [CaptionTarget]) async -> Int {
         defer { transcription = nil; ui.activity = nil }
         let backend = TranscriptionBackends.preferred()
         var status = await backend.status(language: nil)
@@ -34,13 +40,13 @@ extension EditorWindowController {
             // Without the usage string the system kills the process on request (bare `swift run`).
             guard Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") != nil else {
                 ui.show(String(localized: "Transcription needs the WizRec app bundle (scripts/make-app.sh)."), seconds: 10)
-                return
+                return 0
             }
             status = await backend.requestAccess()
         }
         guard status == .ready else {
             ui.show(Self.describe(status, backend: backend.id), seconds: 12)
-            return
+            return 0
         }
         let transcriber = Transcriber(backend: backend)
         var done = 0
@@ -69,11 +75,8 @@ extension EditorWindowController {
                 ui.show(String(localized: "Cannot transcribe \(name): \(Self.describe(error))"), seconds: 12)
             }
         }
-        if Task.isCancelled {
-            ui.show(String(localized: "Transcription cancelled."))
-        } else if done > 0 {
-            ui.show(String(localized: "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas."), seconds: 8)
-        }
+        if Task.isCancelled { ui.show(String(localized: "Transcription cancelled.")) }
+        return done
     }
 
     /// The status as a message; whisper.cpp's own texts already say what is missing.
@@ -101,21 +104,44 @@ extension EditorWindowController {
         }
     }
 
-    /// Captions ▸ Add Dynamic Captions: a caption callout over each selected, transcribed audio clip.
+    /// Captions ▸ Add Dynamic Captions ▸ <preset> (`representedObject`: index into
+    /// `DynamicCaptionPreset.all`): a 60 s caption callout at the playhead on a new top track, as
+    /// Camtasia does. The audio it shows (the selected audio clips, else those under the playhead)
+    /// is transcribed first when it has no words yet.
     @objc func addDynamicCaptions(_ sender: Any?) {
-        let targets = captionTargets
+        let all = DynamicCaptionPreset.all
+        let index = ((sender as? NSMenuItem)?.representedObject as? Int) ?? 0
+        let preset = all.indices.contains(index) ? all[index] : .arial2LineDarkBackground
+        let ticks = engine.currentTicks
+        let seconds = Double(ticks) / Double(model.project.timebase.editRate)
+        let shown = captionTargets.isEmpty ? CaptionTarget.under(ticks: ticks, in: model.project) : captionTargets
+        let untranscribed = shown.filter { Transcript.words(in: model.project, sourceID: $0.sourceID, track: $0.track).isEmpty }
+        guard !untranscribed.isEmpty else {
+            addDynamicCaption(at: seconds, preset: preset)
+            return
+        }
+        transcription = Task { [weak self] in
+            guard let self, await self.transcribe(untranscribed) == untranscribed.count else { return }
+            self.addDynamicCaption(at: seconds, preset: preset)
+        }
+    }
+
+    private func addDynamicCaption(at seconds: Double, preset: DynamicCaptionPreset) {
+        let c = AddDynamicCaption(at: seconds, preset: preset)
+        run(String(localized: "Add Dynamic Captions")) { try model.perform(c) }
+        if let id = c.calloutID { select([id]) }
+    }
+
+    /// Captions ▸ Add Captions: empty classic captions every 4 s on each selected audio clip,
+    /// ready to type into (one undo step per clip; clips that already have captions are skipped).
+    @objc func addEmptyCaptions(_ sender: Any?) {
+        let targets = CaptionTarget.find(in: model.project, selection: timelineModel.selection, perSourceTrack: false)
         guard !targets.isEmpty else {
-            ui.show(String(localized: "Select a transcribed audio clip on the timeline."))
+            ui.show(String(localized: "Select an audio clip, or a clip with audio, on the timeline."))
             return
         }
         for t in targets {
-            guard !Transcript.words(in: model.project, sourceID: t.sourceID, track: t.track).isEmpty else {
-                ui.show(String(localized: "Transcribe the clip first (Captions ▸ Transcribe Selected Audio)."))
-                continue
-            }
-            let c = AddDynamicCaption(audioClipID: t.clipID)
-            run(String(localized: "Add Dynamic Captions")) { try model.perform(c) }
-            if let id = c.calloutID { select([id]) }
+            run(String(localized: "Add Captions")) { try model.perform(AddEmptyCaptions(clipID: t.clipID)) }
         }
     }
 
@@ -215,7 +241,9 @@ extension EditorWindowController {
         switch action {
         case #selector(transcribeSelection(_:)): return transcription == nil && !captionTargets.isEmpty
         case #selector(cancelTranscription(_:)): return transcription != nil
-        case #selector(addDynamicCaptions(_:)): return !captionTargets.isEmpty
+        case #selector(addDynamicCaptions(_:)): return transcription == nil
+        case #selector(addEmptyCaptions(_:)):
+            return !CaptionTarget.find(in: model.project, selection: timelineModel.selection, perSourceTrack: false).isEmpty
         case #selector(editDynamicCaptionStyle(_:)): return selectedDynamicCaption != nil
         case #selector(exportCaptionsSRT(_:)), #selector(exportCaptionsVTT(_:)):
             return !CaptionFiles.cues(in: model.project).isEmpty
