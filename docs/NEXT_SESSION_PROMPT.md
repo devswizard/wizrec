@@ -29,10 +29,9 @@ could not verify or decide. Never nag again.
   com.devswizard.WizRec; Sparkle approved (off until feed/key); Metal tone map
   for playback; save-only Camtasia automation by the researcher.
 - Ask only what is still open (HANDOFF §3): licensed reference exports
-  delivered? thumbnails OK as interim references? GitHub remote URL (you may
-  not use stored credentials yourself)? git-history rewrite or accept?
-  Developer ID + notary profile name (env only)? Sparkle feed host +
-  generate_keys done? Manual checks ED2–ED4 / CA1 text / VoiceOver done?
+  delivered? thumbnails OK as interim references? Sparkle feed host +
+  generate_keys done? (Remote exists: devswizard/wizrec; no Developer ID —
+  ad-hoc DMGs, decided.) Manual checks ED2–ED4 / CA1 text / VoiceOver done?
 
 STEP 1 (you alone):
 - `git status` on main must be clean; `swift build && swift test` (expect
@@ -68,10 +67,9 @@ Spawn only if I delivered the input:
 - render: golden parity (SSIM ≥ 0.97 effect-free, ≥ 0.95 effects) against
   the references; replace provisional looks from the new specs.
 - audio / captions: normalisation output and caption layout from specs.
-- ship: push + CI on the remote (verify GPU tests on the paravirtual Metal
-  runner), Developer ID signing + notarization from env, Sparkle feed +
-  appcast, release DMG; history rewrite only if I said so (you run it, after a
-  backup bundle, before any push).
+- ship: CI on the remote (verify GPU tests on the paravirtual Metal runner),
+  ad-hoc release DMG via GitHub Releases, Sparkle feed + appcast if the host
+  exists. Never push local `agent/*` branches (old pre-rewrite history).
 
 RULES: clean room (only the researcher may use REA or drive Camtasia; specs
 reviewed by you before publishing; implementers never read

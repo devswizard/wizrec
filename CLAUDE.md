@@ -87,9 +87,11 @@ continue here.
   are listed at the end of `docs/testing/camtasia-session-2.md`.
 - Camtasia rejects WizRec `.tscshadervid` backgrounds (signed files only);
   WizRec warns on save.
-- Still blocked on the user: licensed reference exports, GitHub remote,
-  Developer ID + notary profile, Sparkle feed host + keys, git-history
-  rewrite decision.
+- Remote: `https://github.com/devswizard/wizrec` (public; history rewritten
+  before the first push). No Apple Developer account: ad-hoc DMGs, never
+  notarized.
+- Still blocked on the user: licensed reference exports, Sparkle feed host +
+  keys.
 
 ### M0 (2026-10-19)
 

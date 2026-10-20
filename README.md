@@ -36,8 +36,10 @@ Out of scope: quizzes, hotspots, Smart Player, TechSmith cloud sharing.
 
 ## Install
 
-Releases are notarized DMGs (arm64, macOS 14 or later). Until the first public release,
-build from source.
+Releases are ad-hoc signed DMGs (arm64, macOS 14 or later). They are not notarized,
+so macOS warns on first launch: right-click WizRec.app ▸ **Open** ▸ **Open**, or allow it
+in System Settings ▸ Privacy & Security ▸ **Open Anyway**. Until the first public
+release, build from source.
 
 ## Build from source
 

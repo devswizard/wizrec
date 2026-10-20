@@ -177,3 +177,13 @@ Dated log. Newest last.
   prefers an installed multilingual large model (large-v3-turbo first);
   English/auto keep small; a Settings choice wins. `-l bn` output is mapped
   to Bengali script. (captions, approved.)
+- **2026-10-20 · Remote and history (user):** GitHub remote
+  `https://github.com/devswizard/wizrec` (public). History rewritten before
+  the first push with `git filter-repo` (fresh clone; the one blob holding
+  the fixture `ProjectThumbnail` stripped; HEAD tree unchanged). Backup:
+  `~/WorkDir/vibe_coding/wizrec-pre-rewrite.bundle`. Commit hashes quoted in
+  docs before this point refer to the old history; local `agent/*` branches
+  still carry the old history and are never pushed.
+- **2026-10-20 · No Apple Developer account (user):** releases are ad-hoc
+  signed, never notarized; README documents the Gatekeeper "Open" step.
+  Developer ID is no longer a pending item.

@@ -296,13 +296,10 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
    `scripts/golden.sh --calibrate`), or activate this install.
 2. **Thumbnails as interim references?** Saved `ProjectThumbnail`s were not
    used as substitutes for the gated exports; only with the user's yes.
-3. **GitHub remote** (e.g. `devswizard/wizrec`). The lead may not use the
-   keychain token; create it or allow it.
-4. **Git history:** rewrite with `git filter-repo` (one blob holds the old
-   fixture `ProjectThumbnail`) before the first push, or accept.
-5. **Developer ID Application cert + notarytool profile**
-   (`xcrun notarytool store-credentials wizrec-notary`), then repo secrets
-   (docs/RELEASING.md).
+3. ~~GitHub remote~~ done: `devswizard/wizrec` (public), history rewritten
+   before the first push (DECISIONS 2026-10-20).
+4. ~~Developer ID~~ not applicable: no Apple Developer account; ad-hoc DMGs.
+5. CI on the remote: see BOARD for the first run's result.
 6. **Sparkle update host:** feed URL, download prefix, and one
    `generate_keys` run (private key in the user's keychain, backed up).
 7. **Manual checks:** ED2–ED4 (clip speed field, magnetic track, Shift
