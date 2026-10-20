@@ -47,3 +47,18 @@ captions, app.
 | timeline | a2e24b396c4b39da3 | `agent/timeline6` |
 
 Spawn later (waiting on specs): audio.
+
+### Session 5 restart (user stopped researcher, timeline, media, app; then asked to resume them)
+
+Replacements continue from the stopped branches (+ uncommitted diffs applied
+from the old worktrees, which are left untouched):
+
+| Name | Address | Branch (from) |
+|---|---|---|
+| researcher | a76ca5a4bc30c9fb0 | `agent/researcher7` (researcher6) |
+| timeline | a19feda9afd2905e6 | `agent/timeline7` (timeline6) |
+| media | ad73865fb2bc66524 | `agent/media7` (media6) |
+| app | a6e42718f0c40802c | `agent/app7` (app6) |
+
+Finished (idle, resumable): qa a3b5355b400e41f76, render a5fac92c06082ebec,
+captions af316ccda71a0a936, ship a5ee05d5f4a6cf8fc.
