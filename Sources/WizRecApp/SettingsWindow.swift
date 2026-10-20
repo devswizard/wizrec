@@ -97,6 +97,9 @@ private struct CaptionSettings: View {
             }
             .pickerStyle(.radioGroup)
             .accessibilityIdentifier("settings.captions.engine")
+            // The radio buttons of a SwiftUI radio-group picker expose neither a label nor the
+            // selection to accessibility (both read 0); the group carries the chosen engine.
+            .accessibilityValue(backend == Self.whisperID ? "whisper.cpp" : "Apple Speech")
             Text("Apple Speech needs no setup. whisper.cpp runs on this Mac too and knows many more languages; install it with `brew install whisper-cpp` and add a model below.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 

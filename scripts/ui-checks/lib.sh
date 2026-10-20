@@ -8,7 +8,7 @@
 # - Defaults the checks depend on are passed as `-Key value` argument-domain pairs, so the
 #   user's stored preferences are neither read nor changed.
 
-UI_DIR=$(cd "$(dirname "$0")" && pwd)
+UI_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$UI_DIR/../.." && pwd)
 APP=${WIZREC_APP:-$ROOT/build/WizRec.app}
 BIN="$APP/Contents/MacOS/WizRec"
@@ -88,12 +88,20 @@ wait_until() {
     eval "$2"
 }
 
-has_button() { ax buttons 2>/dev/null | grep -qx "$1"; }
+# has_el <key>: an element whose title, description or accessibility identifier is <key> exists.
+has_el() { [ "$(ax has "$1" 2>/dev/null)" = yes ]; }
+# dump_value <dump> <key>: AXValue of the first element in an `ax dump` whose title,
+# description or identifier is <key> (exit status 1 when none matches).
+dump_value() {
+    awk -F' \\| ' -v k="$2" '($2==k || $4==k || $5==k) {print $3; f=1; exit} END {exit !f}' <<< "$1"
+}
 has_window() { ax windows 2>/dev/null | grep -q "$1"; }
 
 # Opens the project copy and waits for its window.
+# Always passes --quit-after (QUIT_AFTER s, default 150), so an abandoned app quits by itself
+# before the watchdog kills it.
 open_project() {
-    launch_app "$PROJECT" "$@"
+    launch_app "$PROJECT" --quit-after "${QUIT_AFTER:-150}" "$@"
     wait_until 30 'has_window demo' || { fail "project window did not open"; return 1; }
     sleep 2
 }
