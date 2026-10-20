@@ -192,7 +192,8 @@ enum M2 {
     }
 
     /// Removes `medias[indices]`, the transitions that reference them, and
-    /// with `ripple` closes the gaps on this track.
+    /// with `ripple` closes the gaps on this track. Timeline markers
+    /// (`timeline.parameters.toc`) never move [obs, markers.md X8].
     static func removeClips(at indices: Set<Int>, from track: JSONObject, ripple: Bool) throws {
         guard let medias = track["medias"]?.array else { throw EditError.invalid("track has no medias") }
         let removed = indices.sorted().compactMap { medias.items.indices.contains($0) ? medias.items[$0].object : nil }

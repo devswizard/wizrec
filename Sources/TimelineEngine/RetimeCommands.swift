@@ -5,7 +5,8 @@ import TSCProjKit
 /// later clips on the same track shift by the change in length, so no gap
 /// or overlap appears. Dragging the start edge keeps the clip's `start` and
 /// moves only its in-point (`mediaStart`), like a ripple edit [inf].
-/// Timeline markers are not moved [inf].
+/// Timeline markers (`timeline.parameters.toc`) are not moved [obs for
+/// ripple delete, markers.md X8; inf for ripple trim].
 @MainActor
 public final class RippleTrim: EditCommand {
     public let clipID: Int64
