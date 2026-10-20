@@ -53,8 +53,9 @@ struct GIFEncoderTests {
         // Mix of noise (fills the table fast) and runs (long codes).
         var idx = noise(w * h, mod: colors)
         for i in stride(from: 0, to: idx.count, by: 977) { for k in i..<min(i + 300, idx.count) { idx[k] = 1 } }
-        let palette = Palette(colors: (0..<colors).map { i in
-            (UInt8(i * 37 % 256), UInt8(i * 91 % 256), UInt8(255 - i))
+        let palette = Palette(colors: (0..<colors).map { (i: Int) -> (UInt8, UInt8, UInt8) in
+            let r: Int = i * 37 % 256, g: Int = i * 91 % 256, b: Int = 255 - i
+            return (UInt8(r), UInt8(g), UInt8(b))
         })
         let url = dir.appendingPathComponent("lzw.gif")
         let f = try GIFFileWriter(url: url, width: w, height: h, loopCount: 0)
@@ -132,7 +133,8 @@ struct GIFEncoderTests {
         try await export(p, s, to: out)
         let g = try decodeGIF(out)
         #expect(g.loopCount == 0)
-        #expect(abs(g.delays.reduce(0, +) - 1.0) < 1e-6, "\(g.delays)")
+        let totalDelay: Double = g.delays.reduce(0, +)
+        #expect(abs(totalDelay - 1.0) < 1e-6, "\(g.delays)")
         #expect(g.frames.first?.width == 240 && g.frames.first?.height == 135)
         // Rebuild the per-output-frame image list (merged identical frames last longer).
         var shown: [RGBAImage] = []

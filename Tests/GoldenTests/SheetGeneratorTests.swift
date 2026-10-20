@@ -22,7 +22,8 @@ import TSCProjKit
         let counts = Dictionary(uniqueKeysWithValues: TestGen.sheets.map { ($0.name, $0.cells.count) })
         #expect(counts["ef1-dropshadow"] == 10 && counts["ef2-roundcorners"] == 5 && counts["ef3-mask"] == 10)
         #expect(counts["ef4-coloradjust"] == 9 && counts["ef5-blendmode"] == 24 && counts["co1-shapes"] == 20)
-        #expect(TestGen.sheets.filter(\.isPlaceholder).map(\.name) == ["ef8-border", "ef9-reflection"])
+        let placeholders: [String] = TestGen.sheets.filter(\.isPlaceholder).map(\.name)
+        #expect(placeholders == ["ef8-border", "ef9-reflection"])
     }
 
     /// Demo `DropShadow`/`RoundCorners`/`Mask` and vlog `ColorAdjustment` key order, by effect.

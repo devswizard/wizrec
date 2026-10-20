@@ -60,7 +60,8 @@ struct GroupEditingTests {
         m.playhead = 150
         #expect(editor().splitAtPlayhead())
         let group = try #require(m.project.tracks[0].clips.first { $0.id == 50 })
-        #expect(group.tracks.map { $0.clips.count } == [2, 2])
+        let clipCounts: [Int] = group.tracks.map { (t) -> Int in t.clips.count }
+        #expect(clipCounts == [2, 2])
         // Header flags go to the inner track.
         #expect(editor().toggle(.audioMuted, track: 1))
         #expect(TimelineSnapshot(project: m.project, openGroups: [50]).tracks[1].audioMuted)

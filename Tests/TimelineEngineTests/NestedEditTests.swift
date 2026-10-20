@@ -23,7 +23,9 @@ private func group(_ tracks: [String]) -> String {
     try expectReversible(move, on: p)
     try move.apply(to: p)
     let g = try #require(p.tracks[0].clips.last)
-    #expect(g.tracks.map { $0.clips.map { [$0.id, $0.start] } } == [[[31, 0]], [[33, 0], [32, 30]]])
+    let layout: [[[Int64]]] = g.tracks.map { (t) -> [[Int64]] in t.clips.map { (c) -> [Int64] in [c.id, c.start] } }
+    let expectedLayout: [[[Int64]]] = [[[31, 0]], [[33, 0], [32, 30]]]
+    #expect(layout == expectedLayout)
     #expect(g.start == 500 && g.duration == 200)  // the group itself is untouched
     try move.revert(on: p)
     expectRejected(MoveClip(clipID: 32, toTrack: 1, start: 10), on: p, .invalid(""))  // overlaps 33

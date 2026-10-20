@@ -112,8 +112,10 @@ private func maxAbsDiff(_ a: ArraySlice<Float>, _ b: ArraySlice<Float>) -> Float
         let cut = try await f.mix()
         let a = 30 * samplesPerFrame, b = 60 * samplesPerFrame
         #expect(cut.frameCount == original.frameCount - (b - a))
-        #expect(Array(cut.channels[0][..<a]) == Array(original.channels[0][..<a]))
-        #expect(Array(cut.channels[0][a...]) == Array(original.channels[0][b...]))
+        let cutHead: [Float] = Array(cut.channels[0][..<a]), origHead: [Float] = Array(original.channels[0][..<a])
+        let cutTail: [Float] = Array(cut.channels[0][a...]), origTail: [Float] = Array(original.channels[0][b...])
+        #expect(cutHead == origHead)
+        #expect(cutTail == origTail)
 
         // Trim the tail clip's end by 15 frames: the mix ends 15 frames earlier.
         let tail = try #require(s2.rightID)

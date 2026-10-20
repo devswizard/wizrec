@@ -40,7 +40,8 @@ private let k = E / 44100   // ticks per sample
         let mono = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 1), startTime: .zero, frameCount: 3,
                              channels: [[0.5, -2, 0.25]])
         let out = AudioMix.fit(mono, frameCount: 5, channels: 2)
-        #expect(out == [[0.5, -1, 0.25, 0, 0], [0.5, -1, 0.25, 0, 0]])
+        let expectedOut: [[Float]] = [[0.5, -1, 0.25, 0, 0], [0.5, -1, 0.25, 0, 0]]
+        #expect(out == expectedOut)
         let wide = PCMBuffer(format: PCMFormat(sampleRate: R, channels: 3), startTime: .zero, frameCount: 4,
                              channels: [[1, 1, 1, 1], [0.1, 0.2, 0.3, 0.4], [9, 9, 9, 9]])
         #expect(AudioMix.fit(wide, frameCount: 2, channels: 2) == [[1, 1], [0.1, 0.2]])

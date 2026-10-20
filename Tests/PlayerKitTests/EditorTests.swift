@@ -236,7 +236,8 @@ private func writeImage(_ url: URL) throws {
         #expect(reopened.missing.isEmpty)
         let r = try #require(ClipInspection.make(project: reopened.project, clipID: clipID, playhead: 0))
         #expect(r.values[.positionX] == 120 && r.values[.positionY] == -40 && r.values[.opacity] == 0.5)
-        #expect(reopened.project.tracks.flatMap(\.clips).count == 1)
+        let reopenedClips: Int = reopened.project.tracks.flatMap(\.clips).count
+        #expect(reopenedClips == 1)
     }
 
     @Test func previewIsOneUndoStep() async throws {

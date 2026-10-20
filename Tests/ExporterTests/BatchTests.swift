@@ -67,7 +67,8 @@ struct PresetTests {
         // every job after the cancel is skipped and leaves no file.
         let done = outcomes.prefix { if case .completed = $0 { true } else { false } }.count
         #expect(done < jobs.count)
-        #expect(Array(outcomes[done...]) == jobs[done...].map { .skipped($0.output) })
+        let skipped: [ExportBatch.Outcome] = jobs[done...].map { (j) -> ExportBatch.Outcome in .skipped(j.output) }
+        #expect(Array(outcomes[done...]) == skipped)
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
         #expect(files == jobs[..<done].map(\.output.lastPathComponent))
     }

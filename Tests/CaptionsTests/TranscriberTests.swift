@@ -73,7 +73,8 @@ private final class FakeSource: MediaSource {
             .transcribe(src, stream: 0, language: "en", progress: { progress.add($0) })
         #expect(words.count == 3)
         let lengths = words.compactMap { Int($0.text) }
-        #expect(lengths.reduce(0, +) == 25_000)
+        let totalLength: Int = lengths.reduce(0, +)
+        #expect(totalLength == 25_000)
         // Each word sits 0.1 s into its chunk, on the stream's axis.
         var start = 0.0
         for (w, n) in zip(words, lengths) {

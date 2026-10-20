@@ -17,7 +17,8 @@ private func open(_ url: URL) throws -> (ProjectBundle, AudioScene)? {
     let rate = Double(bundle.project.audioSampleRate)
     let fmt = MixFormat(sampleRate: rate, channels: 2)
     // The demo has one audible clip: the .trec microphone inside a group, with DFN3 noise removal.
-    #expect(scene.tracks.flatMap(\.clips).count == 1)
+    let clipCount: Int = scene.tracks.flatMap(\.clips).count
+    #expect(clipCount == 1)
     let d = scene.duration
     let whole = try await AudioMixer(scene: scene, pool: MediaPool(diskCacheDirectory: nil), format: fmt).render(0 ..< d)
     #expect(whole.frameCount == Int((Double(d) / Double(tick) * rate).rounded(.up)))
