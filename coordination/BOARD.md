@@ -326,17 +326,25 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| S8-CI | main | todo | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
-| EXP11-1 | export | todo | `MovieExport.finish`, `MediaFileWriter.finishWriting`, `AudioExport` ready loop bounded; a stuck writer ends with an error the UI shows; injected-stuck-writer tests |
-| APP11-1 | app | todo | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
-| APP11-2 | app | todo | `--quit-after` with several unsaved documents: test + UI check |
+| S8-CI | main | claimed | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
+| EXP11-1 | export | done | `MovieExport.finish`, `MediaFileWriter.finishWriting`, `AudioExport` ready loop bounded; a stuck writer ends with an error the UI shows; injected-stuck-writer tests |
+| APP11-1 | app | claimed | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
+| APP11-2 | app | claimed | `--quit-after` with several unsaved documents: test + UI check |
 | APP11-3 | app | todo | Swift 6.3 slow spots > 50 ms fixed (measured with the 6.3.3 recipe) |
 | APP11-4 | app | todo | automated accessibility audit of library tiles (stands in for the manual VoiceOver pass) |
-| QA11-1 | qa | todo | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
-| QA11-2 | qa | todo | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
+| QA11-1 | qa | claimed | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
+| QA11-2 | qa | claimed | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
 | QA11-3 | qa | todo | integration tests for every session-8 merge; flaky watch (3 runs) |
-| SHIP11-1 | ship | todo | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
-| SHIP11-2 | ship | todo | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
-| SHIP11-3 | ship | todo | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
+| SHIP11-1 | ship | claimed | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
+| SHIP11-2 | ship | review | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
+| SHIP11-3 | ship | claimed | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
 | RES11-1 | researcher | todo | save-only experiments: copy/paste inside groups (4 items), shader origin metadata (3 items) |
-| RES11-2 | researcher | todo | automate the former manual checks ED2–ED4 and CA1 text/bold runs (save-only) |
+| RES11-2 | researcher | claimed | automate the former manual checks ED2–ED4 and CA1 text/bold runs (save-only) |
+
+## Session 8 merges
+
+- ship11-publish (ad3203e): publish workflow (`GITHUB_TOKEN`); run 1 failed (two Accept headers → asset JSON instead of the DMG); ship11-publish2 fixed it.
+- export11 (cbf8dc1): bounded `finishWriting` / ready loops / cancel in Exporter and MediaFileWriter, `ExportError.encoderStalled`, 13 new tests. 1071 tests.
+- researcher11 ED2–ED4 (2a15787, wall-reviewed): Clip Speed matches `SetSpeed`; magnetic drops match except drops inside a clip (Camtasia refuses [inf]); Shift-drag of a start edge is a plain trim (no ripple gesture found yet).
+- CI run 22 green on 2a15787; Publish run 2 made **v0.1.0 public** (2026-10-20T23:03Z).
+- Blocked from 22:31: the Mac screen locked (and the Mac slept once); Camtasia driving and UI checks wait for the user to unlock.
