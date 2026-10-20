@@ -18,8 +18,10 @@ enum BlendModeSpec {
     /// (BlendModePreview's additive-colour discs: Screen, Lighten or Add [inf, weak]).
     /// Unknown values composite normally.
     static let modes: [Int: Mode] = [0: .normal, 12: .screen]
+    /// `mode` written when the effect is added [obs, catalog]; used when the key is missing.
+    static let defaultMode = 12.0
 
-    static func mode(_ e: EffectInstance) -> Mode { modes[Int(e.value("mode", 0).rounded())] ?? .normal }
+    static func mode(_ e: EffectInstance) -> Mode { modes[Int(e.value("mode", defaultMode).rounded())] ?? .normal }
     /// Mix between normal compositing (0) and the blended result (1) [inf]. The spec's formula
     /// `B·(1 − a·i) + mix(L, blended, i)·a·i` would make the layer vanish at i = 0, contradicting "normal
     /// at 0"; WizRec composites `mix(L, blended, i)` source-over with alpha `a` [inf].
