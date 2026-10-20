@@ -176,11 +176,12 @@ public final class PasteClips: EditCommand {
         guard !items.isEmpty else { throw EditError.invalid("clipboard is empty") }
 
         let target = try Target(groupID, project)
+        let paths: [JSONPath] = try items.map { try target.trackPath($0.track, project) }
         let starts = try target.starts(items.map(\.offset), groupTime ?? .timeline(start), project)
         var edits = TrackEdits(project)
         var dests: [JSONObject] = []
         for (i, it) in items.enumerated() {
-            let path = try target.trackPath(it.track, project)
+            let path = paths[i]
             Magnetic.shift(it.clip, by: starts[i] - (it.clip["start"]?.int ?? 0))
             let dest = try edits.track(at: path)
             if Magnetic.isMagnetic(project, path: path) {
