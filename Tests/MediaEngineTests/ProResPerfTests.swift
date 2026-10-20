@@ -85,6 +85,30 @@ struct ProResPerfTests {
         }
     }
 
+    /// HDR10 ProRes 4444 picture: resample to 4:4:4 10-bit + tone map (CPU, and GPU when available).
+    @Test func convertHDR4444() throws {
+        let c = SwscaleBandTests.Case(format: AV_PIX_FMT_YUVA444P12LE, width: 3840, height: 2160)
+        var f: UnsafeMutablePointer<AVFrame>? = try SwscaleBandTests.makeFrame(c)
+        defer { av_frame_free(&f) }
+        let frame = try #require(f)
+        var par: UnsafeMutablePointer<AVCodecParameters>? = avcodec_parameters_alloc()
+        defer { avcodec_parameters_free(&par) }
+        let p = try #require(par)
+        p.pointee.codec_type = AVMEDIA_TYPE_VIDEO; p.pointee.codec_id = AV_CODEC_ID_PRORES
+        p.pointee.format = c.format.rawValue; p.pointee.width = 3840; p.pointee.height = 2160
+        p.pointee.color_trc = AVCOL_TRC_SMPTE2084; p.pointee.color_space = AVCOL_SPC_BT2020_NCL
+        p.pointee.color_primaries = AVCOL_PRI_BT2020
+        for (mode, banded) in [(HDRToneMapping.cpu, false), (.cpu, true), (.gpu, false), (.gpu, true)] {
+            let conv = FrameConverter(par: p, hdrToneMapping: mode)
+            conv.swsBanding = banded
+            _ = try conv.convert(frame)
+            let n = 10, t0 = DispatchTime.now().uptimeNanoseconds
+            for _ in 0..<n { _ = try conv.convert(frame) }
+            let ms = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6 / Double(n)
+            print("PERF 4K HDR10 yuva444p12 → SDR BGRA, tone map \(mode)\(conv.usesGPUToneMapping ? "" : " (cpu)"), resample \(banded ? "banded" : "one pass"): \(String(format: "%.1f", ms)) ms/frame, load avg \(Self.loadAverage)")
+        }
+    }
+
     /// Decode + convert per picture on the bare decoder core (no actor hops, no pool).
     @Test(arguments: clips)
     func decodeVsConvert(clip: Clip) throws {
