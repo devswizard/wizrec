@@ -60,8 +60,9 @@ private func project(_ transfer: HDRTransfer, in dir: URL) throws -> ProjectBund
 }
 
 @MainActor
-private func preview(_ bundle: ProjectBundle, frame n: Int) async throws -> RGBAImage {
-    let r = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve), pool: MediaPool(diskCacheDirectory: nil))
+private func preview(_ bundle: ProjectBundle, frame n: Int, toneMapping: HDRToneMapping = .cpu) async throws -> RGBAImage {
+    let r = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve),
+                            pool: MediaPool(diskCacheDirectory: nil, hdrToneMapping: toneMapping))
     return RGBAImage(try await r.image(at: Int64(n) * frameTicks, size: CGSize(width: W, height: H)))
 }
 
@@ -101,6 +102,34 @@ private func meanAbsDiff(_ a: RGBAImage, _ b: RGBAImage) -> Double {
             let e = try #require(exported[n], "frame \(n) missing")
             let psnr = Metrics.psnr(p, e)
             #expect(psnr >= 45, "\(transfer) frame \(n): export vs preview PSNR \(psnr) dB")
+        }
+    }
+
+    /// S5 (media6/render6): the playback pool's Metal tone map (`HDRToneMapping.gpu`) composites
+    /// to the CPU reference through the whole render path: ≤ 1 code per channel and ≥ 99.9 %
+    /// exact (DECISIONS 2026-10-20) at the first, middle and last frame, for every transfer
+    /// (SDR clips take the plain path either way).
+    @Test(arguments: HDRTransfer.allCases)
+    func gpuToneMapMatchesCPUReference(_ transfer: HDRTransfer) async throws {
+        let dir = try scratchDir("s5-hdr-gpu")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bundle = try project(transfer, in: dir)
+        for n in [0, 15, 29] {
+            let cpu = try await preview(bundle, frame: n, toneMapping: .cpu)
+            let gpu = try await preview(bundle, frame: n, toneMapping: .gpu)
+            var maxDiff = 0, exact = 0, total = 0
+            for i in stride(from: 0, to: cpu.pixels.count, by: 4) {
+                for c in 0..<3 {
+                    let d = abs(Int(cpu.pixels[i + c]) - Int(gpu.pixels[i + c]))
+                    maxDiff = max(maxDiff, d); exact += d == 0 ? 1 : 0; total += 1
+                }
+            }
+            let fraction = Double(exact) / Double(max(total, 1))
+            if n == 15 {
+                print(String(format: "HDR gpu vs cpu %@: max |Δ| %d, exact %.4f %%", transfer.rawValue, maxDiff, fraction * 100))
+            }
+            #expect(maxDiff <= 1, "\(transfer) frame \(n): GPU differs from CPU by \(maxDiff) codes")
+            #expect(fraction >= 0.999, "\(transfer) frame \(n): only \(fraction * 100) % exact")
         }
     }
 
