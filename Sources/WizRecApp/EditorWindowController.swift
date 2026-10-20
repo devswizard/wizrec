@@ -864,12 +864,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     @objc func copy(_ sender: Any?) {
-        run("Copy") { put(try model.copyClips(topLevelSelection)) }
+        let ids = model.clipboardSelection(timelineModel.selection, openGroup: timelineModel.openGroups.last)
+        run("Copy") { put(try model.copyClips(ids)) }
     }
 
     @objc func cut(_ sender: Any?) {
         run("Cut") {
-            put(try model.cutClips(topLevelSelection))
+            put(try model.cutClips(model.clipboardSelection(timelineModel.selection,
+                                                            openGroup: timelineModel.openGroups.last)))
             select([])
         }
     }
@@ -878,11 +880,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let pb = NSPasteboard.general
         guard let data = pb.data(forType: Self.clipsType), let payload = try? ClipboardPayload(data: data) else { return }
         let origin = pb.string(forType: Self.clipsOriginType).map { URL(fileURLWithPath: $0) }
-        let track = topLevelSelection.first.flatMap { id in model.project.tracks.firstIndex { $0.clips.contains { $0.id == id } } }
+        let group = timelineModel.openGroups.last
+        let track = model.pasteTrack(timelineModel.selection, openGroup: group)
         let at = engine.grid.snap(engine.currentTicks)
         Task {
             do {
-                let ids = try await model.paste(payload, origin: origin, track: track, at: at)
+                let ids = try await model.paste(payload, origin: origin, track: track, at: at, group: group)
                 select(Set(ids))
                 if !model.missing.isEmpty { ui.show("Some pasted media is missing: File ▸ Relink Missing Media.") }
             } catch {

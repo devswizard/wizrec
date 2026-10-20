@@ -210,6 +210,23 @@ Shader background edits (app, approved 2026-10-20; `Sources/TimelineEngine/Shade
   byte order. Callers write it only for library backgrounds placed into a Rev group
   (`EditorDocumentModel.placeBackground(_:inGroup:track:at:)`; `shader-backgrounds.md` §11).
 
+Nested copy/paste (timeline, approved 2026-10-20; `Sources/TimelineEngine/Clipboard.swift`):
+- `ClipboardPayload.copy(clipIDs:from:)` also takes clips on a group's inner tracks (any
+  depth); all copied clips must share one container (scene tracks or one group's inner
+  tracks), else `.invalid` [WizRec]. Payload format unchanged; item `start` offsets are
+  project-timeline ticks (mapped out through the enclosing groups, floored). The clip is
+  copied whole (keyframes, effects, `ShaderVidSource`); group keys (`RevBackground`, group
+  speed) are not.
+- `PasteClips(_:group:track:at: GroupTime)` (+ `groupID`, `groupTime`, nil for top-level):
+  pastes onto inner tracks of a group. Anchor mapped to inner time (floored, frame-snapped),
+  must lie in the group's visible window; other clips at the inner time of anchor timeline
+  time + offset [WizRec]; clips keep their own duration/scalar [WizRec]; overlap throws,
+  magnetic inner tracks pack; the group and its enclosing groups grow as for
+  `InsertClipInGroup`.
+- PlayerKit: `EditorDocumentModel.paste(_:origin:track:at:group: Int64? = nil)` (overlap in
+  a group → new inner track on top [WizRec]), `clipboardSelection(_:openGroup:)`,
+  `pasteTrack(_:openGroup:)`; the app's Copy/Cut/Paste use the innermost open group.
+
 ## MediaEngine M2 (additive)
 
 - `StreamInfo` gains what `SourceDescriptor.Track` needs: stream timescale,
