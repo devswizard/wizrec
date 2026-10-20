@@ -247,12 +247,12 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| S5-RES-1 | researcher | open | Automated Camtasia exports of the 15 golden cases + 11 sheets into `camtasia_rea_refs/<case>/reference.mp4` (+ ProRes `reference.mov` where possible); `scripts/golden.sh --status` shows them; watermark check |
+| S5-RES-1 | researcher | blocked (trial watermark gate on export; needs activated Camtasia or user exports) | Automated Camtasia exports of the 15 golden cases + 11 sheets into `camtasia_rea_refs/<case>/reference.mp4` (+ ProRes `reference.mov` where possible); `scripts/golden.sh --status` shows them; watermark check |
 | S5-RES-2 | researcher | open | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
 | S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
 | S5-MED-1 | media | open | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
 | S5-MED-2 | media+render | open | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
-| S5-REN-1 | render | open | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
+| S5-REN-1 | render | blocked (no references) | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
 | S5-CAP-1 | captions | open | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
 | S5-SHIP-1 | ship | open | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
 | S5-APP-1 | app | open | Automated click-through (export close/quit confirm, Settings ▸ Captions, media drop into group) as scripted UI checks; fix findings |

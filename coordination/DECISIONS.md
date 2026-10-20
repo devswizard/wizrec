@@ -139,3 +139,8 @@ Dated log. Newest last.
   - **Still needs the user:** GitHub remote (lead may not use stored
     credentials), Developer ID + notary profile (only a self-signed "WizRec
     Dev" identity exists → ad-hoc/self-signed builds).
+- **2026-10-20 · Trial export gate (session 5):** the installed Camtasia
+  offers only "Export with/without Watermark" on export (trial). No exports
+  are made; saved `ProjectThumbnail`s are not used as substitute golden
+  references without the user's ruling. Researcher continues with save-only
+  format experiments (JSON diffs) and the `.tscshadervid` acceptance check.
