@@ -57,8 +57,8 @@ private let crops = #""geometryCrop0" : 0.0, "geometryCrop1" : 0.0, "geometryCro
 
 @MainActor @Test func insertCalloutRejectsABusyTrackAndBadDefs() throws {
     let p = try makeProject(tracks: tracks(track(0, [leaf(10, start: 0, dur: 300)])))
-    try expectRejected(InsertCallout(def: blurDef, start: 60, track: 0), on: p)
-    try expectRejected(InsertCallout(def: "[1]", start: 0, track: 0), on: p)
-    try expectRejected(InsertCallout(def: blurDef, start: 0, track: 5), on: p)
-    try expectRejected(InsertCallout(def: blurDef, start: 400, track: 0, duration: 0), on: p)
+    expectRejected(InsertCallout(def: blurDef, start: 60, track: 0), on: p)
+    expectRejected(InsertCallout(def: "[1]", start: 0, track: 0), on: p)
+    expectRejected(InsertCallout(def: blurDef, start: 0, track: 5), on: p)
+    expectRejected(InsertCallout(def: blurDef, start: 400, track: 0, duration: 0), on: p)
 }
