@@ -70,9 +70,14 @@ stop_app() {
     APP_PID=""; WATCH_PID=""
 }
 
+# The work dir goes when every check passed; after a failure only its exports (often GBs of
+# ProRes) go, and the project copy and app.log stay for inspection.
 cleanup() {
     stop_app
     gui_unlock
+    if [ -n "${WORK:-}" ] && [ -d "$WORK" ]; then
+        if [ "$FAILURES" -eq 0 ]; then rm -rf "$WORK"; else rm -rf "$WORK/exports"; fi
+    fi
 }
 trap cleanup EXIT INT TERM
 
@@ -98,10 +103,13 @@ dump_value() {
 has_window() { ax windows 2>/dev/null | grep -q "$1"; }
 
 # Opens the project copy and waits for its window.
-# Always passes --quit-after (QUIT_AFTER s, default 150), so an abandoned app quits by itself
-# before the watchdog kills it.
+# Passes --quit-after (QUIT_AFTER s, default 150), so an abandoned app quits by itself before
+# the watchdog kills it. QUIT_AFTER=0 leaves it out, for checks of behaviour a scripted run
+# turns off (the export close/quit confirmation); the watchdog still ends those.
 open_project() {
-    launch_app "$PROJECT" --quit-after "${QUIT_AFTER:-150}" "$@"
+    local q=()
+    [ "${QUIT_AFTER:-150}" != 0 ] && q=(--quit-after "${QUIT_AFTER:-150}")
+    launch_app "$PROJECT" ${q[@]+"${q[@]}"} "$@"
     wait_until 30 'has_window demo' || { fail "project window did not open"; return 1; }
     sleep 2
 }

@@ -16,6 +16,9 @@
 -- accessibility identifier. SwiftUI controls here expose no title to System Events, so the app
 -- gives the controls the checks use an `.accessibilityIdentifier`; AppKit alerts have titles.
 
+-- Depth limit of `find`; lowered for the quick first pass over every window.
+property maxDepth : 16
+
 on run argv
 	set cmd to item 1 of argv
 	set pid to (item 2 of argv) as integer
@@ -56,9 +59,24 @@ on run argv
 		end if
 		set wanted to item 3 of argv
 		set e to missing value
+		-- Sheets first (export sheet, alerts): a walk of a whole editor window takes seconds.
 		repeat with w in (windows of p)
-			set e to my find(w, wanted, 0)
+			try
+				repeat with s in (sheets of w)
+					set e to my find(s, wanted, 0)
+					if e is not missing value then exit repeat
+				end repeat
+			end try
 			if e is not missing value then exit repeat
+		end repeat
+		-- Then every window, shallow first (alert windows), then in full.
+		repeat with limit in {1, 16}
+			if e is not missing value then exit repeat
+			set maxDepth to contents of limit
+			repeat with w in (windows of p)
+				set e to my find(w, wanted, 0)
+				if e is not missing value then exit repeat
+			end repeat
 		end repeat
 		if cmd is "has" then
 			if e is missing value then return "no"
@@ -106,7 +124,7 @@ end matches
 
 -- Depth-first search below `e` (sheets included: they are children of their window).
 on find(e, wanted, d)
-	if d > 16 then return missing value
+	if d > maxDepth then return missing value
 	tell application "System Events"
 		set kids to {}
 		try
