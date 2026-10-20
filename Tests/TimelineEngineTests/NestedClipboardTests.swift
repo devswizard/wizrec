@@ -48,7 +48,8 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
     let layout: [[Int64]] = items.map { (o: JSONObject) -> [Int64] in
         [o["track"]?.int ?? -1, o["start"]?.int ?? -1, o["clip"]?.object?.clipID ?? -1]
     }
-    #expect(layout == [[0, 0, 31], [0, 50, 33], [1, 20, 32]])
+    let want: [[Int64]] = [[0, 0, 31], [0, 50, 33], [1, 20, 32]]
+    #expect(layout == want)
     #expect(items.first?["clip"] == (try JSON.parse(leaf(31, start: 20, dur: 50, parameters: kf, effects: fx))))
     #expect(doc["transitions"] == (try JSON.parse(#"[{"track" : 0, "transition" : {"name" : "Fade", "duration" : 5, "leftMedia" : 31, "rightMedia" : 33}}]"#)))
     #expect(doc["sources"] == (try JSON.parse(bin)))
