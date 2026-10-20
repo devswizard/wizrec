@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 7 agents all finished; their branches are merged. None is live.
+Session 8 agents are live (table at the end).
 
 ## Session 3 (2026-10-19)
 
@@ -88,3 +88,18 @@ the v0.1.0 draft check after the tag.
 | render | a0235298e2717e696 | `agent/render10` |
 | qa | ac89e5809b08b7d6a | `agent/qa10` |
 | docs | a43fa0d7aabf8f054 | `agent/docs10` |
+
+## Session 8 (2026-10-20)
+
+User: nothing delivered yet; "do everything yourself". No render/audio/
+captions (no licensed exports); timeline only if the researcher's answers
+change a rule.
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` (CI) |
+| export | a5b71a66937dd6be4 | `agent/export11` |
+| app | ae7fff9fb1f6ddfc9 | `agent/app11` |
+| qa | a862fd369d7165c0b | `agent/qa11` |
+| ship | a43d6432cc8626a6d | `agent/ship11` |
+| researcher | ae13ef514b82d7bd3 | `agent/researcher11` |
