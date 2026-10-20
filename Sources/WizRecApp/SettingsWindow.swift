@@ -79,7 +79,10 @@ private struct CaptionSettings: View {
     @AppStorage(WhisperSettings.backendKey) private var backend = AppleSpeechRecognizer().id
     @AppStorage(WhisperSettings.modelKey) private var model = ""
     @AppStorage(WhisperSettings.binaryPathKey) private var binaryPath = ""
+    /// Default on, matching `WhisperCppRecognizer.fromDefaults` (a missing key means on).
+    @AppStorage(WhisperSettings.vadKey) private var vad = true
     @State private var models: [WhisperModel] = []
+    @State private var vadModel: String?
     @State private var found: URL?
     @State private var status = ""
     @State private var ready = false
@@ -93,6 +96,7 @@ private struct CaptionSettings: View {
                 Text("whisper.cpp").tag(Self.whisperID)
             }
             .pickerStyle(.radioGroup)
+            .accessibilityIdentifier("settings.captions.engine")
             Text("Apple Speech needs no setup. whisper.cpp runs on this Mac too and knows many more languages; install it with `brew install whisper-cpp` and add a model below.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
@@ -106,6 +110,7 @@ private struct CaptionSettings: View {
                         Text("\(model) (missing)").tag(model)
                     }
                 }
+                .accessibilityIdentifier("settings.captions.model")
                 HStack {
                     Button("Show Models Folder") {
                         let dir = WhisperCppRecognizer.defaultModelsDirectory
@@ -115,6 +120,11 @@ private struct CaptionSettings: View {
                     Button("Refresh") { refresh() }
                 }
                 Text("Put ggml model files (e.g. ggml-small.bin from the whisper.cpp project) in ~/Library/Application Support/WizRec/models.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Skip silences (voice activity detection)", isOn: $vad)
+                    .accessibilityIdentifier("settings.captions.vad")
+                Text(vadModel.map { String(localized: "Uses \($0) from the models folder.") }
+                     ?? String(localized: "Without a Silero VAD model (ggml-silero-*.bin) in the models folder, silences are detected from the audio level."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     TextField("whisper-cli path", text: $binaryPath, prompt: Text("Search automatically"))
@@ -139,6 +149,7 @@ private struct CaptionSettings: View {
 
     private func refresh() {
         models = WhisperCppRecognizer.installedModels()
+        vadModel = WhisperCppRecognizer.preferredVADModel(in: WhisperCppRecognizer.installedVADModels())?.name
         let w = WhisperCppRecognizer.fromDefaults()
         found = w.resolvedBinary()
         Task { @MainActor in
