@@ -1,4 +1,8 @@
 # Publish request: the first line that is not a comment names the tag whose draft GitHub
 # Release goes public. A push to main that changes this file runs
 # .github/workflows/publish.yml (checks, then draft -> public). See docs/RELEASING.md.
-v0.1.0
+#
+# Optional flag after the tag: allow-build-rpaths, for DMGs built before bundle-dylibs.sh
+# stripped Xcode's Swift back-deploy run path (v0.1.0 has it; harmless, but verify-dmg.sh
+# now rejects it). Leave it off for every later release.
+v0.1.0 allow-build-rpaths

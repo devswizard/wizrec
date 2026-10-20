@@ -21,6 +21,10 @@ on:
         description: "Run every check but keep the draft"
         type: boolean
         default: false
+      allow_build_rpaths:
+        description: "Accept Xcode/Homebrew run paths in the app (DMGs built before 2026-10-20, e.g. v0.1.0)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # read drafts, download their assets, publish
@@ -41,24 +45,31 @@ jobs:
         id: tag
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_ALLOW: ${{ github.event.inputs.allow_build_rpaths }}
         run: |
           set -euo pipefail
-          tag="$INPUT_TAG"
-          if [ -z "$tag" ]; then
-            tag=$(grep -vE '^[[:space:]]*(#|$)' release/publish | head -n 1 | tr -d '[:space:]')
-          fi
+          # Request line: "<tag> [allow-build-rpaths]". The flag is for DMGs built before
+          # bundle-dylibs.sh stripped Xcode's run path (v0.1.0); see verify-dmg.sh.
+          line=$(grep -vE '^[[:space:]]*(#|$)' release/publish | head -n 1 || true)
+          read -r file_tag flag _ <<< "$line" || true
+          tag="${INPUT_TAG:-$file_tag}"
+          allow=0
+          if [ "$tag" = "$file_tag" ] && [ "${flag:-}" = allow-build-rpaths ]; then allow=1; fi
+          if [ "${INPUT_ALLOW:-false}" = true ]; then allow=1; fi
           if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error title=Publish::invalid tag '$tag'"
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Publish::$tag"
+          echo "allow_build_rpaths=$allow" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Publish::$tag (build run paths allowed: $allow)"
 
       - name: Verify assets and publish
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
           WIZREC_BUNDLE_ID: ${{ vars.WIZREC_BUNDLE_ID }}
+          WIZREC_ALLOW_BUILD_RPATHS: ${{ steps.tag.outputs.allow_build_rpaths }}
           # A request pushed together with its tag waits for release.yml to attach the DMG.
           WAIT_MINUTES: ${{ github.event_name == 'push' && '75' || '0' }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
