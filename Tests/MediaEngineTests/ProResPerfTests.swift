@@ -1,6 +1,7 @@
 // 4K ProRes decode throughput (software lane only since session 4). Opt-in: `WIZREC_PERF=1`,
 // release build: `WIZREC_PERF=1 swift test -c release -Xswiftc -enable-testing --filter ProResPerf`.
 
+import CFFmpeg
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -62,6 +63,23 @@ struct ProResPerfTests {
         let fps = Double(n) / secs
         print("PERF 4K \(clip.name): \(String(format: "%.1f", fps)) fps sequential (\(String(format: "%.1f", secs / Double(n) * 1000)) ms/frame, \(String(format: "%.1f", cpu / secs)) cores busy), load avg \(Self.loadAverage)")
         LoadGate.expect(fps >= 30, "4K30 \(clip.name): ≥ 30 fps, got \(String(format: "%.1f", fps))")
+    }
+
+    /// BGRA conversion alone of a 4K ProRes 4444 picture (yuva444p12), banded vs one pass.
+    @Test func convert4444() throws {
+        let c = SwscaleBandTests.Case(format: AV_PIX_FMT_YUVA444P12LE, width: 3840, height: 2160)
+        var f: UnsafeMutablePointer<AVFrame>? = try SwscaleBandTests.makeFrame(c)
+        defer { av_frame_free(&f) }
+        let frame = try #require(f)
+        for banded in [false, true] {
+            let conv = FrameConverter(codec: AV_CODEC_ID_PRORES)
+            conv.swsBanding = banded
+            _ = try conv.convert(frame)
+            let n = 20, t0 = DispatchTime.now().uptimeNanoseconds
+            for _ in 0..<n { _ = try conv.convert(frame) }
+            let ms = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6 / Double(n)
+            print("PERF 4K yuva444p12 → BGRA \(banded ? "banded" : "one pass"): \(String(format: "%.1f", ms)) ms/frame, load avg \(Self.loadAverage)")
+        }
     }
 
     /// Where the time goes: libav decode only vs the full pipeline, per picture.

@@ -57,6 +57,9 @@ final class FrameConverter {
     private var pool: BGRAPool?
     private var sws: UnsafeMutablePointer<SwsContext>?
     private var swsKey: [Int32] = []
+    /// One context per row band for parallel same-size conversion, and their key.
+    private var bandSws: [UnsafeMutablePointer<SwsContext>] = []
+    private var bandKey: [Int32] = []
     private var transfer: VTPixelTransferSession?
     /// Codec of the stream; picks the default matrix for untagged frames.
     private let codecID: AVCodecID
@@ -118,6 +121,7 @@ final class FrameConverter {
 
     deinit {
         if let s = sws { sws_freeContext(s) }
+        for c in bandSws { sws_freeContext(c) }
         if let t = transfer { VTPixelTransferSessionInvalidate(t) }
         if let s = hdrSws { sws_freeContext(s) }
         if hdrFrame != nil { av_frame_free(&hdrFrame) }
@@ -327,31 +331,114 @@ final class FrameConverter {
         return dst
     }
 
+    /// A swscale context converting `frame`'s format at `w`×`h` to BGRA `ow`×`oh` with the
+    /// stream's matrix (chosen from the whole picture's height `matrixHeight`) and range.
+    private func makeSws(_ frame: UnsafeMutablePointer<AVFrame>, width w: Int, height h: Int,
+                         outWidth ow: Int, outHeight oh: Int, matrixHeight: Int,
+                         reusing old: UnsafeMutablePointer<SwsContext>?) throws -> UnsafeMutablePointer<SwsContext> {
+        let fmt = frame.pointee.format
+        let flags = (ow == w && oh == h ? SWS_BILINEAR.rawValue : SWS_AREA.rawValue)
+            | SWS_ACCURATE_RND.rawValue | SWS_FULL_CHR_H_INT.rawValue
+        guard let s = sws_getCachedContext(old, Int32(w), Int32(h), AVPixelFormat(fmt), Int32(ow), Int32(oh), AV_PIX_FMT_BGRA,
+                                           Int32(flags), nil, nil, nil)
+        else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(fmt)") }
+        let desc = av_pix_fmt_desc_get(AVPixelFormat(fmt))
+        let isRGB = desc.map { ($0.pointee.flags & UInt64(AV_PIX_FMT_FLAG_RGB)) != 0 } ?? false
+        if !isRGB {
+            let cs = Self.swsColorspace(frame.pointee.colorspace, codec: codecID, height: matrixHeight)
+            // Unspecified range on YUV means limited ("tv") range, the libav convention.
+            let srcFull: Int32 = (frame.pointee.color_range == AVCOL_RANGE_JPEG || Self.isJPEGFormat(fmt)) ? 1 : 0
+            _ = sws_setColorspaceDetails(s, sws_getCoefficients(cs), srcFull, sws_getCoefficients(Int32(SWS_CS_DEFAULT)), 1,
+                                         0, 1 << 16, 1 << 16)
+        }
+        return s
+    }
+
+    /// Row bands for a parallel same-size swscale conversion, or nil for one pass. Only formats
+    /// without vertical chroma subsampling qualify (each output row then depends on its input
+    /// row alone), and bands start on multiples of 8 rows so swscale's ordered dither (8-row
+    /// period) lines up: the bytes equal a one-pass conversion (`SwscaleBandTests`).
+    static func swsBands(format fmt: Int32, width w: Int, height h: Int, cores: Int) -> [Range<Int>]? {
+        guard let d = av_pix_fmt_desc_get(AVPixelFormat(fmt)), d.pointee.log2_chroma_h == 0,
+              d.pointee.flags & UInt64(AV_PIX_FMT_FLAG_HWACCEL) == 0,
+              d.pointee.flags & UInt64(AV_PIX_FMT_FLAG_BITSTREAM) == 0,
+              w * h >= 1280 * 720 else { return nil }
+        let n = min(cores, h / 64)
+        guard n > 1 else { return nil }
+        let rows = ((h + n - 1) / n + 7) / 8 * 8
+        return stride(from: 0, to: h, by: rows).map { $0..<min($0 + rows, h) }
+    }
+
+    /// `WIZREC_SWS_BANDS=0` forces one-pass swscale conversion (comparison, debugging).
+    static var swsBandingEnabled: Bool { ProcessInfo.processInfo.environment["WIZREC_SWS_BANDS"] != "0" }
+    /// Same-size swscale conversions run in parallel row bands (tests compare both ways).
+    var swsBanding = FrameConverter.swsBandingEnabled
+
+    /// Same-size swscale conversion in parallel row bands; each band is converted as an
+    /// independent picture by its own context (contexts are not thread-safe).
+    private func convertBanded(_ frame: UnsafeMutablePointer<AVFrame>, bands: [Range<Int>], key: [Int32],
+                               into dst: CVPixelBuffer) throws {
+        let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
+        let fullKey = key + bands.map { Int32($0.count) }
+        if bandKey != fullKey {
+            for c in bandSws { sws_freeContext(c) }
+            bandSws = []
+            bandKey = []
+            for b in bands {
+                bandSws.append(try makeSws(frame, width: w, height: b.count, outWidth: w, outHeight: b.count,
+                                           matrixHeight: h, reusing: nil))
+            }
+            bandKey = fullKey
+        }
+        CVPixelBufferLockBaseAddress(dst, [])
+        defer { CVPixelBufferUnlockBaseAddress(dst, []) }
+        guard let base = CVPixelBufferGetBaseAddress(dst) else { throw MediaError.decodeFailed("pixel buffer has no memory") }
+        let dstStride = CVPixelBufferGetBytesPerRow(dst)
+        let planes = Int(av_pix_fmt_count_planes(AVPixelFormat(frame.pointee.format)))
+        guard planes > 0, planes <= 4 else { throw MediaError.decodeFailed("unexpected plane count \(planes)") }
+        // Addresses cross into the workers as integers (pointers are not Sendable); the frame and
+        // the locked destination outlive `concurrentPerform`.
+        let d = frame.pointee.data, l = frame.pointee.linesize
+        let srcBase: [UInt] = [d.0, d.1, d.2, d.3].prefix(planes).map { $0.map { UInt(bitPattern: $0) } ?? 0 }
+        let srcStride: [Int] = [l.0, l.1, l.2, l.3].prefix(planes).map(Int.init)
+        guard !srcBase.contains(0) else { throw MediaError.decodeFailed("software frame without planes") }
+        let ctxs = bandSws.map { UInt(bitPattern: $0) }
+        let dstBase = UInt(bitPattern: base)
+        let results = UnsafeMutableBufferPointer<Int32>.allocate(capacity: bands.count)
+        defer { results.deallocate() }
+        results.initialize(repeating: 0)
+        let resultBase = UInt(bitPattern: results.baseAddress)
+        DispatchQueue.concurrentPerform(iterations: bands.count) { i in
+            let rows = bands[i]
+            guard let ctx = UnsafeMutablePointer<SwsContext>(bitPattern: ctxs[i]),
+                  let rc = UnsafeMutablePointer<Int32>(bitPattern: resultBase + UInt(i * 4)) else { return }
+            // No vertical chroma subsampling: every plane advances one line per row.
+            let src: [UnsafePointer<UInt8>?] = (0..<4).map { p in
+                p < planes ? UnsafePointer<UInt8>(bitPattern: srcBase[p] + UInt(rows.lowerBound * srcStride[p])) : nil
+            }
+            let srcStrides: [Int32] = (0..<4).map { p in p < planes ? Int32(srcStride[p]) : 0 }
+            var out: [UnsafeMutablePointer<UInt8>?] = [
+                UnsafeMutablePointer<UInt8>(bitPattern: dstBase + UInt(rows.lowerBound * dstStride)), nil, nil, nil]
+            var outStrides: [Int32] = [Int32(dstStride), 0, 0, 0]
+            rc.pointee = sws_scale(ctx, src, srcStrides, 0, Int32(rows.count), &out, &outStrides)
+        }
+        guard results.allSatisfy({ $0 > 0 }) else { throw MediaError.decodeFailed("sws_scale failed in a band") }
+    }
+
     private func convertSoftware(_ frame: UnsafeMutablePointer<AVFrame>, width w: Int, height h: Int,
                                  outWidth ow: Int, outHeight oh: Int) throws -> CVPixelBuffer {
         let fmt = frame.pointee.format
-        let colorspace = frame.pointee.colorspace
-        let range = frame.pointee.color_range
-        let key: [Int32] = [Int32(w), Int32(h), fmt, Int32(bitPattern: colorspace.rawValue), Int32(bitPattern: range.rawValue),
-                   Int32(ow), Int32(oh)]
+        let key: [Int32] = [Int32(w), Int32(h), fmt, Int32(bitPattern: frame.pointee.colorspace.rawValue),
+                            Int32(bitPattern: frame.pointee.color_range.rawValue), Int32(ow), Int32(oh)]
+        if swsBanding, ow == w, oh == h,
+           let bands = Self.swsBands(format: fmt, width: w, height: h, cores: ProcessInfo.processInfo.activeProcessorCount) {
+            let dst = try buffer(width: w, height: h)
+            try convertBanded(frame, bands: bands, key: key, into: dst)
+            return dst
+        }
         if sws == nil || key != swsKey {
-            let flags = (ow == w && oh == h ? SWS_BILINEAR.rawValue : SWS_AREA.rawValue)
-                | SWS_ACCURATE_RND.rawValue | SWS_FULL_CHR_H_INT.rawValue
-            sws = sws_getCachedContext(sws, Int32(w), Int32(h), AVPixelFormat(fmt), Int32(ow), Int32(oh), AV_PIX_FMT_BGRA,
-                                       Int32(flags),
-                                       nil, nil, nil)
-            guard let s = sws else { throw MediaError.decodeFailed("sws_getCachedContext failed for pix_fmt \(fmt)") }
+            sws = try makeSws(frame, width: w, height: h, outWidth: ow, outHeight: oh, matrixHeight: h, reusing: sws)
             swsKey = key
-            let desc = av_pix_fmt_desc_get(AVPixelFormat(fmt))
-            let isRGB = desc.map { ($0.pointee.flags & UInt64(AV_PIX_FMT_FLAG_RGB)) != 0 } ?? false
-            if !isRGB {
-                let cs = Self.swsColorspace(colorspace, codec: codecID, height: h)
-                // Unspecified range on YUV means limited ("tv") range, the libav convention.
-                let srcFull: Int32 = (range == AVCOL_RANGE_JPEG || Self.isJPEGFormat(fmt)) ? 1 : 0
-                let coeffs = sws_getCoefficients(cs)
-                _ = sws_setColorspaceDetails(s, coeffs, srcFull, sws_getCoefficients(Int32(SWS_CS_DEFAULT)), 1,
-                                             0, 1 << 16, 1 << 16)
-            }
         }
         guard let s = sws else { throw MediaError.decodeFailed("no swscale context") }
         let dst = try buffer(width: ow, height: oh)
