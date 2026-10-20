@@ -153,8 +153,12 @@ private func shaderPlan(_ url: URL, _ params: [String: Double] = [:], time: Doub
         let p = try GPUTest.render(shaderPlan(url, time: 5)).at(96, 54)
         #expect(abs(p.r - 128) <= 1)
         // Drawn at 192×108 target px.
-        #expect(abs(p.g - Int((192.0 / 400 * 255).rounded())) <= 1)
-        #expect(abs(p.b - Int((108.0 / 400 * 255).rounded())) <= 1)
+        let rawG: Double = 192.0 / 400.0 * 255.0
+        let rawB: Double = 108.0 / 400.0 * 255.0
+        let expectedG: Int = Int(rawG.rounded())
+        let expectedB: Int = Int(rawB.rounded())
+        #expect(abs(p.g - expectedG) <= 1)
+        #expect(abs(p.b - expectedB) <= 1)
     }
 
     @Test func latin1FilesLoad() throws {

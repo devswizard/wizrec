@@ -50,9 +50,11 @@ import TimelineEngine
         let a2 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: frames(60))).clipID)
         let b1 = try #require(try chain.run(InsertClip(sourceID: sb, track: 1, start: frames(10))).clipID)
         let img = try #require(try chain.run(InsertClip(sourceID: sc, track: 2, start: frames(5))).clipID)
-        let kinds = chain.project.tracks.map { $0.clips.map(\.kind) }
-        #expect(kinds[0] == [.unified, .unified] && kinds[1] == [.video] && kinds[2] == [.image])
-        #expect(chain.project.tracks[0].clips.map(\.duration) == [frames(60), frames(60)])
+        let kinds: [[ClipKind]] = chain.project.tracks.map { (t: Track) -> [ClipKind] in t.clips.map { $0.kind } }
+        let expectedKinds: [[ClipKind]] = [[.unified, .unified], [.video], [.image]]
+        #expect(kinds == expectedKinds)
+        let durations: [Int64] = chain.project.tracks[0].clips.map { $0.duration }
+        #expect(durations == [frames(60), frames(60)])
 
         // M2 edits.
         let split = try chain.run(SplitClip(clipID: a1, at: frames(30)))
@@ -97,7 +99,8 @@ import TimelineEngine
         let inner = try chain.run(SplitClip(clipID: a1, at: frames(10)))  // inner timeline ticks
         let a1m = try #require(inner.rightID)
         try chain.run(UngroupClip(clipID: g))
-        #expect(chain.project.tracks[0].clips.prefix(3).map(\.id) == [a1, a1m, a1r])
+        let firstIDs: [Int64] = chain.project.tracks[0].clips.prefix(3).map { $0.id }
+        #expect(firstIDs == [a1, a1m, a1r])
         let stitch = try chain.run(StitchClips(clipIDs: [a1, a1m, a1r]))
         let s = try #require(stitch.stitchedID)
         #expect(chain.project.tracks[0].clips.first?.kind == .stitched)

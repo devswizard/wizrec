@@ -111,36 +111,7 @@ func scratchDir(_ name: String) throws -> URL {
 
             for track in p.tracks {
                 for top in track.clips {
-                    top.walk { clip, _ in
-                        #expect(clip.id > maxSource)
-                        // Camtasia's speed relation: mediaDuration × scalar = duration
-                        // (images: mediaStart 0, mediaDuration 1 tick, whatever the duration).
-                        if clip.kind == .image {
-                            #expect(clip.mediaDuration == Rational(1) && clip.mediaStart == Rational(0))
-                        } else {
-                            #expect(clip.mediaDuration * clip.scalar == Rational(clip.duration), "\(c.name) clip \(clip.id)")
-                        }
-                        // Whole output frames (allowSubFrameEditing false).
-                        #expect(clip.start % Self.frameTicks == 0 && clip.duration % Self.frameTicks == 0)
-                        #expect(clip.mediaStart.den == 1 && clip.mediaStart.num % Self.frameTicks == 0)
-                        if let src = clip.sourceID { #expect(p.source(id: src) != nil, "\(c.name) src \(src)") }
-                        if clip.kind == .stitched {
-                            var t: Int64 = 0
-                            for seg in clip.segments { #expect(seg.start == t); t = seg.end }
-                            #expect(clip.mediaStart.double + clip.mediaDuration.double <= Double(t))
-                        }
-                        // Keyframe windows are mirrored in animationTracks.visual.
-                        let windows = Set(clip.visualAnimations.compactMap { v -> [Int64]? in
-                            guard let r = v["range"]?.array?.items.compactMap(\.int), r.count == 2 else { return nil }
-                            return [r[0], r[0] + r[1]]
-                        })
-                        for name in clip.parameters.names {
-                            for k in clip.parameters[name]?.keyframes ?? [] {
-                                #expect(windows.contains([k.time, k.endTime]), "\(c.name) \(name)")
-                                #expect(k.endTime - k.time == k.duration)
-                            }
-                        }
-                    }
+                    top.walk { clip, _ in Self.checkClip(clip, in: p, case: c.name, maxSource: maxSource) }
                 }
             }
             // Video sources describe the generated files.
@@ -155,6 +126,40 @@ func scratchDir(_ name: String) throws -> URL {
                 } else {
                     #expect(s.tracks.first?.type == 1)
                 }
+            }
+        }
+    }
+
+    /// Per-clip invariants of a generated project (split out of `generatedProjectsAreWellFormed`
+    /// to keep the closure cheap to type-check).
+    private static func checkClip(_ clip: Clip, in p: Project, case name: String, maxSource: Int64) {
+        #expect(clip.id > maxSource)
+        // Camtasia's speed relation: mediaDuration × scalar = duration
+        // (images: mediaStart 0, mediaDuration 1 tick, whatever the duration).
+        if clip.kind == .image {
+            #expect(clip.mediaDuration == Rational(1) && clip.mediaStart == Rational(0))
+        } else {
+            #expect(clip.mediaDuration * clip.scalar == Rational(clip.duration), "\(name) clip \(clip.id)")
+        }
+        // Whole output frames (allowSubFrameEditing false).
+        #expect(clip.start % Self.frameTicks == 0 && clip.duration % Self.frameTicks == 0)
+        #expect(clip.mediaStart.den == 1 && clip.mediaStart.num % Self.frameTicks == 0)
+        if let src = clip.sourceID { #expect(p.source(id: src) != nil, "\(name) src \(src)") }
+        if clip.kind == .stitched {
+            var t: Int64 = 0
+            for seg in clip.segments { #expect(seg.start == t); t = seg.end }
+            #expect(clip.mediaStart.double + clip.mediaDuration.double <= Double(t))
+        }
+        // Keyframe windows are mirrored in animationTracks.visual.
+        let windows: Set<[Int64]> = Set(clip.visualAnimations.compactMap { (v: JSONObject) -> [Int64]? in
+            guard let r: [Int64] = v["range"]?.array?.items.compactMap(\.int), r.count == 2 else { return nil }
+            return [r[0], r[0] + r[1]]
+        })
+        for param in clip.parameters.names {
+            for k in clip.parameters[param]?.keyframes ?? [] {
+                let window: [Int64] = [k.time, k.endTime]
+                #expect(windows.contains(window), "\(name) \(param)")
+                #expect(k.endTime - k.time == k.duration)
             }
         }
     }

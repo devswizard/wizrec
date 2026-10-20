@@ -73,7 +73,8 @@ private func newVideo(_ id: Int64, start: Int64) -> String {
     let top = AddGroupTrack(group: 30, at: 2)
     try expectReversible(top, on: p)
     try top.apply(to: p)
-    #expect(p.tracks[0].clips[0].tracks.map(\.clips.count) == [1, 1, 0])
+    let innerCounts: [Int] = p.tracks[0].clips[0].tracks.map { $0.clips.count }
+    #expect(innerCounts == [1, 1, 0])
     try top.revert(on: p)
 
     expectRejected(AddGroupTrack(group: 30, at: 3), on: p, .trackNotFound(3))

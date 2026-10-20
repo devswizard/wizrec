@@ -38,7 +38,8 @@ private let bin = #"[{"id" : 1, "src" : "./media/1/a.mp4", "sourceTracks" : []},
     try expectReversible(paste, on: p)
     try paste.apply(to: p)
     #expect(paste.pastedIDs == [13, 14, 15])  // above maxID 12, in payload order (track, start)
-    #expect(p.tracks[1].clips.map { [$0.id, $0.start] } == [[12, 120], [13, 400], [14, 450]])
+    let idStarts: [[Int64]] = p.tracks[1].clips.map { (c: Clip) -> [Int64] in [c.id, c.start] }
+    #expect(idStarts == [[12, 120], [13, 400], [14, 450]])
     #expect(p.tracks[2].clips.map { [$0.id, $0.start] } == [[15, 420]])
     // The Fade on track 0 points at a clip on another track, so it is not copied.
     #expect(p.tracks[1].transitions.map { [$0.leftMediaID, $0.rightMediaID] } == [[nil, 12], [13, 14]])
