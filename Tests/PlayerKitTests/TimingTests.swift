@@ -117,6 +117,13 @@ private let tb = Timebase.camtasia
         #expect(!o.isScripted)
     }
 
+    @Test func groupDropIsAScriptedStep() {
+        let o = LaunchOptions(arguments: ["p.cmproj", "--group-drop", "a.mp4", "--group-drop", "b.png"])
+        #expect(o.groupDropPaths == ["a.mp4", "b.png"] && o.paths == ["p.cmproj"])
+        #expect(o.runsScript && o.isScripted)
+        #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+    }
+
     /// Scripted and timed runs never wait for the user: no relink sheet at open.
     @Test func scriptedRunsSkipTheRelinkSheet() {
         let user = LaunchOptions(arguments: ["p.cmproj", "--autoplay"])

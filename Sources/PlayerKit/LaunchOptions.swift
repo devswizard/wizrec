@@ -21,6 +21,9 @@ import Foundation
 /// - `--export <file>` [`--export-preset <name>`…]: export through the queue after the scripted steps,
 ///   then report. Without a preset, the first built-in preset whose extension matches `<file>`; with
 ///   several presets, each writes `<file>`'s folder and name with its own extension.
+/// - `--group-drop <file>` (repeatable): open the first top-level group for editing and drop the
+///   files on its bottom inner track after its last clip, through the timeline's group-drop
+///   handler (scripted UI check of media drops into open groups).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -53,12 +56,15 @@ public struct LaunchOptions: Sendable, Equatable {
     public var exportPath: String?
     /// Export preset names (batch); empty = chosen from `exportPath`'s extension.
     public var exportPresets: [String] = []
+    /// Files dropped into the first group (`--group-drop`).
+    public var groupDropPaths: [String] = []
 
     public init() {}
 
     /// Scripted steps run after opening (snapshots, imports, captions, export).
     public var runsScript: Bool {
         snapshotDir != nil || !importPaths.isEmpty || importCaptions != nil || exportCaptions != nil || exportPath != nil
+            || !groupDropPaths.isEmpty
     }
 
     /// A scripted or timed run (`runsScript` or `--quit-after`): nothing may wait for the user,
@@ -76,6 +82,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
+            && a.groupDropPaths == b.groupDropPaths
     }
 
     /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
@@ -114,6 +121,7 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--export-captions": exportCaptions = value()
             case "--export": exportPath = value()
             case "--export-preset": if let v = value() { exportPresets.append(v) }
+            case "--group-drop": if let v = value() { groupDropPaths.append(v) }
             default:
                 if a.hasPrefix("-psn_") { break }
                 // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,
