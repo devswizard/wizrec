@@ -24,7 +24,8 @@ track-level matte feature, which is unused here.
 
 | Name | Type | Value | Meaning |
 |---|---|---|---|
-| `matteMode` | constant int | 4 | Matte enum [?]. Camtasia's UI offers four modes: alpha, inverted alpha, luminosity and inverted luminosity [inf]. The numbering (0- or 1-based, order) is [?] |
+| `matteMode` | constant int | 4 | Matte enum [obs, RT-015]: **1 = Alpha** (the default when added), **2 = Alpha Invert**, **3 = Luminosity**, **4 = Luminosity Invert**. 0 never appears in the UI, and its meaning is [?] (treat it as 1) |
+| `trackDepth` | constant int | 10002 | Written by Camtasia 2026.2.3 on every newly added matte, in all four modes [obs]. Probably how many tracks below the matte it affects; 10002 is a sentinel for "all tracks below" [inf]. Absent in the older samples (see "Which layers are affected") |
 | `intensity` | constant double | 1.0 | Mix between no matte (0) and a full matte (1) [inf] |
 
 ## Model (provisional)
@@ -36,9 +37,13 @@ track-level matte feature, which is unused here.
   - luminosity mode: `m = luma(matte.rgb) · matte.alpha`;
   - an inverted mode uses `1 − m`;
   - the result is `content.alpha · mix(1, m, intensity)`.
-- **Which layers are affected:** only the track immediately below, or
-  everything below it in the same group [?]. Assume the track immediately
-  below.
+- **Which layers are affected.** `trackDepth` (above) suggests "this many
+  tracks below the matte", and Camtasia's default of 10002 suggests
+  "everything below it in the same canvas" [inf]. A matte without
+  `trackDepth` (older files) is [?]. Until a reference render settles it, a
+  missing key means only the track immediately below, which keeps the
+  earlier rule for old projects, and an explicit `trackDepth` limits the
+  matte to that many tracks [WizRec].
 - The matte's own transform places it on the canvas, and the matte is
   sampled in canvas space [inf].
 

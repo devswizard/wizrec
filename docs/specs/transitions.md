@@ -66,7 +66,7 @@ transition = {
 |---|---|---|
 | Only `rightMedia` (clip starts at S) | `[S, S + duration)` | [inf, strong] T1: S = 0 and the window cannot start before the timeline |
 | Only `leftMedia` (clip ends at E) | `[E − duration, E)` | [inf] |
-| Both, cut at C | **[?]** Either centred, `[C − d/2, C + d/2)`, or wholly after/before the cut. Experiment TR1 | [?] |
+| Both, cut at C | **[?]** Either centred, `[C − d/2, C + d/2)`, or wholly after/before the cut. Needs a render | [?] |
 | Progress inside the window | `p = (t − windowStart) / duration`, from 0 to 1, linear in time | [inf] Any easing lives inside each transition |
 
 Working rule for the both-sides case, until TR1 is done [inf]: the window is
@@ -76,6 +76,26 @@ own end (`mediaStart + mediaDuration`), and the incoming clip starts showing
 model, and it is why Camtasia warns about clips that lack extra media at the
 ends [inf]. Images, callouts and shader sources never run out of media.
 Freeze video at its first or last frame if a handle is missing [inf].
+
+### Two-sided transitions (TR2, runtime saves 2026-10-20)
+
+- **Creation.** Dropping a transition on the cut between two touching clips
+  writes **one** entry with both `leftMedia` (outgoing) and `rightMedia`
+  (incoming) [obs, 6 transitions]. The two clips stay exactly adjacent:
+  neither clip's `start`, `duration`, `mediaStart` nor `mediaDuration`
+  changes, so the overlap is implied, not stored [obs].
+- **Default duration.** A two-sided transition defaults to **0.5 s**
+  (352800000 ticks). A one-sided transition (clip start or end) defaults to
+  **1 s** [obs]. Whether the stored 0.5 s is the whole window or one side of
+  it is [?] (it needs a render).
+- **Moving one clip apart** (Cut, then Paste of the incoming clip elsewhere)
+  **splits the transition into two one-sided ones** with the same `name`,
+  `duration` and `attributes`. The outgoing clip keeps an end transition
+  (`leftMedia` only) in place, and the moved clip gets a start transition
+  (`rightMedia` only), appended at the end of the track's `transitions` list
+  [obs, `tr4-two-sided-moved`]. This answers X7 #8 for the two-sided case.
+- **Ids.** Camtasia renumbers clip ids on save and rewrites `leftMedia` and
+  `rightMedia` to match [obs].
 
 ### Flags
 
@@ -108,8 +128,17 @@ There are two families.
 - **Unclear family:** `Pixelate` and `Mosaic` could be transitions or visual
   effects [?]. `Glow` is the visual effect and `GlowTransition` the
   transition [inf].
-- **Classic transitions carry no parameters in the project** [obs, T1]. Their
-  look must come from reference renders (TR2).
+- **Classic transitions mostly carry no parameters** [obs, T1, TR2].
+  `FadeThroughBlack` is the exception: it has a colour, written as
+  `Color-red`, `Color-green` and `Color-blue` (0–1, default black, no alpha)
+  inside `attributes` [obs, TR2 2026-10-20]. The look of each classic
+  transition still needs a reference render [?].
+- **Names confirmed by runtime saves** (panel label → `name`) [obs, TR2
+  2026-10-20]: Cube Rotate → `CubeRotate`, Radial Wipe → `RadialWipe`, Fade
+  Through Black → `FadeThroughBlack`. **Fade → `LuminanceFadeIn`**: the
+  panel's "Fade" is the shader transition of that name, not a classic
+  `Fade`. Panel search for "Cube" also offers a shader `Cube` (3d), next to
+  the classic Cube Rotate.
 
 ### 3.2 Shader transitions (`.tsceffect`, type `"transition"`)
 
@@ -128,9 +157,9 @@ Each file is a JSON object with these keys [obs, T4]:
 - **Lenient parsing.** 4 files (`likesnloves`, `smileys`, `spinflip`,
   `transmission`) are not strict JSON: they write numbers with a trailing dot
   such as `8.` [obs]. A reader must accept that.
-- **How a project refers to one** is [?]: by `name`, by file name, or by
-  path. No project in the corpus uses a shader transition. Experiment TR3.
-  Working assumption: `transition.name` = the file's `name` field [inf].
+- **How a project refers to one: by the file's `name` field** [obs, TR2/TR3
+  2026-10-20: Accordion → `"Accordion"`, Cube → `"Cube"`, Fade →
+  `"LuminanceFadeIn"`]. There is no path or file name.
 
 The catalog, by category (`name` field):
 
@@ -164,9 +193,15 @@ Each entry has `{name, type, …}` [obs, T4: 219 entries]:
 - **Common names:** `Number` (39), `Random` (30), `FlipX` (23), `Color0` and
   `Color1` (21 each), `Angle` (16), `Color` (14), `FlipY` (14), `Width` (7),
   `Color2` (7), `Color3` (6), `Depth` (5) [obs].
-- **In a project**, these probably appear under the transition object, as
-  `attributes` or `parameters`, with colours split into `-red/-green/-blue`
-  as on `SourceEffect` [?]. Experiment TR3.
+- **In a project** [obs, TR3 2026-10-20]: the transition's own
+  `attributes` object holds every parameter **as a plain constant**, sorted
+  together with the flags in alphabetical key order. Accordion gives
+  `{FlipX: false, Number: 4.0, bypass, reverse, trivial, useAudioPreRoll,
+  useVisualPreRoll}`. A `bool` stays a JSON boolean, a `double` is a number
+  with its file default, and a colour is split into `<name>-red/-green/-blue`
+  doubles with no alpha (as `FadeThroughBlack` shows). Files without
+  `attributes` (Cube, LuminanceFadeIn) add only the five flags. Keyframed
+  transition parameters are not known [?].
 
 ## 5. Shader-transition host inputs
 
