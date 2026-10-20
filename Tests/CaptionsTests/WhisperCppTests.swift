@@ -220,7 +220,7 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         let progress = Progress()
         // Starts at 10 s of stream time: words land on the stream axis.
         let words = try await Transcriber(backend: f.recognizer())
-            .transcribe(tone(seconds: 2, start: 10), language: "bn-BD") { progress.add($0) }
+            .transcribe(tone(seconds: 3, start: 10), language: "bn-BD") { progress.add($0) }
         #expect(words.map(\.text) == ["Hello", "world.", "আমার", "সোনার"])
         #expect(abs(words[0].start - 10) < 1e-6 && abs(words[3].end - 13) < 1e-6)
 
@@ -234,7 +234,7 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         if let of = value("-of") { #expect(!FileManager.default.fileExists(atPath: (of as NSString).deletingLastPathComponent)) }
 
         let wav = try Data(contentsOf: f.bin.appendingPathComponent("input.wav"))
-        #expect(wav.count == 44 + 2 * 32_000)  // 2 s, 16 kHz, mono, 16-bit
+        #expect(wav.count == 44 + 3 * 32_000)  // 3 s, 16 kHz, mono, 16-bit (all voiced: nothing cut)
         #expect(String(decoding: wav.prefix(4), as: UTF8.self) == "RIFF")
         let rate = wav[24..<28].enumerated().reduce(0) { $0 | Int($1.element) << (8 * $1.offset) }
         let channels = Int(wav[22]) | Int(wav[23]) << 8
@@ -286,9 +286,92 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         #expect(gone)
     }
 
-    /// Real whisper.cpp on a short spoken clip. Opt in with `WIZREC_WHISPER_TESTS=1`; needs
-    /// `whisper-cli` and a model. `WIZREC_WHISPER_AUDIO` may point at any audio file (default: the
-    /// `say` voice reading a sentence).
+    /// 8 s of 16 kHz mono: silence 0–3, speech 3–4, silence 4–6, speech 6–7, silence 7–8.
+    private static func pausedSpeech() -> PCMBuffer {
+        let x = speechLike([(3, 0), (1, 0.3), (2, 0), (1, 0.3), (1, 0)])
+        return PCMBuffer(format: PCMFormat(sampleRate: 16_000, channels: 1), startTime: .zero,
+                         frameCount: x.count, channels: [x])
+    }
+
+    /// whisper output on the compacted audio (pieces 2.8–4.2 s → 0–1.4 s, 5.8–7.2 s → 1.7–3.1 s):
+    /// "dog." runs into the inserted gap, "Next" starts in it.
+    private static let compactedJSON = """
+    {"transcription": [
+      {"offsets": {"from": 0, "to": 400}, "text": " The"},
+      {"offsets": {"from": 400, "to": 1650}, "text": " dog."},
+      {"offsets": {"from": 1650, "to": 2500}, "text": " Next"},
+      {"offsets": {"from": 2500, "to": 9000}, "text": " end"}
+    ]}
+    """
+
+    @Test func compactsSilencesAndMapsWordsBack() async throws {
+        let f = try FakeWhisper(body: FakeWhisper.ok, json: Self.compactedJSON)
+        defer { f.remove() }
+        let words = try await f.recognizer().transcribe(Self.pausedSpeech(), language: "en")
+        // whisper saw 3.1 s, not 8 s.
+        let wav = try Data(contentsOf: f.bin.appendingPathComponent("input.wav"))
+        #expect(abs(Double(wav.count - 44) / 32_000 - 3.1) < 0.01)
+        #expect(!f.args().contains("--vad"))
+        #expect(words.map(\.text) == ["The", "dog.", "Next", "end"])
+        guard words.count == 4 else { return }
+        func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.015 }
+        #expect(near(words[0].start, 2.98) && near(words[0].end, 3.2))   // onset, not padding
+        #expect(near(words[1].start, 3.2) && near(words[1].end, 4.02))   // tail cut at the pause
+        #expect(near(words[2].start, 5.98) && near(words[2].end, 6.6))   // start out of the gap
+        #expect(near(words[3].start, 6.6) && near(words[3].end, 7.02))   // past the end: clamped, trimmed
+        #expect(words.allSatisfy { $0.end >= $0.start && $0.end <= 8 })
+    }
+
+    @Test func silentAudioNeverRunsWhisper() async throws {
+        let f = try FakeWhisper(body: FakeWhisper.ok)
+        defer { f.remove() }
+        let x = speechLike([(2, 0)])
+        let silent = PCMBuffer(format: PCMFormat(sampleRate: 16_000, channels: 1), startTime: .zero,
+                               frameCount: x.count, channels: [x])
+        let progress = Progress()
+        #expect(try await f.recognizer().transcribe(silent, language: nil) { progress.add($0) }.isEmpty)
+        #expect(f.args().isEmpty)  // the fake never ran
+        #expect(progress.values == [1])
+    }
+
+    @Test func usesSileroVADWhenInstalled() async throws {
+        let f = try FakeWhisper(body: FakeWhisper.ok, json: Self.compactedJSON, models: ["small", "silero-v5.1.2"])
+        defer { f.remove() }
+        // The VAD file is not a transcription model.
+        #expect(WhisperCppRecognizer.installedModels(in: f.models).map(\.name) == ["small"])
+        #expect(WhisperCppRecognizer.installedVADModels(in: f.models).map(\.name) == ["silero-v5.1.2"])
+        #expect(f.recognizer().resolvedVADModel()?.name == "silero-v5.1.2")
+        let only = try FakeWhisper(body: "", models: ["silero-v5.1.2"])
+        defer { only.remove() }
+        guard case .modelMissing = await only.recognizer().status(language: nil) else {
+            Issue.record("a VAD model alone is not a transcription model"); return
+        }
+
+        _ = try await f.recognizer().transcribe(Self.pausedSpeech(), language: "en")
+        let args = f.args()
+        #expect(args.contains("--vad"))
+        #expect(args.firstIndex(of: "-vm").map { args[$0 + 1].hasSuffix("ggml-silero-v5.1.2.bin") } == true)
+        // whisper gets the whole buffer: its VAD maps times itself.
+        let wav = try Data(contentsOf: f.bin.appendingPathComponent("input.wav"))
+        #expect(wav.count == 44 + 8 * 32_000)
+
+        var off = f.recognizer()
+        off.useVAD = false
+        #expect(off.resolvedVADModel() == nil)
+        _ = try await off.transcribe(Self.pausedSpeech(), language: "en")
+        #expect(!f.args().contains("--vad"))
+
+        let name = "wizrec-whisper-vad-\(UUID().uuidString)"
+        guard let d = UserDefaults(suiteName: name) else { Issue.record("defaults"); return }
+        defer { d.removePersistentDomain(forName: name) }
+        #expect(WhisperCppRecognizer.fromDefaults(d).useVAD)
+        d.set(false, forKey: WhisperSettings.vadKey)
+        #expect(!WhisperCppRecognizer.fromDefaults(d).useVAD)
+    }
+
+    /// Real whisper.cpp. Opt in with `WIZREC_WHISPER_TESTS=1`; needs `whisper-cli` and a model.
+    /// `WIZREC_WHISPER_AUDIO` may point at any audio file (default: the `say` voice reading a
+    /// sentence), `WIZREC_WHISPER_LANG` sets its language.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_WHISPER_TESTS"] == "1"))
     func liveWhisper() async throws {
         let r = WhisperCppRecognizer.fromDefaults()
@@ -297,17 +380,13 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
             return
         }
         let env = ProcessInfo.processInfo.environment
-        var url: URL
-        if let path = env["WIZREC_WHISPER_AUDIO"] {
-            url = URL(fileURLWithPath: path)
-        } else {
-            url = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-whisper-live-\(UUID().uuidString).aiff")
-            let say = Process()
-            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-            say.arguments = ["-o", url.path, "The quick brown fox jumps over the lazy dog."]
-            try say.run(); say.waitUntilExit()
-        }
-        let media = try await MediaPool(diskCacheDirectory: nil).source(for: url)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-whisper-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = try env["WIZREC_WHISPER_AUDIO"].map { URL(fileURLWithPath: $0) }
+            ?? Self.say("The quick brown fox jumps over the lazy dog.", to: dir.appendingPathComponent("en.aiff"))
+        let pool = MediaPool(diskCacheDirectory: nil)
+        let media = try await pool.source(for: url)
         guard let stream = media.info.streams.first(where: { $0.kind == .audio }) else {
             Issue.record("no audio stream"); return
         }
@@ -316,5 +395,86 @@ private final class Progress: @unchecked Sendable {  // @unchecked: `values` is 
         print("whisper.cpp:", words.map(\.text).joined(separator: " "))
         #expect(!words.isEmpty)
         #expect(zip(words, words.dropFirst()).allSatisfy { $0.start <= $1.start })
+        if env["WIZREC_WHISPER_AUDIO"] == nil {
+            let text = words.map(\.text).joined(separator: " ").lowercased()
+            #expect(text.contains("quick") && text.contains("fox") && text.contains("lazy"))
+        }
+
+        // Timing across pauses (both with whisper's VAD, when its model is installed, and with
+        // WizRec's energy compaction): 3 s silence, sentence A, 2 s silence, sentence B, 1 s silence.
+        // Two different sentences: whisper collapses an exact repeat.
+        let rate = 16_000.0
+        func decode(_ u: URL) async throws -> [Float] {
+            let m = try await pool.source(for: u)
+            guard let st = m.info.streams.first(where: { $0.kind == .audio }) else { return [] }
+            return Transcriber.mixdown(try await m.audio(stream: st.index, range: CMTimeRange(start: .zero, duration: st.duration),
+                                                         format: PCMFormat(sampleRate: rate, channels: 1)))
+        }
+        let a = try await decode(Self.say("The quick brown fox jumps over the lazy dog.", to: dir.appendingPathComponent("a.aiff")))
+        let b = try await decode(Self.say("It is twelve o'clock and the sun is shining.", to: dir.appendingPathComponent("b.aiff")))
+        func onset(_ x: [Float]) -> Double {
+            guard let r = SpeechActivity(x, sampleRate: rate).regions().first, r.lowerBound > 0 else { return 0 }
+            return r.lowerBound + SpeechActivity.padSeconds
+        }
+        func silence(_ s: Double) -> [Float] { Array(repeating: 0, count: Int(s * rate)) }
+        let x = silence(3) + a + silence(2) + b + silence(1)
+        let paused = PCMBuffer(format: PCMFormat(sampleRate: rate, channels: 1), startTime: .zero,
+                               frameCount: x.count, channels: [x])
+        let lenA = Double(a.count) / rate
+        let truth = [3 + onset(a), 3 + lenA + 2 + onset(b)]
+        for vad in [true, false] where !vad || r.resolvedVADModel() != nil {
+            var rv = r
+            rv.useVAD = vad
+            let w = try await rv.transcribe(paused, language: "en")
+            let firsts = [w.first, w.first { $0.start > 3 + lenA + 1 }].compactMap { $0?.start }
+            print("whisper.cpp vad=\(vad) sentence starts:", firsts, "expected:", truth)
+            print(w.map { "\($0.text)@\(($0.start * 100).rounded() / 100)-\(($0.end * 100).rounded() / 100)" }
+                .joined(separator: " "))
+            #expect(firsts.count == 2)
+            for (a, b) in zip(firsts, truth) { #expect(abs(a - b) < 0.3, "vad=\(vad): \(a) vs \(b)") }
+            // The last word of sentence A ends in the pause, not at sentence B.
+            if let lastA = w.last(where: { $0.start < 3 + lenA + 1 }) {
+                #expect(lastA.end < 3 + lenA + 0.3, "vad=\(vad): sentence A ends at \(lastA.end)")
+            }
+            #expect(w.allSatisfy { $0.end <= Double(x.count) / rate })
+        }
+
+        // Bengali, when a Bengali `say` voice exists (an Indian-Bengali voice, "Piya", on macOS 27).
+        if env["WIZREC_WHISPER_AUDIO"] == nil, let voice = Self.voice(locale: "bn_") {
+            let bn = try Self.say("আমার সোনার বাংলা, আমি তোমায় ভালোবাসি।", voice: voice,
+                                  to: dir.appendingPathComponent("bn.aiff"))
+            let m = try await pool.source(for: bn)
+            guard let st = m.info.streams.first(where: { $0.kind == .audio }) else { Issue.record("bn audio"); return }
+            let w = try await Transcriber(backend: r).transcribe(m, stream: st.index, language: "bn")
+            print("whisper.cpp bn:", w.map(\.text).joined(separator: " "))
+            #expect(w.count >= 3)
+        }
+    }
+
+    /// Writes `text` spoken by `say` to `url`.
+    private static func say(_ text: String, voice: String? = nil, to url: URL) throws -> URL {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        p.arguments = (voice.map { ["-v", $0] } ?? []) + ["-o", url.path, text]
+        try p.run(); p.waitUntilExit()
+        return url
+    }
+
+    /// The first `say` voice whose locale starts with `locale` (e.g. `"bn_"`).
+    private static func voice(locale: String) -> String? {
+        let p = Process(), out = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        p.arguments = ["-v", "?"]
+        p.standardOutput = out
+        guard (try? p.run()) != nil else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let cols = line.split(separator: " ", omittingEmptySubsequences: true)
+            if let i = cols.firstIndex(where: { $0.hasPrefix(locale) }), i > 0 {
+                return cols[..<i].joined(separator: " ")
+            }
+        }
+        return nil
     }
 }
