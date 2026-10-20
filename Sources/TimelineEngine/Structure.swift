@@ -230,8 +230,10 @@ public final class GroupClips: EditCommand {
 /// The group's constant position and scale are folded into each released
 /// visual clip [obs]: `translation = group.translation + group.scale ×
 /// child.translation` per axis, `scale = group.scale × child.scale`
-/// (keyframe values too); a constant position that comes out as 0 is
-/// removed [obs]. Throws when the group has a non-unit speed, rotation [?],
+/// (keyframe values too). A constant `translation0/1` that this command
+/// composed and that comes out exactly 0 is removed [obs, group-edits.md
+/// §6]; no other key is ever dropped, and `revert` restores the original
+/// bytes. Throws when the group has a non-unit speed, rotation [?],
 /// opacity, crop, a non-unit volume, animated geometry or effects (not
 /// composable yet [inf]), or when a placed clip would overlap.
 @MainActor

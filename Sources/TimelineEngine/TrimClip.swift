@@ -34,8 +34,9 @@ public enum TrimEdge: Sendable, Equatable {
 /// group-edits.md §4); its end edge leaves the inner clips alone. Images keep
 /// `mediaStart`/`mediaDuration` and move `trimStartSum` instead (`Retime`).
 ///
-/// Keyframes, effect windows and `animationTracks` are on the media time axis
-/// and stay unchanged (time-mapping.md §6–7). Transitions stay as they are.
+/// Keyframes, effect and behaviour windows and `animationTracks` are on the
+/// media time axis and stay unchanged, never pruned (time-mapping.md §6–7;
+/// [obs] edit-semantics.md X7 #4). Transitions stay as they are.
 @MainActor
 public final class TrimClip: EditCommand {
     public let clipID: Int64

@@ -18,13 +18,13 @@ import TSCProjKit
 ///   `UnifiedMedia` halves, which mirror the parent's); it is inserted into the
 ///   destination `medias` in start order.
 ///
-/// Transitions referencing the clip on its source track (assumptions):
+/// Transitions referencing the clip on its source track:
 /// - one-sided (fade in/out: only `leftMedia` or only `rightMedia`, and it
-///   is this clip) travel with the clip; a destination track without a
+///   is this clip) travel with the clip [obs, edit-semantics.md X7 #8]; a destination track without a
 ///   `transitions` key gets one appended;
 /// - two-sided ones stay only if the move is within the same track and the
 ///   clip still touches the other clip on that side; otherwise they are
-///   removed.
+///   removed [?, X7 #8 two-sided not yet observed].
 @MainActor
 public final class MoveClip: EditCommand {
     public let clipID: Int64
