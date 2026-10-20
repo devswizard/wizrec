@@ -62,7 +62,7 @@ STEP 0 (you alone): CHECK, don't ask, wherever you can.
   ED2–ED4 / CA1 text done? Other WizRec Claude sessions closed or reset?
 
 STEP 1 (you alone):
-- `swift build && swift test` on main: expect 1029 tests or more, 23 known
+- `swift build && swift test` on main: expect 1058 tests or more, 23 known
   issues (21 golden-harness + 2 LoadGate self-tests); sum the "Test run with
   N tests" lines across runners.
 - Remove finished worktrees after checking each is clean and merged

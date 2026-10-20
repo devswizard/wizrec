@@ -8,7 +8,7 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ## 0. Session 7 snapshot (2026-10-20) — read this first
 
-- **`main` is green locally: 1029 tests** (23 known issues = 21
+- **`main` is green locally: 1058 tests** (23 known issues = 21
   golden-harness + 2 LoadGate self-tests). Sections 0a–2 are history.
 - **CI / release:** <<CI/RELEASE STATUS>>
 - **Session 6 (short, no snapshot):** remote `devswizard/wizrec` pushed
@@ -26,9 +26,18 @@ This is for the **lead session** that continues the WizRec build. Read
     built separately; watchdog `scripts/ci/test-with-watchdog.sh` (deadline,
     stall detector, `sample` thread stacks of the stuck test process,
     unfinished tests in start order — all as annotations).
-  - CI hang root cause [obs]: TestGenKit `MediaWriter` `finishWriting` never
-    returned on the 3-core runner VM with several encodes in flight (seen in
-    the sampled stacks). Fix: one encode at a time + timeouts.
+  - CI hang, diagnosed from the sampled stacks over runs 10–16 [obs]: on the
+    3-core runner VM (1) a main thread blocked in TestGenKit `MediaWriter`
+    stalled every `@MainActor` test (`finishWriting` answers through the main
+    queue there), and (2) several AVFoundation/VideoToolbox encodes or
+    `AVAssetReader`s at once stalled inside CoreMedia. Fixes: async
+    `MediaWriter`/`TestGen.makeMedia` (encode on a private thread; every
+    main-actor test `try await`s), bounded waits in tests (`Deadline`,
+    `TestProcess` on its own threads, `GPUWait`), and CI runs the media
+    suites (Golden, Recorder, Exporter, MediaEngine, PlayerKit, Perf) with
+    `--no-parallel` in a second step. VM-only test gates:
+    `TestEnvironment.isVirtualMachine` skips the VideoToolbox converter
+    comparison; GPU timing asserts need `WIZREC_PERF=1`.
   - History: AI co-author lines stripped with `git filter-repo` (messages
     only) and force-pushed; backup bundle
     `~/WorkDir/vibe_coding/wizrec-pre-coauthor-strip.bundle` + local branch
@@ -48,7 +57,12 @@ This is for the **lead session** that continues the WizRec build. Read
     `check-library-double-click.sh` (CGEvent double-click).
   - QA (qa9): Swift 6.3 sweep of test targets; Backgrounds tab / shader drop
     (app8) and shader background edit (app9) integration tests.
-  - Wave 2: <<WAVE 2 RESULTS>>
+  - Wave 2: app10 `--quit-after` quits without the unsaved-changes prompt
+    (`QuitPolicy`), UI checks wait for the first launch; timeline10 copy
+    clips inside groups and paste at top level or into an open group
+    (`PasteClips(group:track:at:)`, [WizRec] rules in DECISIONS); render10
+    region-callout corner tests (feature was already in render7); qa10 async
+    `MediaWriter`, bounded test waits, load runs, Swift 6.3 slow spots.
 - **Demo (built app, copy of demo project):** snapshots 0/5/12.5/25 s OK;
   ProRes 422 export 25.67 s in 2.2 s.
 - **Follow-ups (no owner):**
@@ -56,9 +70,14 @@ This is for the **lead session** that continues the WizRec build. Read
     Reflection/tilt/shear/stencils/LuminanceFadeIn/key caps, particle
     canvas, transition windows, caption layout, normalisation output);
   - manual-only checks ED2–ED4, CA1 caption text;
-  - `MediaWriter` serialised encodes: re-measure test time; relax only with
-    the watchdog green on the runner;
-  - GPU tests on GitHub's paravirtual Metal: confirm from the CI annotations;
+  - Sources waits without a bound (qa10 audit): `MovieExport.finish` and
+    `MediaFileWriter` `finishWriting`, `AudioExport` ready loop (no stall
+    watch), `CanvasRenderer.renderImage` GPU wait on the main thread;
+  - test reader loops (`readBack`, `decodeAudio`, `MovieFrameReader`) could
+    run on a private thread with a deadline;
+  - quit with several unsaved documents under `--quit-after` (untested path);
+  - Swift 6.3 slow spots left: CanvasRenderer:43, EditorDocumentModel:117,
+    ClassicCaptions:138, EditorWindowController+Export:22 (all < 75 ms);
   - Sparkle appcast (GitHub Pages) once the user has keys;
   - local `agent/*` branches and `backup/pre-coauthor-strip` hold old
     history: never push; delete only with the user's OK;

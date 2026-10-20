@@ -76,7 +76,7 @@ continue here.
   modes, Border/Reflection, CO3 callouts, Extend Frame, Metal HDR tone map
   for playback), group/split/trim/ungroup/marker rules from observed
   Camtasia saves (X3/X5/X7/X8). Automated UI checks of the built app
-  (`scripts/ui-checks/`). **1029 tests green** (23 known issues =
+  (`scripts/ui-checks/`). **1058 tests green** (23 known issues =
   golden-harness and LoadGate self-tests).
 - Session 7 landed:
   - **Swift 6.3.3 (CI toolchain, Xcode 26.6) compiles** the package and test
@@ -86,9 +86,13 @@ continue here.
   - **CI watchdog** (`scripts/ci/test-with-watchdog.sh`): tests built
     separately; stall detector; thread stacks (`sample`) of a stuck test
     process and unfinished tests in start order, published as annotations.
-  - **CI hang root cause:** TestGenKit `MediaWriter` `finishWriting` never
-    returned on the 3-core runner VM with several encodes in flight. Fix: one
-    encode at a time, plus timeouts.
+  - **CI hang root cause:** on the 3-core runner VM a main thread blocked in
+    TestGenKit `MediaWriter` stalled every `@MainActor` test, and parallel
+    AVFoundation/VideoToolbox sessions stalled in CoreMedia. Fix: async
+    `MediaWriter` (main actor never waits), bounded test waits, media suites
+    run serially in their own CI step, VM-only test gates.
+  - Wave 2: `--quit-after` never prompts; copy/paste inside groups; region
+    callout corner tests.
   - **No AI attribution on GitHub** (user rule): history rewritten to drop AI
     co-author lines (messages only; trees, dates, authors unchanged) and
     force-pushed; a local `pre-push` hook refuses such lines.
