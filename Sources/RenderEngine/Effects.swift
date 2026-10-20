@@ -26,12 +26,14 @@ struct RoundCornersEffect: EffectRenderer {
     enum Spec {
         /// `radius` is in layer px [inf, strong: demo 233.81 × scale 0.2887 = 67.5 canvas px exactly].
         static let radiusInCanvasPx = false
-        /// Corner flags `top-left`… multiply the radius [inf, weak]; default on.
+        /// Corner flags `top-left`… multiply the radius [inf, weak]; default on [obs, catalog].
         static let cornerDefault = 1.0
+        /// `radius` written when the effect is added [obs, catalog]; used when the key is missing.
+        static let defaultRadius = 20.0
     }
 
     func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
-        var r = max(e.value("radius", 0), 0)
+        var r = max(e.value("radius", Spec.defaultRadius), 0)
         if Spec.radiusInCanvasPx { r /= max(ctx.layerScale, 1e-6) }
         guard r > 0 else { return input }
         var fx = ctx.fx(input)
@@ -71,10 +73,13 @@ struct MaskEffect: EffectRenderer {
         static let ellipseShape = 0.0
         /// `mask-opacity` = alpha kept outside the shape [inf]. `mask-blend` = feather, sign and units [?];
         /// ignored (1-px antialiasing; the demo's −0.02 is a hard edge [obs]).
+        /// Missing keys take the values written when the effect is added [obs, catalog]: shape 0,
+        /// opacity 0, 360×360 at the centre, no rotation, corner radius 0, not inverted.
+        static let defaultSize = 360.0
     }
 
     func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
-        let w = e.value("mask-width", ctx.layerSize.width), h = e.value("mask-height", ctx.layerSize.height)
+        let w = e.value("mask-width", Spec.defaultSize), h = e.value("mask-height", Spec.defaultSize)
         let x = e.value("mask-positionX", 0), y = e.value("mask-positionY", 0) * (Spec.positionYUp ? 1 : -1)
         let s = ctx.scale
         let origin = ctx.layerOrigin
@@ -122,27 +127,32 @@ struct DropShadowEffect: EffectRenderer {
         static let canvasUnits = true
         /// Gaussian σ = blur / 2 canvas px [inf, fit].
         static let sigmaPerBlur = 0.5
-        static let defaultColor = RGBA(0, 0, 0, 1)
+        /// Values written when the effect is added [obs, catalog]; used for missing keys.
+        static let defaultColor = RGBA(0.1216, 0.1216, 0.1216, 1)
+        static let defaultAngle = 5.49778714378214   // 7π/4: down-right
+        static let defaultOffset = 10.0
+        static let defaultBlur = 10.0
+        static let defaultOpacity = 0.4
     }
 
     func margin(_ e: EffectInstance, ctx: MarginContext) -> Margin {
         guard e.value("enabled", 1) >= 0.5 else { return .zero }
         let k = Spec.canvasUnits ? 1 / max(ctx.layerScale, 1e-6) : 1
-        let reach = (abs(e.value("offset", 0)) + 3 * Spec.sigmaPerBlur * max(e.value("blur", 0), 0) + 2) * k
+        let reach = (abs(e.value("offset", Spec.defaultOffset)) + 3 * Spec.sigmaPerBlur * max(e.value("blur", Spec.defaultBlur), 0) + 2) * k
         return .all(reach)
     }
 
     func encode(_ e: EffectInstance, input: any MTLTexture, ctx: inout EffectContext) throws -> any MTLTexture {
-        guard e.value("enabled", 1) >= 0.5, e.value("opacity", 1) > 0 else { return input }
+        guard e.value("enabled", 1) >= 0.5, e.value("opacity", Spec.defaultOpacity) > 0 else { return input }
         let k = (Spec.canvasUnits ? 1 / max(ctx.layerScale, 1e-6) : 1) * ctx.scale   // canvas px → texture px
         // Canvas-space direction → layer space (undo the layer rotation), then y down.
-        let a = e.value("angle", 0) - (Spec.canvasUnits ? ctx.rotation : 0)
-        let off = e.value("offset", 0) * k
+        let a = e.value("angle", Spec.defaultAngle) - (Spec.canvasUnits ? ctx.rotation : 0)
+        let off = e.value("offset", Spec.defaultOffset) * k
         let dx = cos(a) * off, dy = -sin(a) * off
-        let sigma = Spec.sigmaPerBlur * max(e.value("blur", 0), 0) * k
+        let sigma = Spec.sigmaPerBlur * max(e.value("blur", Spec.defaultBlur), 0) * k
         var fx = ctx.fx(input)
         let blurred = try GaussianBlur.alpha(input, sigma: sigma, ctx: ctx)
-        fx.set(0, SIMD4(Float(dx), Float(dy), Float(Conventions.clamp01(e.value("opacity", 1))), 0))
+        fx.set(0, SIMD4(Float(dx), Float(dy), Float(Conventions.clamp01(e.value("opacity", Spec.defaultOpacity))), 0))
         fx.set(1, e.color("color", Spec.defaultColor))
         return try ctx.gpu.pass("shadow_composite_fs", textures: [input, blurred], fx: fx,
                                 commandBuffer: ctx.commandBuffer)

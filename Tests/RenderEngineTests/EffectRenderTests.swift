@@ -106,6 +106,76 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
         #expect(img3.at(96, 89) == .white)
     }
 
+    // MARK: Catalog names and defaults (docs/specs/effects/catalog.md, Border.md, Reflection.md)
+
+    @Test func borderAndReflectionAreRendered() {
+        #expect(Compositor.renderedEffects.isSuperset(of: ["Border", "Reflection"]))
+    }
+
+    @Test func borderDrawsOutsideTheLayer() throws {
+        let (rq, fr) = solid("r", .red)
+        let e = fx("Border", ["enabled": 1, "color-red": 0, "color-green": 0, "color-blue": 1, "color-alpha": 1,
+                              "width": 4, "type": 0])
+        let img = try GPUTest.render(plan([box(rq, effects: [e])]), frames: [rq: fr])
+        #expect(img.at(96, 54) == .red)                     // the layer stays on top
+        #expect(img.at(96, 86) == Px(r: 0, g: 0, b: 255, a: 255) && img.at(44, 54) == Px(r: 0, g: 0, b: 255, a: 255))
+        #expect(img.at(149, 87) == Px(r: 0, g: 0, b: 255, a: 255)) // square outside corner
+        #expect(img.at(96, 90) == .black && img.at(38, 54) == .black)
+        // Width in canvas px: the same border on a 2× layer is still 4 px wide.
+        let l2 = box(rq, effects: [e], transform: CGAffineTransform(scaleX: 2, y: 2), size: CGSize(width: 50, height: 30))
+        let img2 = try GPUTest.render(plan([l2]), frames: [rq: fr])
+        #expect(img2.at(96, 86) == Px(r: 0, g: 0, b: 255, a: 255) && img2.at(96, 90) == .black)
+        // `enabled` 0 draws nothing.
+        var off = e; off.parameters["enabled"] = 0
+        #expect(try GPUTest.render(plan([box(rq, effects: [off])]), frames: [rq: fr]).at(96, 86) == .black)
+    }
+
+    @Test func borderDefaultsToOnePixelOpaqueWhite() throws {
+        let (rq, fr) = solid("r", .red)
+        let img = try GPUTest.render(plan([box(rq, effects: [fx("Border", [:])])]), frames: [rq: fr])
+        #expect(img.at(96, 84) == .white && img.at(45, 54) == .white)
+        #expect(img.at(96, 86) == .black)
+    }
+
+    @Test func reflectionMirrorsBelowAndFades() throws {
+        // Top half green, bottom half red: the reflection starts with red (mirrored bottom edge).
+        let rq = GPUTest.request("gr")
+        let fr = GPUTest.frame(GPUTest.pixelBuffer(16, 16) { _, y in y < 8 ? .green : .red })
+        let e = fx("Reflection", ["distance": 10, "opacity": 1])
+        let img = try GPUTest.render(plan([box(rq, effects: [e])]), frames: [rq: fr])
+        #expect(img.at(96, 30) == .green && img.at(96, 80) == .red)
+        #expect(img.at(96, 89) == .black)                  // the gap below the layer (84…94)
+        let near = img.at(96, 95), far = img.at(96, 105)
+        #expect(near.r > 200 && near.g < 10)               // mirrored red, almost full strength
+        #expect(far.r < near.r && far.r > 100)             // fading out (fade over half the layer height)
+        // Defaults: distance 20, opacity 0.4.
+        let d = try GPUTest.render(plan([box(rq, effects: [fx("Reflection", [:])])]), frames: [rq: fr])
+        #expect(d.at(96, 100) == .black)                    // still in the 20-px gap
+        let p = d.at(96, 105)
+        #expect(p.r > 80 && p.r < 105)                       // ≈ 0.4 · (1 − 1.5/30) · 255
+    }
+
+    @Test func missingKeysTakeCatalogDefaults() throws {
+        #expect(BlendModeSpec.mode(fx("BlendModeEffect", [:])) == .screen)       // mode 12
+        #expect(MediaMatteSpec.mode(fx("MediaMatte", [:])) == (false, false))    // matteMode 1
+        let (rq, fr) = solid("w", .white)
+        // RoundCorners: radius 20.
+        let rc = try GPUTest.render(plan([box(rq, effects: [fx("RoundCorners", [:])])]), frames: [rq: fr])
+        #expect(rc.at(47, 25) == .black && rc.at(96, 54) == .white)
+        // Mask: 360×360 ellipse at the centre (layer px): a 400×400 layer at 0.25 loses its corners.
+        let big = box(rq, effects: [fx("Mask", [:])], transform: CGAffineTransform(scaleX: 0.25, y: 0.25),
+                      size: CGSize(width: 400, height: 400))
+        let m = try GPUTest.render(plan([big]), frames: [rq: fr])
+        #expect(m.at(96, 54) == .white && m.at(96, 12) == .white)
+        #expect(m.at(48, 6) == .black && m.at(144, 54) == .black)
+        // DropShadow: 10 px down-right, blur 10, opacity 0.4, dark grey.
+        let (rr, fred) = solid("r", .red)
+        let s = try GPUTest.render(plan([box(rr, effects: [fx("DropShadow", [:])])], bg: RGBA(1, 1, 1)), frames: [rr: fred])
+        let below = s.at(110, 89), above = s.at(80, 19)
+        #expect(below.r < 235 && below.r > 120)
+        #expect(above.r > 250)
+    }
+
     @Test func colorAdjustmentSaturationZeroIsNeutral() throws {
         let (rq, fr) = solid("r", .red)
         let img = try GPUTest.render(plan([box(rq, effects: [fx("ColorAdjustment", ["saturation": 0])])]),

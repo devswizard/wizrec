@@ -67,6 +67,8 @@ enum EffectRegistry {
         "Mask": MaskEffect(),
         "ColorAdjustment": ColorAdjustmentEffect(),
         "CursorColor": CursorColorEffect(),
+        BorderEffect.Spec.name: BorderEffect(),
+        ReflectionEffect.Spec.name: ReflectionEffect(),
     ]
 
     /// Layer-pass effects plus the compositing ones the compositor draws itself.

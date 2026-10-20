@@ -323,7 +323,7 @@ struct SceneEvaluator {
         guard let mb = effects.first(where: { $0.name == "MotionBlur" && !$0.bypassed }) else { return [] }
         let intensity = mb.value("intensity", 1)
         guard intensity > 0,
-              ["translation0", "translation1", "rotation2", "scale0", "scale1"].contains(where: { n.params[$0]?.isAnimated == true })
+              Conventions.transformKeys.contains(where: { n.params[$0]?.isAnimated == true })
         else { return [] }
         let fps = max(frameRate.double, 1)
         let shutter = Double(editRate) / fps * intensity * Conventions.motionBlurShutterFrames
