@@ -4,6 +4,25 @@ This file records every use of REA tools and every static analysis of
 TechSmith binaries. Each entry gives the evidence id, the target's SHA-256,
 the method, the conclusion and any open unknowns.
 
+## Status (2026-10-20, end of session 5)
+
+- **Still no REA tool use and no binary analysis.** Session 5 added only
+  Method 3 (runtime observation by UI automation, approved), entries RT-001
+  to RT-019 below: saves and JSON diffs.
+- **What was not done:**
+  - No exports and no *Export Frame*. The trial gate is RT-001.
+  - No screen capture of the canvas, and no use of `ProjectThumbnail`.
+  - Nothing licensing-related.
+  - The background-file `signature` was only observed as present or absent
+    (RT-009). It was never analysed, reproduced or bypassed.
+- **Bundle files** were read in place, for names and interface fields only.
+  These were the `.tsceffect` attribute lists and the `.tscshadervid`
+  `effectDef`s for RT-014 and RT-016.
+- **TechSmith files in `camtasia_rea_refs/`.** Camtasia copied some of its
+  own files into the saved bundles there: imported backgrounds and the
+  sketch-callout SVG embedded in `co3-regions`. These stay outside the repo
+  and are never vendored.
+
 ## Status (2026-10-19)
 
 **No REA tool use and no binary analysis so far.** Every spec to date was
