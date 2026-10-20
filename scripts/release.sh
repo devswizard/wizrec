@@ -9,11 +9,16 @@
 #
 # Environment (all optional):
 #   VERSION                 marketing version (default 0.1.0, passed to make-app.sh)
-#   WIZREC_SIGN_IDENTITY    codesign identity; unset = ad-hoc
+#   WIZREC_SIGN_IDENTITY    codesign identity; unset = ad-hoc. A non-Developer-ID identity
+#                           (self-signed "WizRec Dev") signs without hardened runtime
 #   NOTARIZE=1              notarize + staple app and DMG (needs WIZREC_NOTARY_PROFILE and
 #                           WIZREC_SIGN_IDENTITY; skipped with a warning when ad-hoc)
-#   WIZREC_BUNDLE_ID        CFBundleIdentifier (default: placeholder in make-app.sh)
-#   SPARKLE=1               also write an appcast (needs SPARKLE_BIN; see docs/RELEASING.md)
+#   WIZREC_BUNDLE_ID        CFBundleIdentifier (default com.devswizard.WizRec)
+#   WIZREC_SPARKLE_FEED     appcast https URL  } both or neither; written to Info.plist, the
+#   WIZREC_SPARKLE_PUBKEY   EdDSA public key   } app's updater is off without them
+#   SPARKLE=1               also write a signed appcast (needs WIZREC_DOWNLOAD_PREFIX; see
+#                           scripts/release/appcast.sh and docs/RELEASING.md)
+#   VERIFY=1                mount the DMG and launch the app (--quit-after 5) as a smoke test
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -49,6 +54,11 @@ if [ -n "${WIZREC_SIGN_IDENTITY:-}" ]; then
     echo "== Notarize DMG"
     scripts/release/notarize.sh "$DMG"
   fi
+fi
+
+if [ "${VERIFY:-0}" = 1 ]; then
+  echo "== Verify DMG"
+  scripts/release/verify-dmg.sh "$DMG"
 fi
 
 if [ "${SPARKLE:-0}" = 1 ]; then
