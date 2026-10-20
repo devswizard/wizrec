@@ -113,20 +113,35 @@ enum Conventions {
 
     // MARK: Geometry
 
-    /// translate(`translation0`, `translation1`) · rotate(`rotation2`) · scale(`scale0`, `scale1`),
-    /// in parent px, origin at the parent centre, +y up [inf: translation1 < 0 places the demo
-    /// camera bottom-right]. Rotation in radians, counter-clockwise in +y-up space [inf].
+    /// translate(`translation0`, `translation1`) · rotate(`rotation2`) · shear(`shear0`) ·
+    /// tilt(`rotation0`, `rotation1`) · scale(`scale0`, `scale1`), in parent px, origin at the parent
+    /// centre, +y up [obs: transform.md §1]. Missing keys: 0, scale 1 [transform.md §11].
+    ///
+    /// - `rotation2`: radians about the screen normal, written with the sign of the Rotation Z
+    ///   field [obs]; positive = counter-clockwise on screen [inf, weak: transform.md §4].
+    /// - `rotation1` / `rotation0` (Rotation Y / X, radians [obs]): drawn orthographically as a
+    ///   cos foreshortening of x / y [WizRec; perspective or orthographic is [?]].
+    /// - `shear0` (Skew field, the number shown [obs]): degrees, x += tan(shear0)·y in the layer's
+    ///   +y-up space [WizRec; unit and axis are [?]], clamped to ±89°.
     static func transform(_ p: SParams, at t: Double) -> CGAffineTransform {
         let tx = p.value("translation0", at: t, default: 0)
         let ty = p.value("translation1", at: t, default: 0)
         let rot = p.value("rotation2", at: t, default: 0)
         let sx = p.value("scale0", at: t, default: 1)
         let sy = p.value("scale1", at: t, default: 1)
-        // Applied to a point: scale first, then rotate, then translate.
-        return CGAffineTransform(scaleX: sx, y: sy)
+        let tiltX = cos(p.value("rotation1", at: t, default: 0))
+        let tiltY = cos(p.value("rotation0", at: t, default: 0))
+        let shear = min(max(p.value("shear0", at: t, default: 0), -89), 89) * .pi / 180
+        // Applied to a point: scale, tilt, shear, rotate, then translate.
+        return CGAffineTransform(scaleX: sx * tiltX, y: sy * tiltY)
+            .concatenating(CGAffineTransform(a: 1, b: 0, c: tan(shear), d: 1, tx: 0, ty: 0))
             .concatenating(CGAffineTransform(rotationAngle: rot))
             .concatenating(CGAffineTransform(translationX: tx, y: ty))
     }
+
+    /// Parameters that move a layer's geometry (motion blur samples them).
+    static let transformKeys = ["translation0", "translation1", "rotation0", "rotation1", "rotation2",
+                                "scale0", "scale1", "shear0"]
 
     /// `geometryCrop0..3` = left, top, right, bottom fractions [inf], clamped to 0…1
     /// (Camtasia writes −1e−13-style noise).
