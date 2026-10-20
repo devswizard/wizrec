@@ -259,7 +259,8 @@ private func box(_ rq: FrameRequest, effects: [EffectInstance], transform: CGAff
     }
 
     /// 1080p, 8 full-HD-quarter layers each with RoundCorners + DropShadow (blur 25) + Mask.
-    @Test func perf1080pEightLayersWithEffects() throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1", "timing: set WIZREC_PERF=1"))
+    func perf1080pEightLayersWithEffects() throws {
         let (rq, fr) = solid("w", .white)
         let canvas = CGSize(width: 1920, height: 1080)
         let layers: [Layer] = (0..<8).map { (i: Int) -> Layer in

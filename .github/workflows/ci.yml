@@ -92,6 +92,7 @@ jobs:
       # Media-heavy suites encode and decode through AVFoundation/VideoToolbox. On GitHub's
       # 3-core macOS VMs several such sessions at once stalled inside CoreMedia (writers and
       # readers never finished), so those suites run one test at a time in their own step.
+      # PerfTests joins them: its wait-helper self-tests need free GCD threads.
       - name: Test (all but media I/O, parallel)
         timeout-minutes: 30
         env:
@@ -102,7 +103,7 @@ jobs:
           WIZREC_WHISPER_TESTS: ""
           TEST_DEADLINE_SECONDS: "1500"
           TEST_LOG: test-core.log
-        run: scripts/ci/test-with-watchdog.sh --skip '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests)\.'
+        run: scripts/ci/test-with-watchdog.sh --skip '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests|PerfTests)\.'
 
       - name: Test (media I/O, serial)
         if: success() || failure()
@@ -115,4 +116,4 @@ jobs:
           WIZREC_WHISPER_TESTS: ""
           TEST_DEADLINE_SECONDS: "2700"
           TEST_LOG: test-media.log
-        run: scripts/ci/test-with-watchdog.sh --no-parallel --filter '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests)\.'
+        run: scripts/ci/test-with-watchdog.sh --no-parallel --filter '^(GoldenTests|RecorderTests|ExporterTests|MediaEngineTests|PlayerKitTests|PerfTests)\.'

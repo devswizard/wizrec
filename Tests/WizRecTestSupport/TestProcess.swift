@@ -48,8 +48,9 @@ public enum TestProcess {
             _ = attach(stderr, box: errBox, group: drained) { p.standardError = $0 }
         }
         let exited = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in exited.signal() }
         try p.run()
+        // Own thread, not GCD: on small CI VMs the shared pool can be busy with blocked tests.
+        Thread.detachNewThread { p.waitUntilExit(); exited.signal() }
         // Deadline.wait keeps the main run loop turning when a @MainActor test calls this.
         if !Deadline.wait(exited, seconds: bound) {
             p.terminate()
@@ -63,8 +64,8 @@ public enum TestProcess {
         }
         // The pipes close when the tool exits, unless a grandchild still holds them.
         let drainDone = DispatchSemaphore(value: 0)
-        drained.notify(queue: .global()) { drainDone.signal() }
-        _ = Deadline.wait(drainDone, seconds: 5)
+        Thread.detachNewThread { drained.wait(); drainDone.signal() }
+        _ = Deadline.wait(drainDone, seconds: max(5, bound))
         return ProcessOutput(status: p.terminationStatus, stdout: outBox.data, stderr: errBox.data)
     }
 
@@ -82,7 +83,8 @@ public enum TestProcess {
             set(pipe)
             let reader = pipe.fileHandleForReading
             group.enter()
-            DispatchQueue.global().async {
+            // A dedicated thread: a GCD worker may not start in time when the pool is saturated.
+            Thread.detachNewThread {
                 box.data = reader.readDataToEndOfFile()
                 group.leave()
             }

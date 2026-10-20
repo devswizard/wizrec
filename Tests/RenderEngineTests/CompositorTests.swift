@@ -256,7 +256,8 @@ private func solid(_ name: String, _ c: Px, _ w: Int = 16, _ h: Int = 16) -> (Fr
         #expect(img.at(96, 54) == .red)
     }
 
-    @Test func perf1080pEightLayers() throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1", "timing: set WIZREC_PERF=1"))
+    func perf1080pEightLayers() throws {
         let size = CGSize(width: 1920, height: 1080)
         var frames: [FrameRequest: VideoFrame] = [:]
         var layers: [Layer] = []
