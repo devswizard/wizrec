@@ -11,7 +11,7 @@ import TSCProjKit
         let dir = try scratchDir("ce3")
         defer { try? FileManager.default.removeItem(at: dir) }
         let movie = dir.appendingPathComponent("rec.mp4")
-        let info = try MediaWriter.writeH264(to: movie, width: 320, height: 200, fps: 30, frameCount: 90) { _, ctx in
+        let info = try await MediaWriter.writeH264(to: movie, width: 320, height: 200, fps: 30, frameCount: 90) { _, ctx in
             ctx.setFillColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
             ctx.fill(CGRect(x: 0, y: 0, width: 320, height: 200))
         }

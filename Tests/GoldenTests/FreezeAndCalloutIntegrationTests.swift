@@ -42,7 +42,7 @@ private func changed(_ a: RGBAImage, _ b: RGBAImage) -> Int {
         let bundle = try ProjectBundle.create(at: dir.appendingPathComponent("fz.cmproj"), width: W, height: H)
         let card = TestCard(width: W, height: H, label: "F")
         let movie = dir.appendingPathComponent("card.mp4")
-        _ = try MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: 30, bitsPerSecond: 8_000_000) { n, ctx in
+        _ = try await MediaWriter.writeH264(to: movie, width: W, height: H, fps: 30, frameCount: 30, bitsPerSecond: 8_000_000) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let setup = EditChain(bundle.project)

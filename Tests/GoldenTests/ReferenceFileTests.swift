@@ -83,7 +83,7 @@ import TSCProjKit
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("reference.mov")
         let card = TestCard(width: 320, height: 180, label: "A")
-        try MediaWriter.writeProRes(to: url, width: 320, height: 180, fps: 30, frameCount: 6) { n, ctx in
+        try await MediaWriter.writeProRes(to: url, width: 320, height: 180, fps: 30, frameCount: 6) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let info = try await MovieFrameReader.info(url)
@@ -101,7 +101,7 @@ struct ProResReferenceSelfTests {
     @Test @MainActor func goldenCasePrefersMovAndIgnoresForeignFloor() async throws {
         let dir = try scratchDir("golden-mov")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let media = try TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
+        let media = try await TestGen.makeMedia(in: dir.appendingPathComponent("_media"), scale: 0.25)
         let testCase = try #require(TestGen.cases.first { $0.name == "keyframes-linear" })
         let caseDir = try TestGen.write(testCase, media: media, to: dir)
         let golden = GoldenCase(name: testCase.name, directory: caseDir)
@@ -118,13 +118,14 @@ struct ProResReferenceSelfTests {
                                                      size: CGSize(width: m.width, height: m.height))
         }
         let count = (m.frames.max() ?? 0) + 1
-        try MediaWriter.writeProRes(to: golden.url("reference.mov"), width: m.width, height: m.height, fps: m.fps,
-                                    frameCount: count) { n, ctx in
-            if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: m.width, height: m.height)) }
+        let rendered = images, (w, h) = (m.width, m.height)
+        try await MediaWriter.writeProRes(to: golden.url("reference.mov"), width: w, height: h, fps: m.fps,
+                                          frameCount: count) { n, ctx in
+            if let img = rendered[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
         }
         // A wrong MP4 (all black) next to it: must be ignored.
-        try MediaWriter.writeH264(to: golden.url("reference.mp4"), width: m.width, height: m.height, fps: m.fps,
-                                  frameCount: count) { _, _ in }
+        try await MediaWriter.writeH264(to: golden.url("reference.mp4"), width: w, height: h, fps: m.fps,
+                                        frameCount: count) { _, _ in }
         let scores = try #require(try await runGoldenCase(golden))
         #expect(scores.count == m.frames.count)
         #expect(scores.allSatisfy { $0.passed }, "\(scores.filter { !$0.passed }.map(\.description))")
@@ -159,9 +160,10 @@ struct ProResReferenceSelfTests {
         for n in frames {
             images[n] = try await renderer.image(at: Int64(n) * 23_520_000, size: CGSize(width: w, height: h))
         }
-        try MediaWriter.writeProRes(to: golden.url("reference.mov"), width: w, height: h, fps: 30,
-                                    frameCount: (frames.max() ?? 0) + 1) { n, ctx in
-            if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
+        let rendered = images
+        try await MediaWriter.writeProRes(to: golden.url("reference.mov"), width: w, height: h, fps: 30,
+                                          frameCount: (frames.max() ?? 0) + 1) { n, ctx in
+            if let img = rendered[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
         }
         let scores = try #require(try await runSheet(golden))
         #expect(scores.count == frames.count)

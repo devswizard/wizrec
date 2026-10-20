@@ -33,7 +33,7 @@ private func bgra(_ pb: CVPixelBuffer) -> [UInt8] {
         defer { try? FileManager.default.removeItem(at: dir) }
         let movie = dir.appendingPathComponent("card.mp4")
         let card = TestCard(width: 160, height: 90, label: "S")
-        _ = try MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 90) { n, ctx in
+        _ = try await MediaWriter.writeH264(to: movie, width: 160, height: 90, fps: 30, frameCount: 90) { n, ctx in
             card.draw(frame: n, fps: 30, in: ctx)
         }
         let seq = try await MediaPool(diskCacheDirectory: nil).source(for: movie)

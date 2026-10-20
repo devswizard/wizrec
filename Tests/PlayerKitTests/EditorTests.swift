@@ -18,8 +18,8 @@ private func tempDir(_ name: String = #function) throws -> URL {
 }
 
 /// 2 s of 640×360 h264 at 30 fps.
-private func writeClip(_ url: URL, frames: Int = 60) throws {
-    try MediaWriter.writeH264(to: url, width: 640, height: 360, fps: 30, frameCount: frames) { n, ctx in
+private func writeClip(_ url: URL, frames: Int = 60) async throws {
+    try await MediaWriter.writeH264(to: url, width: 640, height: 360, fps: 30, frameCount: frames) { n, ctx in
         ctx.setFillColor(CGColor(red: Double(n % 30) / 30, green: 0.4, blue: 0.8, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: 640, height: 360))
     }
@@ -81,7 +81,7 @@ private func writeImage(_ url: URL) throws {
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("clip.mp4")
-        try writeClip(url)
+        try await writeClip(url)
         let info = try await MediaPool().probe(url)
         let d = SourceDescriptor(info: info, src: "./media/1/clip.mp4", lastModified: Date(timeIntervalSince1970: 0))
         #expect(d.src == "./media/1/clip.mp4")
@@ -185,7 +185,7 @@ private func writeImage(_ url: URL) throws {
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let clipURL = dir.appendingPathComponent("clip.mp4")
-        try writeClip(clipURL)
+        try await writeClip(clipURL)
 
         let doc = try EditorDocumentModel.untitled(in: dir)
         #expect(doc.isUntitled)
@@ -302,7 +302,7 @@ private func writeImage(_ url: URL) throws {
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let clip = dir.appendingPathComponent("screen.mp4"), img = dir.appendingPathComponent("cam.png")
-        try writeClip(clip)
+        try await writeClip(clip)
         try writeImage(img)
         let doc = try EditorDocumentModel.untitled(in: dir)
         // A file already inside the bundle (as the recorder writes it) is referenced, not copied.
@@ -326,7 +326,7 @@ private func writeImage(_ url: URL) throws {
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let clipURL = dir.appendingPathComponent("clip.mp4")
-        try writeClip(clipURL)
+        try await writeClip(clipURL)
         let doc = try EditorDocumentModel.untitled(in: dir)
         _ = try await doc.importAndInsert(clipURL, at: 0)
         let target = dir.appendingPathComponent("P.cmproj")

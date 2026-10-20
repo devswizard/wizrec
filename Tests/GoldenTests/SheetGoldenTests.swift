@@ -436,9 +436,10 @@ struct SheetHarnessSelfTests {
             for n in frames {
                 images[n] = try await renderer.image(at: Int64(n + offset) * 23_520_000, size: CGSize(width: w, height: h))
             }
-            try MediaWriter.writeH264(to: golden.url(movie), width: w, height: h, fps: 30,
-                                      frameCount: (frames.max() ?? 0) + 1, bitsPerSecond: 20_000_000) { n, ctx in
-                if let img = images[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
+            let rendered = images
+            try await MediaWriter.writeH264(to: golden.url(movie), width: w, height: h, fps: 30,
+                                            frameCount: (frames.max() ?? 0) + 1, bitsPerSecond: 20_000_000) { n, ctx in
+                if let img = rendered[n] { ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h)) }
             }
         }
         try await writeMovie(offset: 0)
