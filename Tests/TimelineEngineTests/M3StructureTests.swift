@@ -109,7 +109,7 @@ private let bin = #"[{"id" : 1, "src" : "./media/1/a.mp4", "sourceTracks" : []},
     try expectTracks(p, tracks(track(0, [leaf(31, start: 200, dur: 30, ms: "20", md: "30")]),
                                track(1, [leaf(32, start: 210, dur: 30, md: "30")])))
     #expect(p.timeline?.trackAttributes.count == 2)
-    let moved = try projectWithAttributes([track(0, [group.replacingOccurrences(of: #""volume" : 1.0"#, with: #""scale0" : 0.5"#)])])
+    let moved = try projectWithAttributes([track(0, [group.replacingOccurrences(of: #""volume" : 1.0"#, with: #""rotation2" : 0.5"#)])])
     expectRejected(UngroupClip(clipID: 30), on: moved, .invalid(""))
 }
 

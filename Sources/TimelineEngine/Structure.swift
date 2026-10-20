@@ -93,13 +93,24 @@ private func isIdentity(_ params: JSONObject?) -> Bool {
 
 /// Groups top-level clips (on one or more tracks) into a `Group` placed on
 /// the lowest of their tracks, spanning their earliest start to latest end.
+/// Observed Camtasia behaviour (group-edits.md §1):
 ///
+/// - Size: `widthAttr` × `heightAttr` is the union of the members'
+///   on-canvas rectangles (natural size × scale around their position)
+///   [obs]; rotation and crop are ignored [?]. Without a visual member the
+///   group is canvas-sized [inf].
+/// - Re-centring: the group's `translation0/1` is the centre of that box and
+///   every member's position (constant and keyframe values) shifts the
+///   opposite way, so nothing moves on screen [obs]. Zero offsets are not
+///   written [inf]. Other member parameters are untouched [obs].
 /// - Inner tracks: one per source track, bottom to top, with clip times
-///   relative to the group start; flags inline on the track [obs, demo].
-/// - The group's JSON follows the demo's group: crops + `volume` 1.0,
-///   `attributes` {ident, widthAttr, heightAttr (canvas), maxDurationAttr,
-///   gain, mixToMono}, float `mediaStart`/`mediaDuration`, `isOpen` metadata
-///   [obs]. `ident` is "Group n" (n = groups in the project + 1) [inf].
+///   relative to the group start; flags inline on the track [obs]. Emptied
+///   top-level tracks stay [obs].
+/// - Group JSON: parameters = the offset + `volume` 1.0 [obs];
+///   `attributes` {ident "Group n", widthAttr, heightAttr, maxDurationAttr 0,
+///   gain 1.0, mixToMono false} [obs]; decimal `mediaStart` 0.0 /
+///   `mediaDuration` [obs]; `isOpen` false metadata [obs]. n = groups in
+///   the project + 1 [inf].
 /// - Transitions whose clips are all grouped move inside; ones that link a
 ///   grouped and an ungrouped clip are removed.
 /// - Other clips on the lowest track must not overlap the group's span.
@@ -147,6 +158,25 @@ public final class GroupClips: EditCommand {
             }
             inner.append(.object(it))
         }
+        // Bounding box of the members on the canvas, and re-centring.
+        let movedClips = inner.compactMap(\.object).flatMap(trackClips)
+        let rects = movedClips.compactMap { GroupGeometry.rect($0, project) }
+        var size = (w: project.width, h: project.height), centre = (x: 0.0, y: 0.0)
+        if let minX = rects.map(\.minX).min(), let maxX = rects.map(\.maxX).max(),
+           let minY = rects.map(\.minY).min(), let maxY = rects.map(\.maxY).max() {
+            size = (maxX - minX, maxY - minY)
+            centre = ((minX + maxX) / 2, (minY + maxY) / 2)
+        }
+        for c in movedClips {
+            guard let o = GroupGeometry.owner(c), GroupGeometry.naturalSize(c, project) != nil else { continue }
+            if centre.x != 0 { GroupGeometry.map(GroupGeometry.params(o), "translation0") { $0 - centre.x } }
+            if centre.y != 0 { GroupGeometry.map(GroupGeometry.params(o), "translation1") { $0 - centre.y } }
+        }
+        var gParams: [(String, JSON)] = []
+        if centre.x != 0 { gParams.append(("translation0", J.param(centre.x))) }
+        if centre.y != 0 { gParams.append(("translation1", J.param(centre.y))) }
+        gParams.append(("volume", J.dbl(1)))
+
         let base = try edits.topTrack(lowest)
         for o in trackClips(base) {
             let s = o["start"]?.int ?? 0, e = s + (o["duration"]?.int ?? 0)
@@ -158,12 +188,12 @@ public final class GroupClips: EditCommand {
         let duration = gEnd - gStart
         let group = JSONObject([
             ("id", J.int(id)), ("_type", .string("Group")),
-            ("parameters", J.obj((0..<4).map { ("geometryCrop\($0)", J.param(0)) } + [("volume", J.dbl(1))])),
+            ("parameters", J.obj(gParams)),
             ("tracks", J.arr(inner)),
             ("attributes", J.obj([
-                ("ident", .string("Group \(groups + 1)")), ("widthAttr", J.dbl(project.width)),
-                ("heightAttr", J.dbl(project.height)), ("maxDurationAttr", J.int(duration)),
-                ("gain", J.dbl(1)), ("mixToMono", .bool(false)),
+                ("ident", .string("Group \(groups + 1)")), ("widthAttr", J.dbl(size.w)),
+                ("heightAttr", J.dbl(size.h)), ("maxDurationAttr", J.int(0)),
+                ("gain", J.dbl(1)), ("mixToMono", .bool(false)), ("assetProperties", J.emptyArray),
             ])),
             ("effects", J.emptyArray), ("start", J.int(gStart)), ("duration", J.int(duration)),
             ("mediaStart", J.dbl(0)), ("mediaDuration", J.dbl(Double(duration))), ("scalar", J.int(1)),
@@ -191,9 +221,15 @@ public final class GroupClips: EditCommand {
 /// `group track + i` (tracks are added at the top when missing). Inner clips
 /// are cut to the group's visible window and placed at
 /// `group.start + (inner.start − group.mediaStart)`; clips outside the window
-/// are dropped. Throws when the group has a non-unit speed, a non-identity
-/// transform/opacity or effects (they cannot be baked into the children
-/// yet [inf]), or when a placed clip would overlap.
+/// are dropped; stills absorb the cut in `trimStartSum` [obs, group-edits.md §6].
+///
+/// The group's constant position and scale are folded into each released
+/// visual clip [obs]: `translation = group.translation + group.scale ×
+/// child.translation` per axis, `scale = group.scale × child.scale`
+/// (keyframe values too); a constant position that comes out as 0 is
+/// removed [obs]. Throws when the group has a non-unit speed, rotation [?],
+/// opacity, crop, a non-unit volume, animated geometry or effects (not
+/// composable yet [inf]), or when a placed clip would overlap.
 @MainActor
 public final class UngroupClip: EditCommand {
     public let name = "Ungroup"
@@ -210,8 +246,30 @@ public final class UngroupClip: EditCommand {
         guard g.clipType == "Group" else { throw EditError.invalid("clip \(clipID) is not a group") }
         let t = try Timing(g)
         guard t.scalar == Rational(1) else { throw EditError.invalid("ungrouping a sped-up group is not supported") }
-        guard isIdentity(g["parameters"]?.object), (g["effects"]?.array?.count ?? 0) == 0 else {
+        let gp = g["parameters"]?.object
+        let composable: Set<String> = ["translation0", "translation1", "scale0", "scale1"]
+        let rest = gp.map { JSONObject($0.entries.filter { !composable.contains($0.key) }.map { ($0.key, $0.value) }) }
+        guard isIdentity(rest), (g["effects"]?.array?.count ?? 0) == 0,
+              !composable.contains(where: { GroupGeometry.isAnimated(gp, $0) }) else {
             throw EditError.invalid("group \(clipID) has a transform or effects; ungrouping would lose them")
+        }
+        let gx = GroupGeometry.constant(gp, "translation0", 0), gy = GroupGeometry.constant(gp, "translation1", 0)
+        let sx = GroupGeometry.constant(gp, "scale0", 1), sy = GroupGeometry.constant(gp, "scale1", 1)
+        func compose(_ piece: JSONObject) {
+            guard piece.clipType != "AMFile", let o = GroupGeometry.owner(piece) else { return }
+            var mapped: [String] = []
+            func apply(_ k: String, _ f: @escaping (Double) -> Double) {
+                GroupGeometry.map(GroupGeometry.params(o), k, f); mapped.append(k)
+            }
+            if gx != 0 || sx != 1 { apply("translation0") { gx + sx * $0 } }
+            if gy != 0 || sy != 1 { apply("translation1") { gy + sy * $0 } }
+            if sx != 1 { apply("scale0") { sx * $0 } }
+            if sy != 1 { apply("scale1") { sy * $0 } }
+            guard let p = o["parameters"]?.object else { return }
+            for k in mapped where k.hasPrefix("translation") && !GroupGeometry.isAnimated(p, k)
+                && p[k] != nil && GroupGeometry.constant(p, k, 1) == 0 {
+                p[k] = nil
+            }
         }
         let lo = Exact.floor(t.mediaStart), hi = lo + t.duration
         let offset = t.start - lo
@@ -231,6 +289,7 @@ public final class UngroupClip: EditCommand {
             for c in trackClips(inner) {
                 guard let piece = try trimmed(c, to: lo, hi) else { continue }
                 Magnetic.shift(piece, by: offset)
+                compose(piece)
                 let s = piece["start"]?.int ?? 0
                 _ = try M2.trackForInsert(dest, start: s, duration: piece["duration"]?.int ?? 0, track: ti)
                 try M2.insertSorted(piece, into: dest)
