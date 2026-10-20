@@ -273,3 +273,5 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - media7: MediaPool.toneMapStats; BandedSws; banded HDR 12-bit/alpha resample (4K HDR 4444 GPU 11.8 → 4.4 ms). 871 green.
 - researcher7: audio.md (AU1/AU2 panel names, params, fades as volume keyframes, dual-mono loudness), shader-backgrounds §10 (Camtasia rejects WizRec backgrounds). Audio agent spawned.
 - timeline7: observed group create/trim/split/ungroup + X7 stitched/image/transition rules; DECISIONS group-edit line amended.
+- captions6 slice 2: large multilingual whisper model for explicit non-English, Bengali script normalisation (turbo: 98–99 % Bengali script). 885 green.
+- researcher7: captions.md CA1/CA2, markers.md X8 (no clip markers in 2026.2.3; ripple keeps toc), shader-backgrounds SH2 effectDef table.
