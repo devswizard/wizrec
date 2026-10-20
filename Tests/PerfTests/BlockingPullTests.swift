@@ -37,9 +37,12 @@ struct BlockingPullTests {
         }
         #expect(seen == [1, 2, 3])
         #expect(cancels.value == 1)
-        // The producer stops within its buffer, it does not run on.
+        // The producer has left `next` before `drain` returns (the caller may free its reader),
+        // and stopped within its buffer.
+        let atReturn = source.value
         try await Task.sleep(nanoseconds: 50_000_000)
-        #expect(source.value <= 3 + 2 + 1)
+        #expect(source.value == atReturn)
+        #expect(atReturn <= 3 + 2 + 1)
     }
 
     @Test func bodyErrorPropagatesAndCancels() async {

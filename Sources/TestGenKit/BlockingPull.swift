@@ -65,6 +65,14 @@ public enum BlockingPull {
         thread.name = "wizrec-test-pull: \(what)"
         thread.stackSize = 4 << 20
         thread.start()
+        /// Stops the producer, unblocks it, and waits (bounded) until it left `next`, so the caller
+        /// never tears its reader down while the thread is still inside a pull. A pull that never
+        /// returns keeps its captures alive on the abandoned thread, so nothing is freed under it.
+        func shutDown() async {
+            channel.stop()
+            cancel()
+            await channel.waitForExit(seconds: min(bound, 10))
+        }
         var last = Date()
         while true {
             switch channel.take() {
@@ -72,16 +80,16 @@ public enum BlockingPull {
                 last = Date()
                 let keepGoing: Bool
                 do { keepGoing = try body(item) } catch {
-                    channel.stop(); cancel()
+                    await shutDown()
                     throw error
                 }
-                if !keepGoing { channel.stop(); cancel(); return }
+                if !keepGoing { await shutDown(); return }
             case .end:
                 return
             case .empty:
                 let remaining = bound - Date().timeIntervalSince(last)
                 if remaining <= 0 {
-                    channel.stop(); cancel()
+                    await shutDown()
                     throw PullStalled(what: what, seconds: bound)
                 }
                 let timer = Task {
@@ -106,6 +114,9 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
     private var stopped = false
     private var woken = false
     private var waiter: CheckedContinuation<Void, Never>?
+    private var exited = false
+    private var exitWoken = false
+    private var exitWaiter: CheckedContinuation<Void, Never>?
     /// Free slots; the producer takes one before each pull.
     private let space: DispatchSemaphore
 
@@ -118,6 +129,14 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
 
     /// Producer loop (pull thread): pulls until `next` returns nil or the consumer stops.
     func produce(_ next: () -> T?) {
+        defer {
+            lock.lock()
+            exited = true
+            let w = exitWaiter
+            exitWaiter = nil
+            lock.unlock()
+            w?.resume()
+        }
         while true {
             space.wait()
             lock.lock()
@@ -183,6 +202,34 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
         lock.unlock()
         w?.resume()
     }
+
+    /// Suspends until the producer loop has returned, at most `seconds`.
+    func waitForExit(seconds: Double) async {
+        let timer = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1e9))
+            self?.wakeExit()
+        }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if exited || exitWoken {
+                lock.unlock()
+                c.resume()
+                return
+            }
+            exitWaiter = c
+            lock.unlock()
+        }
+        timer.cancel()
+    }
+
+    private func wakeExit() {
+        lock.lock()
+        let w = exitWaiter
+        exitWaiter = nil
+        exitWoken = true
+        lock.unlock()
+        w?.resume()
+    }
 }
 
 extension BlockingPull {
@@ -196,10 +243,13 @@ extension BlockingPull {
                                _ body: (CMSampleBuffer) throws -> Bool) async throws {
         // The output is used only by the pull thread from here on; `cancelReading` is safe from
         // any thread; each sample is handed to the consumer and not touched by the thread again.
-        let out = PullHandle(output), rd = PullHandle(reader)
+        // `next` captures the reader too: the output must not outlive it while a pull runs.
+        let pair = PullHandle((reader, output))
         try await drain(what, seconds: seconds,
-                        next: { () -> PullHandle<CMSampleBuffer>? in out.value.copyNextSampleBuffer().map(PullHandle.init) },
-                        cancel: { rd.value.cancelReading() }) { (s: PullHandle<CMSampleBuffer>) throws -> Bool in
+                        next: { () -> PullHandle<CMSampleBuffer>? in
+                            pair.value.1.copyNextSampleBuffer().map(PullHandle.init)
+                        },
+                        cancel: { pair.value.0.cancelReading() }) { (s: PullHandle<CMSampleBuffer>) throws -> Bool in
             try body(s.value)
         }
     }
