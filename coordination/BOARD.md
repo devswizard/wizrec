@@ -251,7 +251,7 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 | S5-RES-2 | researcher | open | Experiments automated where feasible (X1–X8, SH2, AU1/AU2, CA1/CA2, EF0, TR, BH, CO3, J, `.tscshadervid` acceptance); specs updated, reviewed by main |
 | S5-QA-1 | qa | open | Golden + sheet suites re-run on references, `--calibrate` psnrMin; integration tests for every S5 feature; flaky watch |
 | S5-MED-1 | media | done (4K ProRes 4444 23.9→57–63 fps, 422 HQ ≥ 112 fps) | 4K ProRes (libav-only) release perf ≥ real time; fix if not; gated perf tests |
-| S5-MED-2 | media+render | media part done; render kernel pending merge | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
+| S5-MED-2 | media+render | done (Metal tone map byte-identical; 4K60 HEVC PQ 34→478 fps; playback pool .gpu) | Metal compute HDR→SDR tone map matching the CPU reference (tolerance documented), used for 4K60 HDR playback |
 | S5-REN-1 | render | blocked (no references) | Golden parity M1 (SSIM ≥ 0.97) and M4/M5/M6 (≥ 0.95) vs references; provisional Border/Reflection/BlendMode/MediaMatte replaced from specs; SH2 particle rules |
 | S5-CAP-1 | captions | live test + timing fixes done; CA1/CA2 waits on spec | Live whisper test green (`WIZREC_WHISPER_TESTS=1`); findings fixed; CA1/CA2 rules when spec lands |
 | S5-SHIP-1 | ship | done (Sparkle 2.10.0 off when unconfigured, self-signed DMG verified) | Sparkle via Package.swift (keys outside repo), bundle ID default, release DMG built locally (ad-hoc / self-signed), CI workflow ready for a remote |
@@ -265,3 +265,4 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - media6: `HDRToneMapping` GPU hook with CPU fallback; swscale row bands (4K ProRes 4444 23.9 → 57–63 fps); gated ProRes perf tests.
 - ship6: Sparkle 2.10.0 (off when unconfigured), `UpdaterConfiguration`, signed embedding, `verify-dmg.sh`, CI/release workflows ready, bundle ID `com.devswizard.WizRec`.
 - captions6: whisper.cpp 1.9.5 live green; word times kept out of silences (Silero VAD or energy compaction), silent audio skipped, VAD model not listed as transcription model. 841 tests green.
+- render6: Metal HDR tone map in the playback pool (byte-identical to CPU; 4K60 PQ 34 → 478 fps, HLG 29 → 496 fps); composite GPU 0.25 ms 1080p / 0.92 ms 4K. 848 tests green.
