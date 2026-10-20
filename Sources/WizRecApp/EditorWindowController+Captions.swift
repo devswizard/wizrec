@@ -35,7 +35,8 @@ extension EditorWindowController {
     private func transcribe(_ targets: [CaptionTarget]) async -> Int {
         defer { transcription = nil; ui.activity = nil }
         let backend = TranscriptionBackends.preferred()
-        var status = await backend.status(language: nil)
+        let language = AppPreferences.load(from: .standard).transcriptionLanguage
+        var status = await backend.status(language: language)
         if status == .needsPermission, backend.id == AppleSpeechRecognizer().id {
             // Without the usage string the system kills the process on request (bare `swift run`).
             guard Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") != nil else {
@@ -58,7 +59,7 @@ extension EditorWindowController {
             ui.activity = String(localized: "Transcribing \(prefix)\(name)…")
             do {
                 let media = try await model.thumbnailPool.source(for: url)
-                let words = try await transcriber.transcribe(media, stream: t.track, language: nil) { [weak self] p in
+                let words = try await transcriber.transcribe(media, stream: t.track, language: language) { [weak self] p in
                     Task { @MainActor in
                         guard self?.transcription != nil else { return }
                         self?.ui.activity = String(localized: "Transcribing \(prefix)\(name)… \(Int(p * 100))%")

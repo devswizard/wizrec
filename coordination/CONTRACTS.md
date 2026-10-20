@@ -175,6 +175,15 @@ detach audio, clip speed, extend frame, markers, add/remove/reorder effects and
 effect parameters, add/remove transitions. Each command: expected-JSON test +
 byte-identical revert.
 
+`InsertCallout` (app, approved 2026-10-20; `Sources/TimelineEngine/InsertCallout.swift`):
+`init(def: String /* JSON object text */, start: Int64 /* ticks, playhead */,
+track: Int? = nil /* nil = new top track */, duration: Int64? = nil /* nil = 5 s */,
+displayWidth: Double? = nil /* scale0/1 = displayWidth / def.width; nil = no scale */)`;
+`static let defaultSeconds = 5`; `clipID`, `trackIndex` after apply. CO3
+(`callouts.md` §3.1): 5 s at the playhead, region callouts scaled to a third of
+the canvas width. Free-track / magnetic rules as `InsertClip`. The app's
+Annotations library calls it through `PlayerKit.CalloutInsertion`.
+
 ## MediaEngine M2 (additive)
 
 - `StreamInfo` gains what `SourceDescriptor.Track` needs: stream timescale,

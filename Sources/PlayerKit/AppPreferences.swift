@@ -22,6 +22,8 @@ public struct AppPreferences: Sendable, Equatable {
         public static let framePolicy = "WizRec.FramePolicy"
         public static let showPerformanceOverlay = "WizRec.ShowPerformanceOverlay"
         public static let warnUnsignedBackgrounds = "WizRec.WarnUnsignedBackgrounds"
+        /// Spoken language for transcription (BCP-47 or bare code); "" = auto-detect.
+        public static let captionLanguage = "captions.language"
     }
 
     /// The welcome window was finished once (it then shows only if `showWelcomeAtLaunch`).
@@ -34,6 +36,8 @@ public struct AppPreferences: Sendable, Equatable {
     public var showPerformanceOverlay = false
     /// Saving a project with WizRec backgrounds says Camtasia won't show them (`BackgroundSaveNotice`).
     public var warnUnsignedBackgrounds = true
+    /// Spoken language of the audio to transcribe; "" = auto-detect (`transcriptionLanguage`).
+    public var captionLanguage = ""
 
     public init() {}
 
@@ -47,6 +51,7 @@ public struct AppPreferences: Sendable, Equatable {
         bool(Key.playAudio, &p.playAudio)
         bool(Key.showPerformanceOverlay, &p.showPerformanceOverlay)
         bool(Key.warnUnsignedBackgrounds, &p.warnUnsignedBackgrounds)
+        if let s = defaults.string(forKey: Key.captionLanguage) { p.captionLanguage = s }
         if let s = defaults.string(forKey: Key.framePolicy), let f = FramePolicy(rawValue: s) { p.framePolicy = f }
         return p
     }
@@ -59,7 +64,18 @@ public struct AppPreferences: Sendable, Equatable {
         defaults.set(framePolicy.rawValue, forKey: Key.framePolicy)
         defaults.set(showPerformanceOverlay, forKey: Key.showPerformanceOverlay)
         defaults.set(warnUnsignedBackgrounds, forKey: Key.warnUnsignedBackgrounds)
+        defaults.set(captionLanguage, forKey: Key.captionLanguage)
     }
+
+    /// The language passed to speech recognition: nil for auto-detect ("" or "auto").
+    public var transcriptionLanguage: String? {
+        let l = captionLanguage.trimmingCharacters(in: .whitespaces)
+        return l.isEmpty || l.lowercased() == "auto" ? nil : l
+    }
+
+    /// Languages offered in Settings ▸ Captions (BCP-47 codes; "" = auto-detect, first).
+    public static let captionLanguages = ["", "en", "bn", "hi", "ur", "ar", "zh", "ja", "ko", "es", "pt", "fr", "de",
+                                          "it", "nl", "ru", "uk", "pl", "tr", "id", "vi", "th"]
 
     /// Whether the welcome window opens at launch. Never for scripted launches (project
     /// paths, snapshots or `--quit-after` on the command line).
