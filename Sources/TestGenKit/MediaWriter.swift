@@ -115,8 +115,17 @@ public enum MediaWriter {
             guard writer.status == .writing else { break }
             guard let pool = adaptor.pixelBufferPool else { throw MediaWriterError.setup("no pixel buffer pool") }
             var pbOut: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pbOut)
-            guard let pb = pbOut else { throw MediaWriterError.writeFailed("pixel buffer allocation") }
+            let poolStatus = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pbOut)
+            if pbOut == nil {
+                // The pool can refuse under heavy load (many encoders at once, seen in parallel
+                // test runs); a standalone buffer works the same for the adaptor.
+                CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA,
+                                    [kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any]()] as CFDictionary, &pbOut)
+            }
+            guard let pb = pbOut else {
+                throw MediaWriterError.writeFailed("pixel buffer allocation (pool status \(poolStatus), writer status "
+                                                   + "\(writer.status.rawValue)\(writer.error.map { ": \($0)" } ?? ""))")
+            }
             CVPixelBufferLockBaseAddress(pb, [])
             let ctx = CGContext(
                 data: CVPixelBufferGetBaseAddress(pb), width: width, height: height, bitsPerComponent: 8,
