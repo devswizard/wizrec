@@ -25,8 +25,8 @@ picks the whisper.cpp model, shows the models folder, and takes a `whisper-cli` 
 
 ### Setting up whisper.cpp
 
-whisper.cpp is a free, open-source (MIT) speech recogniser. WizRec does not bundle it; it
-runs the `whisper-cli` program you install.
+whisper.cpp is a free, open-source (MIT) speech recogniser. It is **optional**: Apple Speech
+works without it. WizRec does not bundle it; it runs the `whisper-cli` program you install.
 
 1. Install the program, for example with Homebrew: `brew install whisper-cpp`. WizRec looks
    for `whisper-cli` in your `PATH`, `/opt/homebrew/bin` and `/usr/local/bin`, or at a path
@@ -36,9 +36,12 @@ runs the `whisper-cli` program you install.
    - `small` is a good balance of speed and accuracy and handles Bengali well; `medium` and
      `large-v3-turbo` are more accurate but slower and larger.
    - Models ending in `.en` (for example `ggml-base.en.bin`) understand English only.
-   - With several models installed, WizRec uses the one chosen in Settings, otherwise the
-     first of `small`, `large-v3-turbo`, `medium`, `large-v3`, `base`, `tiny`.
-3. Language: auto-detected unless you choose one.
+   - With several models installed, WizRec uses the one chosen in Settings. Otherwise it
+     uses `small` for English or auto-detect, and a large multilingual model
+     (`large-v3-turbo` first) when you choose another spoken language.
+3. Language: set **Settings ▸ Captions ▸ Spoken language**. Auto-detect works for many
+   languages, but choose Bengali explicitly for Bengali (auto-detect may hear Hindi).
+   Bengali needs `large-v3-turbo`; `small` writes it in the wrong script.
 
 If the program or the model is missing, whisper.cpp shows as unavailable and Apple Speech
 keeps working.

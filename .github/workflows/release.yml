@@ -1,8 +1,9 @@
 # Release build: app bundle with FFmpeg and Sparkle inside, signature, optional notarization,
 # DMG, smoke test (mount + launch), optional signed Sparkle appcast.
 # Runs on version tags and by hand. Signs and notarizes only when the repository secrets
-# exist; otherwise produces an ad-hoc signed DMG artifact. Never pushes or publishes
-# anything: the DMG (and appcast.xml) are workflow artifacts. See docs/RELEASING.md.
+# exist; otherwise produces an ad-hoc signed DMG. On a version tag the DMG is attached to
+# a GitHub Release (draft: a maintainer publishes it); a manual run only keeps the
+# workflow artifact. See docs/RELEASING.md.
 name: Release
 
 on:
@@ -15,7 +16,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write   # create the tag's GitHub Release
 
 jobs:
   release:
@@ -122,6 +123,23 @@ jobs:
             build/WizRec-*.dmg
             build/updates/appcast.xml
           if-no-files-found: error
+
+      - name: Attach DMG to a draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          files=(build/WizRec-*.dmg)
+          [ -f build/updates/appcast.xml ] && files+=(build/updates/appcast.xml)
+          shasum -a 256 build/WizRec-*.dmg > build/SHA256SUMS.txt
+          files+=(build/SHA256SUMS.txt)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" "${files[@]}" --draft --title "WizRec $TAG" \
+              --notes-file docs/release-notes-template.md
+          fi
 
       - name: Remove temporary keychain and keys
         if: always()

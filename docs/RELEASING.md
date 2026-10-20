@@ -216,3 +216,14 @@ The repository has no remote yet. Once the user creates it (e.g. `devswizard/wiz
    `NOTARY_TEAM_ID`, `NOTARY_PASSWORD` (app-specific password).
 4. Updates: variables `WIZREC_SPARKLE_FEED`, `WIZREC_SPARKLE_PUBKEY`,
    `WIZREC_DOWNLOAD_PREFIX`; secret `SPARKLE_ED_PRIVATE_KEY`.
+
+## Publishing a release (GitHub)
+
+No Apple Developer account: releases are ad-hoc signed and never notarized.
+
+1. Bump the version if needed, commit, then tag and push: `git tag v0.1.0 && git push
+   origin v0.1.0`.
+2. The Release workflow builds the DMG (FFmpeg and Sparkle inside, so users install
+   nothing else), runs the DMG smoke test, and attaches `WizRec-<version>.dmg` and
+   `SHA256SUMS.txt` to a **draft** GitHub Release using `docs/release-notes-template.md`.
+3. Fill in "What's new" on the draft and publish it.

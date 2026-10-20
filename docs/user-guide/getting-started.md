@@ -2,10 +2,17 @@
 
 ## Install
 
-- **Release:** open the `WizRec-<version>.dmg` and drag WizRec to Applications. Releases run
-  on Apple silicon Macs with macOS 14 or later.
-- **From source:** see the [README](../../README.md#build-from-source). A source build uses
-  Homebrew's FFmpeg, so keep `brew install ffmpeg` on that Mac.
+You need a Mac with Apple silicon (M1 or later) and macOS 14 Sonoma or later. Nothing
+else: no Xcode, no Homebrew. Everything WizRec needs is inside the app.
+
+1. Download the latest `WizRec-<version>.dmg` from
+   [Releases](https://github.com/devswizard/wizrec/releases).
+2. Open it and drag **WizRec** into **Applications**.
+3. First launch only: right-click **WizRec** ▸ **Open** ▸ **Open**. WizRec is free and not
+   notarized by Apple, so macOS asks once. If it only offers *Move to Trash*, open
+   **System Settings ▸ Privacy & Security** and click **Open Anyway**.
+
+Developers building from source: see the [README](../../README.md#build-from-source-developers).
 
 ## Permissions
 

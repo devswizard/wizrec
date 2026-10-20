@@ -36,14 +36,28 @@ Out of scope: quizzes, hotspots, Smart Player, TechSmith cloud sharing.
 
 ## Install
 
-Releases are ad-hoc signed DMGs (arm64, macOS 14 or later). They are not notarized,
-so macOS warns on first launch: right-click WizRec.app ▸ **Open** ▸ **Open**, or allow it
-in System Settings ▸ Privacy & Security ▸ **Open Anyway**. Until the first public
-release, build from source.
+**You need:** a Mac with Apple silicon (M1 or later) and macOS 14 Sonoma or later.
+Nothing else: no Xcode, no Homebrew. FFmpeg and everything WizRec needs are inside the app.
 
-## Build from source
+1. Download the latest **WizRec-x.y.z.dmg** from
+   [Releases](https://github.com/devswizard/wizrec/releases).
+2. Open the DMG and drag **WizRec** into **Applications**.
+3. First launch only: right-click **WizRec** in Applications ▸ **Open** ▸ **Open**.
+   WizRec is free and not notarized by Apple, so macOS asks this once. If it only
+   offers *Move to Trash*, go to **System Settings ▸ Privacy & Security** and click
+   **Open Anyway**.
 
-Requirements: macOS 14+, Xcode 16+ (Swift 6), Homebrew `ffmpeg` and `pkg-config`.
+To record, allow **Screen & System Audio Recording**, **Camera** and **Microphone**
+when macOS asks.
+
+**Optional, for better captions:** WizRec transcribes with Apple's built-in speech
+recognition out of the box. For offline, multilingual transcription (e.g. Bengali) you
+can add whisper.cpp; see [Captions](docs/user-guide/captions.md).
+
+## Build from source (developers)
+
+Only needed if you want to change WizRec. Requirements: macOS 14+, Xcode 16+ (Swift 6),
+Homebrew `ffmpeg` and `pkg-config`.
 
 ```sh
 brew install ffmpeg pkg-config
@@ -61,8 +75,9 @@ swift run tscproj roundtrip "<project.tscproj>" -o /tmp/copy.tscproj
 swift run wizrec-record --list      # recorder check (needs Screen Recording permission)
 ```
 
-A self-contained release DMG (FFmpeg bundled, optional signing and notarization):
-`scripts/release.sh` — see [docs/RELEASING.md](docs/RELEASING.md).
+A self-contained release DMG (FFmpeg bundled, so users need nothing else):
+`scripts/release.sh`. Pushing a `v*` tag builds it on GitHub and attaches it to a draft
+Release — see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Documentation
 
