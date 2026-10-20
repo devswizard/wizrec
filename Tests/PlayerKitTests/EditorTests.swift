@@ -107,6 +107,14 @@ private func writeImage(_ url: URL) throws {
         #expect(d.naturalDuration(editRate: 705_600_000) == 5 * 705_600_000)
     }
 
+    @Test func shaderBackgroundsPlaceForSixtySeconds() {
+        // A background dropped on the timeline becomes a 60 s clip [obs, shader-backgrounds.md SH2].
+        let d = SourceDescriptor(src: "./bg.tscshadervid", lastModified: Date(), tracks: [
+            SourceDescriptor.Track(type: 0, editRate: 30, rangeEnd: Int64.max, width: 1920, height: 1080,
+                                   sampleRate: Rational(30), bitDepth: 32, channelCount: 0)])
+        #expect(d.naturalDuration(editRate: 705_600_000) == 60 * 705_600_000)
+    }
+
     @Test func probeMetadataWins() {
         let info = MediaInfo(url: URL(fileURLWithPath: "/r.trec"), kind: .recording, streams: [
             StreamInfo(index: 0, kind: .video, codec: "tscc2", pixelSize: CGSize(width: 3024, height: 1964),
