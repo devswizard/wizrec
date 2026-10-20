@@ -281,3 +281,5 @@ GUI lock: `camtasia_rea_refs/.gui.lock` (mkdir), one GUI driver at a time.
 - researcher7 done: export-only leftovers listed in docs/testing/camtasia-session-2.md.
 - audio6 slice 2: DFN3 written without blob, existing blob preserved. render6: caption fit from runs, 31 blend modes, matte modes/trackDepth, transition params, volume point envelopes, Extend Frame held video frame. timeline7: ED0 insert defaults, ED1 Extend Frame, two-sided transition split on move, shader backgrounds 60 s. 948 green.
 - 12:xx: qa, render, app hit the API session limit; resumed.
+- qa6 slice 4: audio panel, caption rules, markers, shader background integration tests; MediaWriter pool fallback (flake fix). 955 green.
+- render6 CO3 callouts (highlighter, blur invert, sketch draw-on, keystroke). app7 slice 2: dynamic caption presets + Add Captions, Audio tab, Add Audio Point, loudness on import, InsertCallout + annotations library. 975 green.
