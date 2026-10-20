@@ -163,7 +163,7 @@ func projectWithAttributes(_ trackJSON: [String], magnetic: Set<Int> = [], timel
     let fade = AddTransition(name: "Fade", leftClipID: nil, rightClipID: 10, duration: 10)
     try expectReversible(fade, on: p)
     try fade.apply(to: p)
-    let t = try #require(p.tracks[0].object)
+    let t = p.tracks[0].object
     #expect(t.keys == ["trackIndex", "medias", "transitions", "parameters"])
     let want = #"[{"name" : "Fade", "duration" : 10, "trivial" : false, "reverse" : false, "bypass" : false, "useAudioPreRoll" : true, "useVisualPreRoll" : true, "rightMedia" : 10}]"#
     #expect(t["transitions"] == (try JSON.parse(want)))
