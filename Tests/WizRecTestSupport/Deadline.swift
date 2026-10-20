@@ -79,7 +79,7 @@ public enum Deadline {
                                 _ start: (@escaping @Sendable () -> Void) -> Void) async throws {
         let bound = seconds * scale
         let once = Once<Void>()
-        try await withCheckedThrowingContinuation(isolation: isolation) { (c: CheckedContinuation<Void, any Error>) in
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
             once.arm(c)
             once.setTimer(Task {
                 try? await Task.sleep(nanoseconds: Deadline.nanoseconds(bound))
@@ -101,10 +101,12 @@ public enum Deadline {
 
     /// Waits for `semaphore` at most `seconds` (not scaled); returns false on timeout.
     ///
-    /// Off the main thread this is a plain timed wait. On the main thread it never parks the
-    /// thread: it polls the semaphore and runs the main run loop (and so the main dispatch queue)
-    /// in between, because on the CI VM `AVAssetWriter.finishWriting` (and possibly other
-    /// AVFoundation/VideoToolbox completions) needs the main thread; blocking it deadlocks.
+    /// Off the main thread this is a plain timed wait. On the main thread it polls the semaphore
+    /// every millisecond and runs the main run loop in between, so run-loop sources, perform
+    /// blocks and `performSelector(onMainThread:)` still fire. It cannot run `DispatchQueue.main`
+    /// blocks: inside a `@MainActor` test the main queue is busy with the test itself (measured,
+    /// QA10). Work that completes on the main queue (on the CI VM `AVAssetWriter.finishWriting`)
+    /// therefore times out here; a `@MainActor` test must `await` such work instead.
     public static func wait(_ semaphore: DispatchSemaphore, seconds: Double) -> Bool {
         guard Thread.isMainThread else { return semaphore.wait(timeout: .now() + seconds) == .success }
         let end = Date().addingTimeInterval(seconds)

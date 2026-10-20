@@ -69,11 +69,15 @@ struct DeadlineTests {
         #expect(throws: DeadlineExceeded.self) { try Deadline.blocking("never", seconds: 0.05) { _ in } }
     }
 
-    /// A completion that is delivered on the main queue (as `finishWriting` needs on the CI VM)
-    /// still arrives while a main-actor test waits synchronously: no deadlock.
-    @MainActor @Test func blockingOnMainKeepsMainQueueRunning() throws {
-        try Deadline.blocking("main-queue completion", seconds: 5) { done in
-            DispatchQueue.global().async { DispatchQueue.main.async { done() } }
+    /// A completion delivered through the main run loop (perform block / performSelector) still
+    /// arrives while a main-actor test waits synchronously. (A `DispatchQueue.main` block cannot:
+    /// the main queue is busy running this test; see `Deadline.wait`.)
+    @MainActor @Test func blockingOnMainServicesTheRunLoop() throws {
+        try Deadline.blocking("main run-loop completion", seconds: 5) { done in
+            DispatchQueue.global().async {
+                CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) { done() }
+                CFRunLoopWakeUp(CFRunLoopGetMain())
+            }
         }
         let r = try TestProcess.run("/bin/sh", ["-c", "echo main"], seconds: 10)
         #expect(r.stdoutText == "main\n")
