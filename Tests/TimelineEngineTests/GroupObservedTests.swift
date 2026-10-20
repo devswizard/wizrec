@@ -54,6 +54,11 @@ private func expectLossless(_ p: Project, sourceLocation: SourceLocation = #_sou
         "gain" : 1.0, "mixToMono" : false, "assetProperties" : []}
         """)))
     #expect(g.object["mediaStart"]?.number?.lexeme == "0.0" && g.object["mediaDuration"]?.number?.lexeme == "150.0")
+    // Key layout [obs, §1a].
+    #expect(g.object.keys == ["id", "_type", "parameters", "tracks", "attributes", "effects", "start", "duration",
+                              "mediaStart", "mediaDuration", "scalar", "metadata", "animationTracks"])
+    let innerKeys = ["trackIndex", "medias", "parameters", "ident", "audioMuted", "videoHidden", "magnetic", "matte", "solo"]
+    #expect((g.object["tracks"]?.array?.items ?? []).map { $0.object?.keys ?? [] } == [innerKeys, innerKeys])
     // Members shift the opposite way; scale untouched.
     #expect(g.tracks[0].clips[0].parameters.object.entries.map(\.key) == ["translation0", "scale0", "scale1"])
     #expect(g.tracks[0].clips[0].parameters.object["translation0"]?.number?.lexeme == "150.0")  // bare, first
