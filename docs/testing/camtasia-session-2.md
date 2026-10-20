@@ -349,3 +349,34 @@ Then the golden tests run with:
 ```sh
 REFS_DIR=~/WorkDir/vibe_coding/camtasia_rea_refs swift test --filter "GoldenTests"
 ```
+
+## Still needs a licensed export (status 2026-10-20)
+
+The researcher automated every save-only step of sessions 1 and 2 (ledger
+RT-001 to RT-019). The installed Camtasia is a trial whose export offers only
+"with/without watermark", so **nothing below could be done**. This list is
+the complete set of steps left for you, all of which need a Camtasia that
+exports without a watermark. Skip every part not listed here.
+
+**Already done by automation, don't repeat:** session 1 Part B (X1–X8);
+session 2 Parts B (EF0), F (CO3), G (CA1, CA2 saves), I (AU1, and the AU2
+save), J (ED0, ED1), the D transition saves (TR2, TR3), and the A5/A7
+mode-name questions (the full blend and matte tables were read from
+Properties).
+
+| # | Step | Where | What it answers |
+|---|---|---|---|
+| 1 | The 15 reference MP4s | Session 1 Part A | Golden gates for M1 (transform, crop, opacity, speed, keyframes, the `eioe` curve) |
+| 2 | Sheets A1–A9: *Export Frame* PNG (and A6 MP4) | Session 2 Part A, steps 5 and the A6 extra; step 4 (Save) is also needed, because Camtasia's own thumbnail is only usable when you make it | Golden gates for M4/M5 effects and callouts; stencil/silhouette blend modes (1–4); matte reach (`trackDepth`) |
+| 3 | `tr1.mp4` | Session 2 Part D, TR1 step 7 | Where a two-sided transition's window sits (centred or not) and whether its 0.5 s is the whole window; whether one-sided fades go to transparent; the look of Fade (`LuminanceFadeIn`), FadeThroughBlack, RadialWipe, CubeRotate (export the TR2 variants too) |
+| 4 | SH1 and SH2 with an exported frame | Session 2 Part C (save, then *Export Frame* at the parked playhead) | Shader `_Time` origin; what the particle pass draws onto (transparent or black); the pixel mapping of a `Position` parameter |
+| 5 | `bh1-*.mp4`, `bh2-image.mp4` | Session 2 Part E | Behaviour phase timing and movement curves |
+| 6 | `ca2-dynamic.mp4` (first 10 s) | Session 2 Part G, CA2 step 3 | Dynamic-caption block breaking, fitted text size, vertical placement |
+| 7 | `au2.m4a` (*Export ▸ Export Audio Only*, whole timeline) | Session 2 Part I, AU2 step 4, using `research/audio/au2/au2.cmproj` | Loudness normalisation on output: per clip or on the mix, peak cap or limiter |
+| 8 | An audio export of `research/audio/au1-audio.cmproj` and `au1c-fades.cmproj` | Same folder, *Export Audio Only* | Fade curve shape; the sound of Audio Compression, Emphasize (ducking) and Pitch |
+| 9 | Part H in full (TM1–TM3 recordings, CE1–CE3) | Session 2 Part H | These need your own screen recordings, which automation can't make privately; CE2 and CE3 also need exports |
+
+Not export-related, but still manual (they need mouse drags that the
+automation can't do reliably): ED2 (Clip Speed 1.5× from the Properties
+field), ED3 (magnetic track drops) and ED4 (Shift-drag ripple trim), from
+session 2 Part J; typing caption text and bold runs in CA1.
