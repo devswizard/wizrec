@@ -86,10 +86,14 @@ Dated log. Newest last.
   YUV→BGRA conversion with stream-level tags, so a decoded frame depends only
   on (source, frame). Exceptions documented in VideoDecoder.swift (12-bit /
   alpha formats). (media, approved.)
-- **2026-10-19 · Group-edit rules [inf]:** a drop past a group's end grows it
-  (and enclosing groups); `maxDurationAttr` untouched; adding/removing inner
-  tracks keeps group timing; drops before `mediaStart` rejected; a group keeps
-  ≥ 1 track. To confirm with experiment X5. (timeline, approved.)
+- **2026-10-19 · Group-edit rules [inf]** (amended 2026-10-20): superseded
+  by `docs/specs/group-edits.md` §1–6 and edit-semantics X7 ([obs]: group =
+  members' bounding box, re-centred; `maxDurationAttr` 0; trim-start trims
+  inner clips; split copies inner content whole; ungroup cuts to the window
+  and composes the transform). Still [inf] (drags not automated): a drop past
+  a group's end grows it (and enclosing groups); drops before `mediaStart`
+  rejected; adding/removing inner tracks keeps group timing; a group keeps
+  ≥ 1 track. (timeline, approved.)
 - **2026-10-19 · Build tooling (session 4, user):** keep SwiftPM + scripts
   (`scripts/make-app.sh`, release scripts); no Xcode project.
 - **2026-10-19 · Fixture thumbnail (session 4, user):** strip the Camtasia
