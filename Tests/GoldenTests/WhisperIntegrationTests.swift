@@ -1,3 +1,4 @@
+import AVFoundation
 import Captions
 import CoreMedia
 import Foundation
@@ -146,6 +147,70 @@ private struct FakeWhisperCLI {
         await #expect(throws: (any Error).self) {
             _ = try await Transcriber(backend: failing.recognizer).transcribe(media, stream: stream.index, language: nil)
         }
+        #expect(chain.project.serialized() == before)
+    }
+}
+
+/// S5-QA-1: real whisper.cpp (`whisper-cli` + an installed ggml model) end to end through a
+/// project: `say` speech → 48 kHz WAV imported into a bundle → clip at 1 s → Transcriber →
+/// ApplyTranscription → save → reopen → undo. Opt in with `WIZREC_WHISPER_TESTS=1`.
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["WIZREC_WHISPER_TESTS"] == "1",
+                             "set WIZREC_WHISPER_TESTS=1 (needs whisper-cli and a ggml model)"))
+@MainActor struct WhisperLiveIntegrationTests {
+    @Test func liveWhisperThroughProject() async throws {
+        let recognizer = WhisperCppRecognizer.fromDefaults()
+        guard recognizer.isAvailable else {
+            Issue.record("whisper.cpp not available: \(await recognizer.status(language: nil))")
+            return
+        }
+        let dir = try scratchDir("whisper-live-int")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let wav = dir.appendingPathComponent("speech.wav")
+        let say = Process()
+        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        say.arguments = ["--data-format=LEI16@48000", "-o", wav.path,
+                         "The quick brown fox jumps over the lazy dog. Then it runs home."]
+        try say.run(); say.waitUntilExit()
+        #expect(say.terminationStatus == 0)
+        let samples = try Int64(AVAudioFile(forReading: wav).length)
+        #expect(samples > 48_000, "say produced \(samples) samples")
+
+        let bundle = try ProjectBundle.create(at: dir.appendingPathComponent("live.cmproj"), width: 320, height: 180)
+        let setup = EditChain(bundle.project)
+        let add = AddSource(SourceDescriptor(src: try bundle.importFile(wav), lastModified: Date(timeIntervalSince1970: 1_792_000_000), tracks: [
+            .init(type: 2, editRate: 48_000, rangeEnd: samples, width: 0, height: 0, sampleRate: Rational(48_000), bitDepth: 16, channelCount: 1),
+        ]))
+        try setup.run(add)
+        let source = try #require(add.sourceID)
+        try setup.run(InsertClip(sourceID: source, track: 0, start: frames(30)))
+        let chain = EditChain(bundle.project)
+        let before = chain.project.serialized()
+
+        let file = bundle.resolve(try #require(bundle.project.source(id: source)))
+        let media = try await MediaPool(diskCacheDirectory: nil).source(for: file)
+        let stream = try #require(media.info.streams.first { $0.kind == .audio })
+        let started = Date()
+        let words = try await Transcriber(backend: recognizer).transcribe(media, stream: stream.index, language: "en-US")
+        let seconds = Double(samples) / 48_000
+        print(String(format: "whisper live: %.1f s audio in %.1f s: ", seconds, Date().timeIntervalSince(started))
+              + words.map(\.text).joined(separator: " "))
+
+        let normalised = Set(words.map { $0.text.lowercased().trimmingCharacters(in: .punctuationCharacters.union(.whitespaces)) })
+        for w in ["quick", "brown", "fox", "lazy", "dog"] {
+            #expect(normalised.contains(w), "missing \"\(w)\" in \(words.map(\.text))")
+        }
+        #expect(zip(words, words.dropFirst()).allSatisfy { $0.start <= $1.start })
+        #expect(words.allSatisfy { $0.start >= 0 && $0.end <= seconds + 0.5 && $0.start <= $0.end })
+
+        try chain.run(ApplyTranscription(sourceID: source, track: 0, words: words))
+        let stored = Transcript.words(in: chain.project, sourceID: source, track: 0)
+        #expect(stored.map(\.text) == words.map(\.text))
+        try bundle.saveWithBackup()
+        let reopened = try ProjectBundle(url: bundle.directory)
+        #expect(Transcript.words(in: reopened.project, sourceID: source, track: 0) == stored)
+        #expect(ProjectInvariants.check(reopened.project).isEmpty)
+        try chain.expectUndoRedoWalk()
+        try chain.undoAll()
         #expect(chain.project.serialized() == before)
     }
 }
