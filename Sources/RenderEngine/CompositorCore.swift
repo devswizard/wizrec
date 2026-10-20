@@ -424,6 +424,16 @@ final class CompositorCore {
             let mt = try backdropTexture([Item(fill: .gradient(white), quad: mask)], space: space, clear: false, pass: pass)
             out = [Item(fill: .pass("spotlight_fs", [b, mt], SIMD4(intensity * Float(layer.opacity), 0, 0, 0)),
                         quad: Self.fullPassQuad)]
+        case "TypeWinHighlighter":
+            // `fill-invert` 1: the highlight colour covers everything outside the box [inf from the name].
+            var mask = box
+            mask.opacity = 1
+            let white = [SIMD4<Float>](repeating: SIMD4(1, 1, 1, 1), count: 4)
+            let mt = try backdropTexture([Item(fill: .gradient(white), quad: mask)], space: space, clear: false, pass: pass)
+            let f = c.fill
+            out = [Item(fill: .pass("highlight_outside_fs", [b, mt],
+                                    SIMD4(Float(f.r), Float(f.g), Float(f.b), Float(f.a * layer.opacity))),
+                        quad: Self.fullPassQuad)]
         default:
             break
         }
@@ -509,6 +519,7 @@ final class CompositorCore {
     /// backdrop pass; the rest rasterise themselves. Crops do not apply to callouts [?].
     static func drawsItself(_ c: CalloutContent) -> Bool {
         !["TypeWinBlur", "TypeWinPixelate", "TypeWinSpotlight"].contains(c.kind)
+            && !(c.kind == "TypeWinHighlighter" && c.invert)   // inverted: covers everything outside the box
     }
 
     // MARK: Geometry

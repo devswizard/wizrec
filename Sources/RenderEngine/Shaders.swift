@@ -219,6 +219,16 @@ enum Shaders {
         return float4(b.rgb * k, b.a);
     }
 
+    // Backdrop (texture 0) with straight colour q.c0 (alpha q.c0.a) laid over it outside the mask
+    // (texture 1 alpha), both screen-space: an inverted highlighter.
+    fragment float4 highlight_outside_fs(VOut in [[stage_in]], constant Quad& q [[buffer(0)]],
+                                         texture2d<float> B [[texture(0)]], texture2d<float> M [[texture(1)]],
+                                         sampler smp [[sampler(0)]]) {
+        float4 b = B.sample(smp, screen_uv(in, q));
+        float a = q.c0.a * (1.0 - M.sample(smp, screen_uv(in, q)).a);
+        return float4(q.c0.rgb * a, a) + b * (1.0 - a);
+    }
+
     // Copies the input unchanged (pass-through, tests).
     fragment float4 copy_fs(FSOut in [[stage_in]], constant FX& fx [[buffer(0)]],
                             texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {

@@ -126,6 +126,14 @@ public struct CalloutContent: Sendable, Equatable {
     /// Set for a dynamic caption (`def.modifier == "dynamicCaption"`): `text` is then the current
     /// block's text and `runs` one run over all of it (font, weight, colour; no size).
     public var dynamicCaption: DynamicCaptionRender?
+    /// Sketch Motion (`TypeWinSVG` / `MacSVG`): the drawing's SVG document (`xmlContent`, the user's
+    /// project content: drawn in place, never stored by WizRec), stroked with `stroke` / `strokeWidth`.
+    public var svg: String?
+    /// Sketch Motion: fraction of the strokes drawn, 0–1 (`DrawTime` with its draw-on ramp).
+    public var drawProgress: Double = 1
+    /// Keystroke (`MacKey`): `keyStyle` 0–4 and whether the key background shows (`showKeyBackg`).
+    public var keyStyle: Int = 0
+    public var showKeyBackground: Bool = true
 
     public init(kind: String = "remix", shape: String = "shape-rectangle", style: String = "",
                 size: CGSize, fill: RGBA = RGBA(1, 1, 1, 1), stroke: RGBA = RGBA(0, 0, 0, 1),

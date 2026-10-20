@@ -275,7 +275,9 @@ struct SceneBuilder {
             let size = (d?.width ?? 0) > 0 && (d?.height ?? 0) > 0
                 ? CGSize(width: d?.width ?? 0, height: d?.height ?? 0) : canvas
             guard let def = c.object["def"]?.object else { return .unsupported(type: "Callout", size: size) }
-            return .callout(SCallout(def), size: size)
+            var sc = SCallout(def)
+            sc.ramps = SEffect.ramps(c.object)
+            return .callout(sc, size: size)
         case .other(let t):
             return .unsupported(type: t, size: canvas)
         }
@@ -426,7 +428,7 @@ struct SceneEvaluator {
             l.effects += inner.effects
             return l
         case .callout(let c, let size):
-            var content = c.content(at: kt, size: size)
+            var content = c.content(at: kt, size: size, span: span)
             if let dc = c.caption {
                 let frame = dc.frame(at: t, editRate: editRate)
                 content.dynamicCaption = DynamicCaptionRender(frame: frame, style: dc.style)
