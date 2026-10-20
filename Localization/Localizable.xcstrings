@@ -59,6 +59,9 @@
     "About WizRec" : {
 
     },
+    "Abstract" : {
+
+    },
     "Add Audio Point" : {
 
     },
@@ -245,6 +248,16 @@
     "Copy" : {
 
     },
+    "Could not add %arg: %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Could not add %1$arg: %2$arg"
+          }
+        }
+      }
+    },
     "Cut" : {
 
     },
@@ -270,6 +283,15 @@
 
     },
     "Done" : {
+
+    },
+    "Double-click to add at the cut under the playhead or to the selected clips" : {
+
+    },
+    "Double-click to add at the playhead" : {
+
+    },
+    "Double-click to add to the selected clips" : {
 
     },
     "Drop media files here\nor choose File ▸ Import Media…" : {
@@ -360,6 +382,9 @@
 
     },
     "Go to Start  (Home)" : {
+
+    },
+    "Gradients" : {
 
     },
     "Group" : {
@@ -470,6 +495,9 @@
       }
     },
     "Paste" : {
+
+    },
+    "Patterns" : {
 
     },
     "Permissions" : {

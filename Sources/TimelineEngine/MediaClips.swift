@@ -106,12 +106,14 @@ enum MediaJSON {
     }
 
     static func videoClip(id: Int64, type: String, src: Int64, stream: Int, ident: String, scale: Double,
-                          timing: Timing, metadata: JSON?) -> JSONObject {
+                          timing: Timing, metadata: JSON?, sourceEffect: JSON? = nil) -> JSONObject {
         var pairs: [(String, JSON)] = [
             ("id", J.int(id)), ("_type", .string(type)), ("src", J.int(src)), ("trackNumber", J.int(stream)),
             ("attributes", J.obj([("ident", .string(ident))])),
-            ("parameters", visualParameters(scale: scale, image: false)), ("effects", J.emptyArray),
+            ("parameters", visualParameters(scale: scale, image: false)),
         ]
+        if let sourceEffect { pairs.append(("sourceEffect", sourceEffect)) }
+        pairs.append(("effects", J.emptyArray))
         pairs += timingPairs(timing)
         if let metadata { pairs.append(("metadata", metadata)) }
         pairs.append(("animationTracks", J.emptyObject))

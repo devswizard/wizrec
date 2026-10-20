@@ -9,7 +9,7 @@
 set -u
 cd "$(dirname "$0")"
 failed=0
-for c in check-export-close.sh check-settings-captions.sh check-group-drop.sh check-audio-panel.sh; do
+for c in check-export-close.sh check-settings-captions.sh check-group-drop.sh check-audio-panel.sh check-library-a11y.sh; do
     echo "=== $c"
     ./"$c" || failed=$((failed + 1))
 done

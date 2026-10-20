@@ -5,8 +5,9 @@
 #
 # Six batch presets (the default 1080p, two 4K, three ProRes) keep the queue busy long enough
 # to answer the alerts (a release build exports the demo at several times real time).
-# After starting, the export sheet is closed (exports go on in the background), as a user
-# does before closing the window: ⌘W while the sheet is up only reaches the sheet.
+# After starting, the export sheet is closed (exports go on in the background) for the first
+# two parts. The third presses ⌘W with the sheet still up: that takes the window's close path
+# too (sheet dismissed, then the same confirmation), and with no export running it just closes.
 # A running export is seen on disk: its staging folder `.wizrec-export-*` in the export folder.
 #
 # The app runs without --quit-after: scripted runs never ask before cancelling exports, which
@@ -34,12 +35,14 @@ check_outputs() {
     return $bad
 }
 
+# start_export [keep]: with "keep", the sheet stays open after starting.
 start_export() {
     ax keys e cmd >/dev/null
     wait_until 10 'has_el export.start' || { fail "export sheet did not open"; return 1; }
     for p in "${PRESETS[@]}"; do [ "$(ax check "export.preset.$p")" = ok ] || log "preset checkbox missing: $p"; done
     ax click export.start >/dev/null
     wait_until 10 'has_el export.cancelAll' && pass "export running" || { fail "export did not start"; return 1; }
+    [ "${1:-}" = keep ] && return 0
     ax click export.close >/dev/null
     wait_until 10 '! has_el export.close' || fail "export sheet did not close"
     exporting && pass "export goes on after closing the sheet" || { fail "export stopped with the sheet"; return 1; }
@@ -82,6 +85,25 @@ if start_export; then
     ax click "Cancel Export and Quit" >/dev/null
     wait_until 20 '! app_alive' && pass "app quit after cancelling" || fail "app did not quit"
     check_outputs && pass "no unfinished export files after quit" || fail "unfinished export files after quit"
+fi
+stop_app
+
+# --- ⌘W with the export sheet open
+rm -rf "$WORK/exports"; mkdir -p "$WORK/exports"
+open_project -WizRec.ExportFolder "$WORK/exports" || exit 1
+if start_export keep; then
+    ax keys w cmd >/dev/null
+    wait_until 20 'has_el "Keep Exporting"' && pass "⌘W on the sheet asks while exporting" || fail "⌘W on the sheet did not ask"
+    ax click "Keep Exporting" >/dev/null
+    sleep 1
+    has_window demo && exporting && pass "Keep Exporting after ⌘W: window open, export running" \
+        || fail "Keep Exporting after ⌘W did not keep the window and export"
+    ax keys e cmd >/dev/null
+    wait_until 10 'has_el export.cancelAll' && ax click export.cancelAll >/dev/null
+    wait_until 60 '! exporting' || fail "exports did not stop"
+    ax keys w cmd >/dev/null
+    wait_until 20 '! has_window demo' && pass "⌘W on the idle sheet closes the window" || fail "⌘W on the idle sheet did nothing"
+    app_alive && pass "app still running after ⌘W" || fail "app exited on ⌘W"
 fi
 stop_app
 gui_unlock
