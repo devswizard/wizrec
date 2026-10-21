@@ -39,7 +39,8 @@ GOAL (session 10), in priority order:
 3. Pending work below (no user input needed), with agents. User-visible
    fixes first: I test every release myself. When a batch of them is green,
    ship v0.1.3 (rpath-clean, no key needed) and install it in /Applications
-   for me (quit my WizRec only if it isn't running; otherwise ask).
+   for me (replace it only while my WizRec isn't running; otherwise ask me
+   to quit it first).
 4. Only if I delivered licensed Camtasia reference exports: golden parity
    M1/M4/M5/M6 and the "Still needs a licensed export" list at the end of
    docs/testing/camtasia-session-2.md. Never use the trial's watermarked
