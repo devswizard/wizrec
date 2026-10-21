@@ -8,7 +8,7 @@
 #   DRY_RUN=1 …                                # print signing/notary commands, run nothing remote
 #
 # Environment (all optional):
-#   VERSION                 marketing version (default 0.1.1, passed to make-app.sh)
+#   VERSION                 marketing version (default 0.1.2, passed to make-app.sh)
 #   WIZREC_SIGN_IDENTITY    codesign identity; unset = ad-hoc. A non-Developer-ID identity
 #                           (self-signed "WizRec Dev") signs without hardened runtime
 #   NOTARIZE=1              notarize + staple app and DMG (needs WIZREC_NOTARY_PROFILE and
@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION=${VERSION:-0.1.1}
+VERSION=${VERSION:-0.1.2}
 export VERSION
 APP=build/WizRec.app
 DMG=build/WizRec-$VERSION.dmg

@@ -1,8 +1,8 @@
 <!--
   Release notes used by .github/workflows/release.yml for the draft GitHub Release.
-  Written for v0.1.1 (v0.1.0's notes are in git history and on its GitHub Release).
+  Written for v0.1.2 (v0.1.0's notes are in git history and on its GitHub Release).
   For a later release: rewrite "What's new", update "Known limits", and change the
-  version in the download line and the tag in the links (v0.1.1) before tagging.
+  version in the download line and the tag in the links (v0.1.2) before tagging.
   See docs/RELEASING.md.
 -->
 
@@ -11,12 +11,12 @@ video editor for the Mac by Devs Wizard. It opens your Camtasia projects.
 
 ## Download
 
-Download **WizRec-0.1.1.dmg** below. Nothing else to install: FFmpeg and everything
+Download **WizRec-0.1.2.dmg** below. Nothing else to install: FFmpeg and everything
 WizRec needs are inside the app.
 
 **You need:** a Mac with Apple silicon (M1 or later) and macOS 14 Sonoma or later.
 
-1. Open the DMG and drag **WizRec** into **Applications**. If you have WizRec 0.1.0,
+1. Open the DMG and drag **WizRec** into **Applications**. If you have an older WizRec,
    quit it first and choose **Replace**: your projects and settings stay as they are.
 2. First launch only: in Applications, right-click (or Control-click) **WizRec** and
    choose **Open**, then click **Open** in the dialog. macOS asks this once because
@@ -33,48 +33,24 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 
 ## What's new
 
-**Fixes**
-- **Export and recording no longer hang.** When macOS's video encoder stops responding,
-  an export now stops with the message "The encoder stopped responding" in the export
-  queue, and a recording ends with an error, instead of waiting forever. The unfinished
-  file is removed.
-- **The window stays responsive** while the preview renders a snapshot: WizRec no
-  longer waits for the graphics card on the main thread.
-- **Captions typed in Camtasia** (saved as rich text) now show their text in WizRec
-  instead of raw formatting codes.
-- **A rare crash while rendering is fixed.** Closing a project or exporting while the
-  preview was still drawing frames could crash WizRec.
-- **Faster audio export**, especially for projects that don't store an audio sample
-  rate (up to about ten times faster), with exactly the same sound.
-- **Caption errors are shown in full**: when speech recognition fails right away, the
-  error message now always includes the reason.
+**Getting started**
+- **A start screen.** WizRec now opens on a start screen with your recent projects (with
+  thumbnails) and buttons for **New Project**, **New Recording**, **Open Project…** and
+  **Import Media…**. You can also drop a project or a video onto it. It comes back when you
+  close the last project (**Window ▸ Start Screen**, ⇧⌘1), and you can turn it off at launch.
+- **Opening projects works when Camtasia is installed.** The Open dialog used to grey out
+  `.cmproj` and `.tscproj` files on Macs that also have Camtasia. They can now be chosen.
+- **Open a video directly.** Opening a video, audio or image file starts a new project with
+  that file already on the timeline.
 
-**Editing, closer to Camtasia**
-- **Copy and paste with groups** works the way Camtasia does it: clips copied out of a
-  group keep their place and size on the canvas, and clips pasted into a group stay
-  inside the group's time range (on a free track inside it) instead of making the group
-  longer. Copying from or pasting into a Rev media group is not allowed, as in Camtasia.
-- **Clip Speed** rounds the way Camtasia does: when a speed doesn't give a whole number
-  of frames, the clip keeps all of its media and the speed is adjusted very slightly.
-  The new duration can also be set directly.
-- **Dropping media into an open group** works like Camtasia: the group keeps its length,
-  and the clip lands where you drop it (on a new track above when you drop it over the
-  tracks). A Library item double-clicked while a group is open goes in at the playhead.
-- **Animated shader backgrounds**: keyframes you set on a background's settings are now
-  saved the way Camtasia saves them, so the animation survives a later move or resize
-  of the clip.
+**Editor**
+- **A toolbar** with **Import**, **Record**, **Undo**, **Redo** and a clear **Export** button
+  (also **File ▸ Export…**, ⌘E). Right-click the toolbar to customise it (zoom buttons are
+  available there).
 
-**Accessibility**
-- The tiles on every **Library** tab can be reached with the keyboard: **Tab** and
-  **Shift-Tab** move between tiles, **Space** or **Return** acts like a click on the
-  focused tile, and VoiceOver reads each tile's name. Space on a
-  focused tile no longer starts playback. Tab also reaches tiles that are scrolled out
-  of view.
-
-**Download and app bundle**
-- The app no longer carries file paths from the machine that built it, and every
-  release is checked for that before it goes public.
-- Groundwork for automatic updates (see Known limits).
+See the [0.1.1 release](https://github.com/devswizard/wizrec/releases/tag/v0.1.1) for the
+previous changes (faster audio export, Camtasia-style Clip Speed and group drops, crash
+fixes).
 
 ## Known limits
 
@@ -97,11 +73,11 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 ## Source code and licences
 
 WizRec is free software under the
-[GNU General Public License v3.0 or later](https://github.com/devswizard/wizrec/blob/v0.1.1/LICENSE).
-Its source code for this release is the `v0.1.1` tag of
-[devswizard/wizrec](https://github.com/devswizard/wizrec/tree/v0.1.1).
+[GNU General Public License v3.0 or later](https://github.com/devswizard/wizrec/blob/v0.1.2/LICENSE).
+Its source code for this release is the `v0.1.2` tag of
+[devswizard/wizrec](https://github.com/devswizard/wizrec/tree/v0.1.2).
 The bundled libraries (FFmpeg and its codecs, Sparkle) are listed with their licences in
-[THIRD_PARTY_NOTICES.md](https://github.com/devswizard/wizrec/blob/v0.1.1/THIRD_PARTY_NOTICES.md)
+[THIRD_PARTY_NOTICES.md](https://github.com/devswizard/wizrec/blob/v0.1.2/THIRD_PARTY_NOTICES.md)
 and, with exact versions, in `WizRec.app/Contents/Resources/Licenses/MANIFEST.txt`; their
 source code is available from each project at those versions and from the Homebrew
 formulae that built them.
