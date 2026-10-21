@@ -152,24 +152,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 }
 
-/// `-WizRec.WindowSnapshots <dir>` (argument domain; UI checks and screenshots): this many
-/// seconds after launch (`-WizRec.WindowSnapshotDelay`, default 5) every visible window, title
-/// bar and toolbar included, is written to `<dir>/window-<n>-<title>.png`. The Metal canvas
-/// draws through a layer `cacheDisplay` does not capture (use `--snapshot-dir` for it).
+/// `-WizRec.WindowSnapshots <dir>` (argument domain; UI checks and screenshots): every visible
+/// window, title bar and toolbar included, is written to `<dir>/shot-<k>-<n>-<title>.png`
+/// - each time the process receives SIGUSR1 (`kill -USR1 <pid>`, the check decides when), and
+/// - once, `-WizRec.WindowSnapshotDelay` seconds after launch, when that key is given.
+/// The Metal canvas draws through a layer `cacheDisplay` does not capture (use `--snapshot-dir`).
 @MainActor
 enum WindowSnapshots {
+    private static var directory: URL?
+    private static var shots = 0
+    private static var signalSource: (any DispatchSourceSignal)?
+
     static func scheduleIfRequested(defaults: UserDefaults = .standard) {
         guard let dir = defaults.string(forKey: "WizRec.WindowSnapshots"), !dir.isEmpty else { return }
-        let delay = defaults.object(forKey: "WizRec.WindowSnapshotDelay") != nil
-            ? defaults.double(forKey: "WizRec.WindowSnapshotDelay") : 5
+        directory = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
+        signal(SIGUSR1, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        source.setEventHandler { MainActor.assumeIsolated { takeAll() } }
+        source.resume()
+        signalSource = source
+        guard defaults.object(forKey: "WizRec.WindowSnapshotDelay") != nil else { return }
+        let delay = defaults.double(forKey: "WizRec.WindowSnapshotDelay")
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1e9))
-            let out = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
-            try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-            for (n, w) in NSApp.orderedWindows.filter(\.isVisible).enumerated() {
-                let title = w.title.isEmpty ? "untitled" : w.title.replacingOccurrences(of: "/", with: "-")
-                write(w, to: out.appendingPathComponent("window-\(n)-\(title).png"))
-            }
+            takeAll()
+        }
+    }
+
+    private static func takeAll() {
+        guard let out = directory else { return }
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        shots += 1
+        for (n, w) in NSApp.orderedWindows.filter(\.isVisible).enumerated() {
+            let title = w.title.isEmpty ? "untitled" : w.title.replacingOccurrences(of: "/", with: "-")
+            write(w, to: out.appendingPathComponent("shot-\(shots)-\(n)-\(title).png"))
         }
     }
 
