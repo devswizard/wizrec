@@ -30,6 +30,14 @@ final class RecordingEngine {
 
     init(options: RecordingOptions) { self.options = options }
 
+    /// Test seam (QA11-3): installs the file writers `prepare()` would create, without any
+    /// capture source, so tests can drive `finish()` with injected (e.g. stuck) writers.
+    /// Internal (`@testable import Recorder`); the app never calls it.
+    func installWritersForTesting(screen: MediaFileWriter, camera: MediaFileWriter? = nil,
+                                  mic: MediaFileWriter? = nil, system: MediaFileWriter? = nil) {
+        writers = (screen, camera, mic, system)
+    }
+
     private func url(_ name: String) -> URL { options.outputDirectory.appendingPathComponent(name) }
 
     /// Checks permissions, creates the folder and starts every source. Frames delivered before
