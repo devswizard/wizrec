@@ -16,7 +16,10 @@ through the Mac App Store, whose terms conflict with the GPL.
   and never notarized; users confirm the first launch (README). The Developer ID paths below
   stay for a future account.
 - **Publishing** is automated: `release/publish` on `main` → `publish.yml` (see "Publishing
-  a release").
+  a release"). **v0.1.0 is public** since 2026-10-20 23:03 UTC (Publish run 39512345012).
+  Checked afterwards without a token: `shasum -a 256 -c` OK, `verify-dmg.sh` OK (with
+  `WIZREC_ALLOW_BUILD_RPATHS=1`: one Xcode 26.6 back-deploy run path in the executable),
+  launch from the mounted DMG on a temp copy of the demo project with `--quit-after 5`: exit 0.
 - **Still waiting on the user:** the Sparkle key pair (one command, below).
 
 ## Prerequisites
