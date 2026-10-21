@@ -66,7 +66,7 @@ One window per project, four regions [obs]:
 | Right: the **properties panel** for the selection, toggled by a *Properties* button under it | [obs] |
 | Bottom: the **timeline**, separated by a draggable splitter; it can be detached into its own window | [obs] |
 | The canvas can also be detached (*View ▸ Canvas ▸ Detach Canvas*) | [obs] |
-| A new project starts with **two empty tracks** ("Track 1", "Track 2") | [obs] |
+| A new project starts with **two empty tracks**, named by number | [obs] |
 
 ## 3. Main toolbar (top of the editor)
 
@@ -91,7 +91,7 @@ middle. Undo/redo/split live in the **timeline** toolbar, not here.
 
 | Source → target | Result | Tag |
 |---|---|---|
-| Media bin tile → **canvas** | "Add Media" at the **playhead**, on the **lowest track with room for the whole clip** from the playhead; if none has room, a **new track on top**. Seen three times: playhead 0 with tracks 1–2 busy → new track 3; playhead 7 s → track 2 (free from 5 s, while track 3 was also free); playhead 5.5 s → track 3, because track 2 had only 1.5 s free before its next clip | [obs] `ui1`–`ui3`; rule [inf] from 3 cases |
+| Media bin tile → **canvas** | Adds the clip (one undoable add step) at the **playhead**, on the **lowest track with room for the whole clip** from the playhead; if none has room, a **new track on top**. Seen three times: playhead 0 with tracks 1–2 busy → new track 3; playhead 7 s → track 2 (free from 5 s, while track 3 was also free); playhead 5.5 s → track 3, because track 2 had only 1.5 s free before its next clip | [obs] `ui1`–`ui3`; rule [inf] from 3 cases |
 | Media bin tile → **timeline** track | Lands at the drop point on that track; onto the empty area above the top track, a new track. Onto an occupied spot, nothing (non-magnetic) or an insert at a boundary (magnetic) | [obs] RT-020, RT-025 |
 | Annotation / callout tile → canvas | New callout, 5 s, at the playhead | [obs] RT-017 |
 | Visual / audio / cursor effect, behaviour, animation tile → a clip (timeline or canvas) | Adds that item to the clip | [obs] RT-010, RT-016 |
@@ -109,9 +109,9 @@ upwards, else a new top track"; a timeline drop is "add where dropped".
 
 | Where | What a first-time user sees | Tag |
 |---|---|---|
-| Media bin, no media | A sentence saying recordings and imported media appear here, and an **Import Media…** button in the middle of the panel | [obs] |
-| Library, empty | A sentence saying the library is empty and holds media reusable across projects, plus **Import Media…** | [obs] |
-| Properties, nothing selected | A title "Empty Selection" and a hint to select something on the timeline | [obs] |
+| Media bin, no media | A sentence saying recordings and imported media appear here, and an **import** button in the middle of the panel | [obs] |
+| Library, empty | A sentence saying the library is empty and holds media reusable across projects, plus the same import button | [obs] |
+| Properties, nothing selected | A heading saying nothing is selected, and a hint to select something on the timeline | [obs] |
 | Canvas, empty project | Just the canvas background colour (black by default) at the project size; no hint text | [obs] |
 | Timeline, empty project | Two empty, named tracks; the playhead at 0; time label `00:00:00;00/00:00:00;00` | [obs] |
 | Transport and edit buttons, empty project | Play, frame step and clip step are disabled; Undo, Redo, Cut, Copy and Split are disabled; **Paste stays enabled** | [obs] |
