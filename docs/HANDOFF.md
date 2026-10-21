@@ -6,7 +6,68 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 9 snapshot (2026-10-21) — read this first
+## 0. Session 10 snapshot (2026-10-21) — read this first
+
+- **`main` is green: 1227 tests, 0 known issues** (qa14: golden-harness and LoadGate
+  self-tests now collect their expected failures, so a known issue in CI's annotation is
+  real). CI runs 44–51 green; new ubuntu `actionlint` job (1.7.12, SHA-256 pinned and
+  checked against the release checksums by the lead).
+- **User at start:** no Sparkle key, no licensed exports this session; closing the last
+  project keeps showing the start screen even with "Show at launch" off (DECISIONS).
+  Mid-session the user asked for a render-only companion that exports Camtasia-trial
+  projects without the watermark: **declined** (hard rule 2; it would exist to bypass a
+  paid feature). WizRec stays a full editor of its own; don't revisit.
+- **v0.1.3:** tagged on `3ea58d4` (CI run 50 green), Release workflow draft, published by
+  `release/publish` = `v0.1.3`. **Public 2026-10-21T14:26:37Z**, verified from the public
+  URL: `WizRec-0.1.3.dmg` 21.2 MB, SHA-256 `d6d15b4a…beea`, verify-dmg OK (ad-hoc, updates
+  off, 22 Mach-O paths clean, launch/quit 6 s). Installed in /Applications (0.1.2 backup in
+  the session scratchpad). The Release job sat ~1 h in GitHub's macOS queue; publish.yml's
+  75-minute wait covered it.
+- **Landed in session 10** (agents ship, researcher, qa, timeline, media, app):
+  - ship14: actionlint CI job, `check-notes.sh` (release.yml runs it on tags), v0.1.3 notes,
+    verify-dmg launches without window restoration.
+  - researcher14 (wall-reviewed): `docs/specs/ui-workflow.md` — Camtasia's main window in our
+    own words, §12 first-time-user checklist; group-edits §8.7 busy-spot drops (RT-028);
+    shader-backgrounds §11.3 `ident` = file stem, case kept (RT-029; our import matches).
+  - timeline14: `DropRules`/`DropClip` — canvas drop = lowest unlocked track with room at the
+    playhead, else new top track; busy timeline drop = insert at a clip start when ≤ 1 s in
+    and in its first half [WizRec] (push that track), else lowest higher track with room,
+    else new top track [WizRec; Camtasia sometimes refuses]; open groups never grow.
+  - media14: `LockedTextureCache`/`CacheTexture` moved to MediaEngine and now make textures
+    straight from IOSurfaces (no `CVMetalTextureCache`; wrappers retain their pixel buffer).
+    Finding: REN12-1 was most likely a pixel-buffer pool freed with frames in flight
+    (cache+lock 12/12 crash; IOSurface path 0/30 under `-O`). 4K tone map +0.1–0.5 ms/frame.
+  - qa14/15: start-screen workflow integration tests, 0 known issues, flaky watch green up to
+    load 219; `windowFrameMatchesWindowList` race fixed (live windows moving mid-test).
+  - app14: empty states (canvas Record/Import, bin, timeline, properties), drops on every
+    surface with plain errors, timeline toolbar, all import paths through `DropClip` (old
+    PlayerKit `Placement` deleted) + hover preview, window key loop + AX audit, Clip Speed
+    Duration (`SetClipDuration`)/Speed fields, `check-drops.sh` (real Finder-style drags).
+    UI checks 10/10 on main.
+- **Demo (built app, copy of demo project):** snapshots 0/5/12.5/25 s OK; ProRes 422 export
+  25.67 s in 2.2 s.
+- **Follow-ups (owners in `docs/NEXT_SESSION_PROMPT.md`):**
+  - ui-workflow §12 items 6–9 (canvas handles/crop mode, effect/annotation/transition tile
+    drags, context menus, captions entry points);
+  - new projects have 1 track, Camtasia starts with 2 (`ProjectBundle.create`);
+  - group drops still use `InsertClipInGroup`, not `DropRules`; Finder-file hover has no
+    landing preview (duration unknown before import);
+  - editor window frame autosave shares the user's defaults domain with UI runs;
+  - optional: IOSurface texture reuse cache if the tone-map cost shows up;
+  - still [?]: Camtasia's real insert window (g4 inserted ~1.7 s in); a disabled unlabelled
+    timeline-toolbar button; everything export-dependent.
+- **Researcher helpers** (session scratchpad, recreate if gone): a Save As workaround for
+  `cam.sh saveas` and a waypoint drag helper (`mdrag.swift`); Camtasia's undo label can't
+  show whether a drop did anything — check the saved project.
+- **NEED_USER:**
+  1. One Sparkle `generate_keys` run (back up the private key offline), then the public key
+     into `release/sparkle.conf` (RELEASING "Sparkle: turning updates on").
+  2. Licensed reference exports (an activated Camtasia), for golden parity.
+  3. Keep the Mac unlocked/awake during GUI-driving sessions.
+- **Progress estimate (user asked for one each session):** product ~50% (was ~45–50%),
+  engine/format ~70%, editor UX ~50% (was ~40%), look parity unverified (0 references).
+
+## 0-s9. Session 9 snapshot (2026-10-21) — history
 
 - **`main` is green: 1165 tests** (17 known issues = 15 golden-harness + 2 LoadGate
   self-tests; CI shows up to 2 more in the parallel step: LoadGate-gated timing and an
@@ -609,7 +670,7 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
   - WizRec ships its own originals (WizRecAssets).
 - Nothing licensing-related, ever.
 
-## 6. Lessons (sessions 1–7)
+## 6. Lessons (sessions 1–10)
 
 - **The format had surprises:** `scalar = 1/speed`; keyframes run on media
   time; video size comes from `sourceTracks[trackNumber].trackRect`.
@@ -638,3 +699,11 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
     test process, published as annotations (readable without login).
   - Peer Claude sessions on the same repo can push. A local `pre-push` hook
     guards repo-wide rules (no AI attribution).
+- **Session 10:**
+  - A GitHub release-tag page returns 200 before the release exists; poll
+    `api.github.com/…/releases/tags/<tag>` (draft flag, assets) instead.
+  - Messaging a finished agent resumes it (costs a run); only message it when it has work.
+  - Tests that read live window-server state race with UI checks running in parallel:
+    compare only state that stayed still across two reads.
+  - A lock around `CVMetalTextureCache` doesn't make pool teardown safe; IOSurface-backed
+    `MTLTexture`s that retain their `CVPixelBuffer` do.

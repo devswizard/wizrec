@@ -440,3 +440,9 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 - qa15: QA14-4 window-frame test race fixed (10/10 alone, full run green).
 - media14: `LockedTextureCache`/`CacheTexture` moved to MediaEngine, textures straight from IOSurfaces (no CVMetalTextureCache; wrappers retain their buffer); REN12-1 reread as pool teardown with frames in flight (cache+lock 12/12 crash, IOSurface path 0/30 `-O`); tone mapper on it; 4K tone map +0.1–0.5 ms/frame. Full run 1204 tests, 0 known.
 - app14: empty states (canvas Record/Import, bin, timeline, properties), drops everywhere with plain errors, timeline toolbar, DropRules wired (old PlayerKit `Placement` deleted) + hover preview, window key loop + AX audit, Clip Speed Duration/Speed fields, `check-drops.sh`; full run 1227 tests, 0 known.
+- CI runs 44–51 green; v0.1.3 tagged on `3ea58d4` (CI run 50 green), publish requested.
+
+## Session 10 result
+
+All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER in
+`docs/HANDOFF.md` §0; next plan in `docs/NEXT_SESSION_PROMPT.md`.

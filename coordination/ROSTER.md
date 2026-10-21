@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 10 agents are live (table at the end).
+Session 10 agents all finished; their branches are merged and worktrees removed. None is live.
 
 ## Session 3 (2026-10-19)
 

@@ -64,50 +64,50 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-21, end of build session 9)
+## Current state (2026-10-21, end of build session 10)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 9 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 10 snapshot, follow-ups,
   user's pending items).
 - Done and merged: M0–M3, M7 recorder, M8 audio (aligned to Camtasia
   2026.2.3 AU1/AU2), M9 export (ProRes demo 25.7 s in ~2 s), M10 captions
   (whisper.cpp 1.9.5; VAD timing; Bengali via large-v3-turbo; CA1/CA2
   rules), M11 (Sparkle 2.10.0 wired, feed prepared, off until a key exists;
-  ad-hoc DMG; **v0.1.0–v0.1.2 public**), M4–M6 rendering (31 blend
+  ad-hoc DMG; **v0.1.0–v0.1.3 public**), M4–M6 rendering (31 blend
   modes, matte modes, Border/Reflection, CO3 callouts, Extend Frame, Metal
   HDR tone map for playback), group/split/trim/ungroup/marker/copy-paste/
   drop/Clip Speed rules from observed Camtasia saves. Automated UI checks of
-  the built app (`scripts/ui-checks/`, 9/9). **1165 tests green** (17 known
-  issues = golden-harness and LoadGate self-tests).
-- Session 9 landed:
-  - **v0.1.1** tagged on the CI-green `0ccf292` and published through
-    `publish.yml` (rpath-clean DMG, no `allow-build-rpaths`); public
-    2026-10-21T10:05Z, verified from the public URL.
-  - Audio export of projects without `audioFormatSampleRate` no longer ~10×
-    slower (measured at the mix rate [WizRec]); bit-exact faster resampler
-    and DSP; output hash tests.
-  - CI tests build with `-Xswiftc -O`: serial media step 515 s → 91 s.
-    It exposed a real RenderEngine crash (CVMetalTextures released on
-    Metal's completion queue), fixed with a locked texture cache.
-  - Captions: whisper-cli stderr never lost on a fast failure.
-  - Researcher (save-only, wall-reviewed): Clip Speed rounding (ED2b),
-    media-bin drop into an open group (§8.6: no growth, no clamp), Assets
-    background placement (§11.2). Timeline and app follow them.
-  - App: library Tab order over every tile, `--window-size`.
-  - **v0.1.2** (after the user's first test of 0.1.1): start screen with
-    recent projects, editor toolbar (Record, Export), Open works with
-    Camtasia installed (filter by extension), media opens as a new project.
-- **CI / release:** CI green on GitHub (runs 33–34; tests built `-O`). Mix
-  digests of `OutputHashTests` vary per CI machine type; each variant is
-  pinned, unknown ones show in the "Known issues" annotation.
+  the built app (`scripts/ui-checks/`, 10/10). **1227 tests green, 0 known
+  issues** (golden/LoadGate self-tests now check collected failures).
+- Session 10 landed:
+  - **First-use UX (v0.1.3):** empty states that offer the next action,
+    drops on start screen/canvas/timeline/bin with plain errors, a timeline
+    toolbar, window-level Tab loop, Clip Speed Duration/Speed fields.
+  - **Drop placement** (`TimelineEngine/DropRules.swift`, `DropClip`):
+    canvas drop = lowest track with room at the playhead, else a new top
+    track; busy timeline drop = insert at a clip start ≤ 1 s [WizRec] and
+    push, else the lowest higher track with room, else a new top track.
+    Every import path uses it.
+  - Researcher: `docs/specs/ui-workflow.md` (Camtasia main-window workflow,
+    our words; §12 first-time-user checklist), group-edits §8.7, background
+    `ident` rule §11.3.
+  - Media: textures made straight from IOSurfaces (`LockedTextureCache` now
+    in MediaEngine, no `CVMetalTextureCache`); REN12-1 was most likely pool
+    teardown with frames in flight.
+  - CI: actionlint job (pinned, checksummed); `check-notes.sh` on tags.
+- **CI / release:** CI green on GitHub (runs 44–51). Mix digests of
+  `OutputHashTests` vary per CI machine type; each variant is pinned,
+  unknown ones show in the "Known issues" annotation.
 - Camtasia here is a **trial**: export only offers "with/without watermark",
   so there are still **no reference exports**; golden parity (M1/M4/M5/M6)
   and every look/timing question stay open. The export-only leftovers are
   listed at the end of `docs/testing/camtasia-session-2.md`.
+- **Never** build or position anything as a way to export Camtasia-trial
+  projects without the watermark (user asked in session 10; declined under
+  hard rule 2). WizRec stays a full editor of its own.
 - Camtasia rejects WizRec `.tscshadervid` backgrounds (signed files only);
   WizRec warns on save.
 - Remote: `https://github.com/devswizard/wizrec` (public). No Apple
-  Developer account: ad-hoc DMGs, never notarized. The old local
-  `worktree-agent-*` branches were deleted (user's OK, session 9).
+  Developer account: ad-hoc DMGs, never notarized.
 - Still blocked on the user: licensed reference exports; one Sparkle
   `generate_keys` run (public key into `release/sparkle.conf`).
 
