@@ -7,6 +7,8 @@ import TSCProjKit
 /// moves only its in-point (`mediaStart`), like a ripple edit [inf].
 /// Timeline markers (`timeline.parameters.toc`) are not moved [obs for
 /// ripple delete, markers.md X8; inf for ripple trim].
+/// [WizRec] A WizRec-only command: Camtasia has no ripple-trim gesture
+/// (Shift-drag of a start edge is a plain trim, ED4).
 @MainActor
 public final class RippleTrim: EditCommand {
     public let clipID: Int64
