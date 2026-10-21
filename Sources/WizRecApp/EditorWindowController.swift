@@ -20,7 +20,7 @@ import WizRecAssets
 /// `PlaybackEngine.tick`. After every project change the scene is rebuilt
 /// (`EditorDocumentModel.onChange`) and swapped into the engine at the same playhead.
 @MainActor
-final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
+final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation, NSToolbarItemValidation {
     let model: EditorDocumentModel
     let engine: PlaybackEngine
     let ui = EditorUIState()
@@ -43,6 +43,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
     private var recorderHUD: RecorderHUDController?
+    /// The toolbar's delegate (NSToolbar holds it weakly).
+    private let toolbarItems = EditorToolbar()
     /// The last media drop into an open group while it imports and places (`placeInGroup`).
     private var groupDrop: Task<Void, Never>?
     /// Playhead (ticks) when the current recording started; the result is placed there.
@@ -78,7 +80,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.contentMinSize = NSSize(width: 900, height: 560)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
+        window.toolbarStyle = .unified
         super.init(window: window)
+        window.toolbar = toolbarItems.make(autosave: !options.isScripted)
         window.editor = self
         window.delegate = self
         canvas.editor = self
@@ -986,9 +990,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             return kindOfSelection() == .unified
         case #selector(showRelink(_:)):
             return relinkWindow == nil
+        case #selector(showExport(_:)):
+            return canExport
         default: break
         }
         return true
+    }
+
+    /// Something to export: the timeline is not empty.
+    var canExport: Bool { engine.grid.duration > 0 }
+
+    /// Toolbar items validate like the menu items with the same action.
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        guard let action = item.action else { return true }
+        return validateMenuItem(NSMenuItem(title: item.label, action: action, keyEquivalent: ""))
     }
 
     // MARK: Lifecycle
