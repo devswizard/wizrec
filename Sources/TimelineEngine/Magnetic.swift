@@ -6,7 +6,9 @@ import TSCProjKit
 /// corpus has no magnetic track]. Commands that change a top-level track pack
 /// it afterwards when the flag is set; inserting into a magnetic track never
 /// fails for overlap — the clip goes before the first clip whose midpoint
-/// lies after the requested start.
+/// lies after the requested start [WizRec]. Camtasia's other magnetic drops
+/// match (ED2–ED4); it seems to refuse a drop inside a clip, but that is only
+/// [inf] at the UI level, so WizRec keeps the midpoint insert.
 @MainActor
 enum Magnetic {
     static func isMagnetic(_ project: Project, track index: Int) -> Bool {
