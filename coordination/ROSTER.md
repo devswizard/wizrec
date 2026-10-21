@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 9 agents all finished; their branches are merged and worktrees removed. None is live.
+Session 10 agents are live (table at the end).
 
 ## Session 3 (2026-10-19)
 
@@ -127,3 +127,16 @@ change a rule.
 
 Not spawned: none left (captions came in for a product race qa found). The 56 old `worktree-agent-*`
 branches were deleted with the user's OK.
+
+## Session 10 (2026-10-21)
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` |
+| app | a6c1bc08d7776a88e | `agent/app14` |
+| researcher | a5b1bc1b7466a3277 | `agent/researcher14` |
+| qa | a83c02807d01b29aa | `agent/qa14` |
+| ship | a3296c90fdf81c33a | `agent/ship14` |
+| media | a99c28289e51bce2e | `agent/media14` |
+
+Not spawned (no finding / no licensed exports yet): timeline, render, captions, audio.
