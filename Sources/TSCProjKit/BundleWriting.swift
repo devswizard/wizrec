@@ -16,13 +16,15 @@ extension ProjectBundle {
     public static let backupSuffix = ".wizrec-backup"
 
     /// Creates a new empty `.cmproj` at `url`: format `10.0`, editRate 705600000,
-    /// canvas `width`×`height` px at `fps`, one empty track. Fails if `url` exists.
+    /// canvas `width`×`height` px at `fps`, `trackCount` empty tracks (default 2,
+    /// as a new Camtasia project starts, ui-workflow §2). Fails if `url` exists.
     public static func create(at url: URL, width: Int = 1920, height: Int = 1080,
-                              fps: Int = 30) throws -> ProjectBundle {
+                              fps: Int = 30, trackCount: Int = ProjectTemplate.newProjectTrackCount) throws -> ProjectBundle {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: url.path) else { throw BundleWriteError.exists(url) }
         guard width > 0, height > 0, fps > 0 else { throw BundleWriteError.copyFailed("invalid canvas or frame rate") }
-        let project = ProjectTemplate.newProject(width: width, height: height, fps: fps)
+        guard trackCount > 0 else { throw BundleWriteError.copyFailed("a project needs at least one track") }
+        let project = ProjectTemplate.newProject(width: width, height: height, fps: fps, trackCount: trackCount)
         do {
             try fm.createDirectory(at: url, withIntermediateDirectories: false)
             try fm.createDirectory(at: url.appendingPathComponent("media"), withIntermediateDirectories: false)
@@ -160,15 +162,27 @@ extension ProjectBundle {
 /// project and new tracks. Key names and order follow the user's own
 /// projects (`demo project.cmproj`, the vlog) [obs].
 public enum ProjectTemplate {
+    /// Number of empty tracks in a new project: 2, as in Camtasia 2026
+    /// (ui-workflow §2 [obs]).
+    public static let newProjectTrackCount = 2
+
     /// A new empty project: format `10.0`, editRate 705600000, canvas
-    /// `width`×`height` px, `fps` frames per second, one empty track,
+    /// `width`×`height` px, `fps` frames per second, `trackCount` empty tracks
+    /// (at least 1; default `newProjectTrackCount`), each `track(index:)` with a
+    /// matching `trackAttributes()` entry, the shape of an empty track in the
+    /// user's own Camtasia 2026 saves [obs];
     /// `authoringClientName` = WizRec / Mac / `ProjectBundle.authoringVersion`.
     public static func newProject(width: Int, height: Int, fps: Int,
-                                  version: String = ProjectBundle.authoringVersion) -> Project {
+                                  version: String = ProjectBundle.authoringVersion,
+                                  trackCount: Int = newProjectTrackCount) -> Project {
+        let n = max(1, trackCount)
+        let tracks: [JSON] = (0..<n).map { (i: Int) -> JSON in .object(track(index: i)) }
+        let attributes: [JSON] = (0..<n).map { (_: Int) -> JSON in .object(trackAttributes()) }
+        let scene: JSON = obj([("csml", obj([("tracks", arr(tracks))]))])
         let timeline = JSONObject([
             ("id", int(1)),
-            ("sceneTrack", obj([("scenes", arr([obj([("csml", obj([("tracks", arr([.object(track(index: 0))]))]))])]))])),
-            ("trackAttributes", arr([.object(trackAttributes())])),
+            ("sceneTrack", obj([("scenes", arr([scene]))])),
+            ("trackAttributes", arr(attributes)),
             ("parameters", obj([])),
             ("captionAttributes", obj([
                 ("enabled", .bool(true)), ("fontName", .string("Arial")), ("fontSize", int(32)),
