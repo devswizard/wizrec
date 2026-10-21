@@ -371,16 +371,25 @@ Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| AUD12-1 | audio | claimed | export with missing/invalid `audioFormatSampleRate` no slower than ~1.5x valid; perf test gated `WIZREC_PERF=1` |
-| AUD12-2 | audio | claimed | resampler / Clip Speed stretch faster in debug, output bytes unchanged (hash test) |
+| AUD12-1 | audio | done | export with missing/invalid `audioFormatSampleRate` no slower than ~1.5x valid; perf test gated `WIZREC_PERF=1` |
+| AUD12-2 | audio | done | resampler / Clip Speed stretch faster in debug, output bytes unchanged (hash test) |
 | QA12-1 | qa | claimed | serial CI media step measurably faster (optimized test builds or `-Osize` TestGenKit) |
 | QA12-2 | qa | claimed | integration tests for every merge; flaky watch 3 runs |
 | QA12-3 | qa | claimed | golden self-test 176/180 frames under load: reproduce or harden |
 | APP12-1 | app | claimed | library tiles: Tab at grid ends + past last realized tile; AX audit extended |
 | APP12-2 | app | claimed | `scripts/ui-checks/run-all.sh` green on a fresh build |
-| RES12-1 | researcher | claimed | save-only answers: Assets-panel background, Clip Speed rounding, media-bin drop into open group |
-| SHIP12-1 | ship | claimed | actionlint clean on all workflows (release.yml SC2010/SC2046) |
-| SHIP12-2 | ship | claimed | v0.1.1 notes; rpath-clean DMG verified locally |
-| SHIP12-3 | ship | claimed | Sparkle on/off check of built Info.plist; RELEASING steps for the key |
+| RES12-1 | researcher | done | save-only answers: Assets-panel background, Clip Speed rounding, media-bin drop into open group |
+| SHIP12-1 | ship | done | actionlint clean on all workflows (release.yml SC2010/SC2046) |
+| SHIP12-2 | ship | done | v0.1.1 notes; rpath-clean DMG verified locally |
+| SHIP12-3 | ship | done | Sparkle on/off check of built Info.plist; RELEASING steps for the key |
+
+| AUD12-3 | audio | claimed | no-rate projects measure loudness at the mix rate [WizRec]; perf ≤ 1.5x in release |
+| REN12-1 | render | claimed | no use-after-free of CVMetalTextures/caches in Metal completion handlers (crash seen under `-O`); stress test |
+| TL12-1 | timeline | claimed | Clip Speed: floor duration, keep media range, `scalar = duration/mediaDuration` (edit-semantics ED2b) |
+| TL12-2 | timeline | claimed | media-bin drop into an open group: no growth, no clamp, canvas-default transform (group-edits §8.6) |
 
 ## Session 9 merges
+
+- researcher12: ED2b Clip Speed rounding, group-edits §8.6 media-bin drop, shader-backgrounds §11.2 Assets placement (wall-reviewed).
+- ship12: actionlint clean (release.yml SC2010/SC2046, ci.yml), v0.1.1 notes, `sparkle-plist-check.sh` + `check-sparkle.sh`; local v0.1.1 DMG rpath-clean.
+- audio12: AUD12-1 root cause = loudness measured at 44.1 kHz for no-rate projects through a slow per-channel resampler; bit-exact resampler/DSP speed-ups (debug `wavUsesProjectSampleRate` 19–35 s → ~2 s), output hash tests.

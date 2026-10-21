@@ -120,6 +120,8 @@ change a rule.
 | app | a9a2780a0ee678a38 | `agent/app12` |
 | researcher | a29ba75d311dd1bc1 | `agent/researcher12` |
 | ship | ad02da61f248cb773 | `agent/ship12` |
+| render | ac9c68ef985cdc1d5 | `agent/render12` (CompositorCore texture-lifetime crash) |
+| timeline | afb080d624d420b0b | `agent/timeline12` (ED2b, group-edits §8.6) |
 
-Not spawned: timeline (only if RES12-1 changes a rule), render and captions
-(no licensed exports).
+Not spawned: captions (no licensed exports). The 56 old `worktree-agent-*`
+branches were deleted with the user's OK.
