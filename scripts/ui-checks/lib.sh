@@ -101,13 +101,15 @@ mark_warm() { bin_id > "$WARM_STAMP" 2>/dev/null || true; }
 # Seconds to allow a launch to show its project: longer for the first launch of a new build.
 launch_timeout() { if app_warm; then echo "$LAUNCH_TIMEOUT"; else echo "$FIRST_LAUNCH_TIMEOUT"; fi; }
 
-# launch_app [args…]: starts the app and a watchdog; sets APP_PID. The watchdog adds the
+# launch_app [args…]: starts the app (without window restoration) and a watchdog; sets APP_PID. The watchdog adds the
 # first-launch allowance for a new build.
 launch_app() {
     [ -x "$BIN" ] || { log "no app at $APP (run scripts/make-app.sh)"; exit 2; }
     local limit=$WATCHDOG
     app_warm || limit=$((WATCHDOG + FIRST_LAUNCH_TIMEOUT))
-    "$BIN" "$@" > "$WORK/app.log" 2>&1 &
+    # No window restoration: AppKit would otherwise reopen windows a previous (possibly killed)
+    # run left open; the run keeps its own state in a temp folder, never the user's.
+    "$BIN" -ApplePersistenceIgnoreState YES "$@" > "$WORK/app.log" 2>&1 &
     APP_PID=$!
     ( sleep "$limit"; kill -9 "$APP_PID" 2>/dev/null && echo "watchdog killed $APP_PID" >> "$WORK/app.log" ) &
     WATCH_PID=$!

@@ -25,7 +25,7 @@ launch_start() {
     local quit=${1:-90}
     app_warm || quit=$((quit + FIRST_LAUNCH_TIMEOUT))
     : > "$WORK/app.log"
-    launch_app --start-screen --no-audio --quit-after "$quit" -ApplePersistenceIgnoreState YES \
+    launch_app --start-screen --no-audio --quit-after "$quit" \
         -WizRec.OnboardingCompleted YES -WizRec.ShowStartScreenAtLaunch YES \
         -WizRec.RecentProjects "(\"$PROJECT\", \"$WORK/Missing Project.cmproj\")" ${shots[@]+"${shots[@]}"}
 }
@@ -54,7 +54,7 @@ expect_toolbar() {
 
 case_scripted() {
     : > "$WORK/app.log"
-    launch_app --no-audio --quit-after 12 -ApplePersistenceIgnoreState YES -WizRec.OnboardingCompleted YES \
+    launch_app --no-audio --quit-after 12 -WizRec.OnboardingCompleted YES \
         -WizRec.ShowStartScreenAtLaunch YES
     sleep 7
     local w
@@ -76,6 +76,7 @@ case_keyboard() {
         has_el "$k" || fail "start screen lacks $k"
     done
     pass "start screen has its actions and both recent projects"
+    snap
     ax keys down >/dev/null
     sleep 0.5
     ax keys delete >/dev/null
@@ -92,6 +93,7 @@ case_keyboard() {
     wait_until 5 '! has_window "Start Screen"' && pass "start screen closes when a project opens" \
         || fail "start screen still up with a project open"
     expect_toolbar demo "Import | true" "Record | true" "Undo | false" "Redo | false" "Export | true"
+    snap
     ax toolbar-press demo Export >/dev/null
     if wait_until 10 'has_el export.start'; then
         pass "toolbar Export opens the export sheet"
@@ -134,6 +136,7 @@ case_new_project() {
     fi
     sleep 1
     expect_toolbar "Untitled" "Import | true" "Record | true" "Undo | false" "Redo | false" "Export | false"
+    snap
     ax keys w cmd >/dev/null
     if wait_until 10 'start_up 2'; then
         pass "closing the untitled project brings the start screen back"
@@ -143,9 +146,11 @@ case_new_project() {
     stop_app
 }
 
-# SHOTS_DIR=<dir>: also write window snapshots there (3 s after each launch).
+# SHOTS_DIR=<dir>: also write window snapshots there (`snap`: start screen, editor toolbars).
 shots=()
-[ -n "${SHOTS_DIR:-}" ] && shots=(-WizRec.WindowSnapshots "$SHOTS_DIR" -WizRec.WindowSnapshotDelay 3)
+[ -n "${SHOTS_DIR:-}" ] && shots=(-WizRec.WindowSnapshots "$SHOTS_DIR")
+# snap: with SHOTS_DIR, every visible window of the app to $SHOTS_DIR/shot-<k>-<n>-<title>.png.
+snap() { [ -n "${SHOTS_DIR:-}" ] && kill -USR1 "$APP_PID" 2>/dev/null && sleep 1; return 0; }
 
 make_work
 MOUSE="$WORK/mouse"
