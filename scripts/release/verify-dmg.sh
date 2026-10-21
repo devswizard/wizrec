@@ -97,7 +97,9 @@ done < <(find "$APP/Contents" -type f -print0)
 start=$(date +%s)
 log=$(mktemp "${TMPDIR:-/tmp}/wizrec-verify-log.XXXXXX")
 status=0
-"$APP/Contents/MacOS/WizRec" --quit-after 5 >"$log" 2>&1 || status=$?
+# No window restoration: the smoke test neither reopens nor saves the windows of an installed
+# WizRec that shares the bundle ID (same flag as scripts/ui-checks).
+"$APP/Contents/MacOS/WizRec" -ApplePersistenceIgnoreState YES --quit-after 5 >"$log" 2>&1 || status=$?
 elapsed=$(( $(date +%s) - start ))
 if [ "$status" != 0 ] || grep -qE "dyld|Library not loaded|image not found" "$log"; then
   cat "$log" >&2; rm -f "$log"

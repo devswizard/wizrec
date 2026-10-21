@@ -19,6 +19,45 @@ permissions:
   contents: read
 
 jobs:
+  # Lints every workflow in .github/workflows (expressions, job graph, action inputs, and the
+  # `run:` scripts through the runner's preinstalled shellcheck). Runs on Linux in parallel with
+  # the macOS job, so it reports in well under a minute. actionlint (MIT) is a pinned release
+  # binary whose SHA-256 is checked against the value recorded here before it runs.
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install actionlint (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP/actionlint" actionlint
+          echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
+
+      - name: Lint workflows
+        run: |
+          set -euo pipefail
+          actionlint --version
+          if command -v shellcheck >/dev/null; then
+            shellcheck --version | sed -n 2p
+          else
+            echo "::warning title=actionlint::shellcheck not found, run: scripts are not checked"
+          fi
+          # The matcher turns each `file:line:col: message [rule]` line into an annotation, so
+          # findings show without opening the log.
+          echo "::add-matcher::.github/actionlint-matcher.json"
+          actionlint -no-color
+
   build-and-test:
     name: swift build + test (macOS arm64)
     runs-on: macos-latest
