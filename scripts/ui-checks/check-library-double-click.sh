@@ -2,8 +2,9 @@
 # UI check (f): a real mouse double-click (CGEvent, not AXPress) on a Backgrounds library tile
 # places the background at the playhead and selects it; the inspector then shows the
 # background's parameters, and a typed value is saved into its sourceEffect. With a group open
-# on the timeline (`--open-group`, the demo's Rev group), the double-click places it on the
-# group's bottom track and records ShaderVidSource / RevBackground (shader-backgrounds.md §11).
+# on the timeline (`--open-group`, the demo's Rev group), the double-click places it on a new top
+# inner track of the group at the playhead (APP12-4, group-edits §8.6): not inner track 0, so no
+# ShaderVidSource, and the group's RevBackground stays as it was.
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -57,6 +58,7 @@ app_alive && pass "app responsive" || fail "app exited"
 stop_app
 
 # Part 2: the demo's Rev group (group 4) open, playhead at its end.
+read -r rev0 inner0 <<< "$(python3 -I "$UI_DIR/backgrounds.py" "$TSC" --group 4)"   # before the placement
 open_project --open-group --seek 25.66 -WizRec.BackgroundLibraryRoot "$LIB" || exit 1
 grep -q "opened group 4 for editing" "$WORK/app.log" && pass "group 4 open" || fail "group 4 not opened"
 [ "$(ax click Backgrounds)" = ok ] || fail "no Backgrounds tab"
@@ -67,10 +69,10 @@ wait_until 20 'has_el inspector.background.Color0' && pass "placed into the grou
 save_and_wait
 line=$(backgrounds | grep "src=wizrec-soft-waves.tscshadervid" | head -1)
 log "saved: $line"
-want="group=4 svs=$LIB/backgrounds/wizrec-soft-waves.tscshadervid rev=backgrounds/wizrec-soft-waves.tscshadervid"
+want="group=4 svs=- rev=$rev0 "
 case "$line" in
-    *" $want "*) pass "Rev background recorded (ShaderVidSource, RevBackground)";;
-    *) fail "unexpected saved background: '$line' (want '$want')";;
+    *" $want"*" itrack=$inner0/$((inner0 + 1))") pass "placed on new top inner track $inner0 of group 4; RevBackground unchanged, no ShaderVidSource";;
+    *) fail "unexpected saved background: '$line' (want '$want… itrack=$inner0/$((inner0 + 1))')";;
 esac
 [ -f "$LIB/backgrounds/wizrec-soft-waves.tscshadervid" ] && pass "library file written" || fail "no library file"
 app_alive && pass "app responsive" || fail "app exited"
