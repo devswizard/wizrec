@@ -129,8 +129,18 @@ stripped=0
 for f in "$EXE" "$FW"/*.dylib; do
   while IFS= read -r p; do
     if is_build_path "$p"; then
-      # -delete_rpath removes one entry; a duplicate shows up again in the next pass.
-      while raw_rpaths "$f" | grep -qxF "$p"; do install_name_tool -delete_rpath "$p" "$f" 2>/dev/null; done
+      # -delete_rpath removes one entry; a duplicate shows up again in the next pass. Bounded:
+      # a failing install_name_tool, or more than 8 copies, stops the build with an error.
+      passes=0
+      while raw_rpaths "$f" | grep -qxF "$p"; do
+        passes=$((passes + 1))
+        if [ "$passes" -gt 8 ]; then
+          echo "error: run path $p is still in $f after 8 removals" >&2; exit 1
+        fi
+        if ! err=$(install_name_tool -delete_rpath "$p" "$f" 2>&1); then
+          echo "error: install_name_tool -delete_rpath $p failed on $f: $err" >&2; exit 1
+        fi
+      done
       echo "removed run path $p from $(basename "$f")"
       stripped=$((stripped + 1))
     fi
