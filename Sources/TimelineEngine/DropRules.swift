@@ -205,7 +205,12 @@ struct DropContainer {
     func hasRoom(_ i: Int, _ s: Int64, _ d: Int64) -> Bool {
         let clips = trackClips(tracks[i].track)
         if magnetic(i) {
-            let end = clips.map { ($0["start"]?.int ?? 0) &+ ($0["duration"]?.int ?? 0) }.max() ?? 0
+            var end: Int64 = 0
+            for o in clips {
+                let cs: Int64 = o["start"]?.int ?? 0
+                let cd: Int64 = o["duration"]?.int ?? 0
+                end = max(end, cs &+ cd)
+            }
             return s == end
         }
         let e = s &+ d
@@ -318,7 +323,10 @@ final class PushClips: EditCommand {
         var edits = TrackEdits(project)
         let t = try edits.track(at: path)
         var moved = Set<Int64>()
-        for o in trackClips(t) where (o["start"]?.int ?? 0) &+ (o["duration"]?.int ?? 0) > after {
+        for o in trackClips(t) {
+            let cs: Int64 = o["start"]?.int ?? 0
+            let cd: Int64 = o["duration"]?.int ?? 0
+            guard cs &+ cd > after else { continue }
             Magnetic.shift(o, by: by)
             if let id = o.clipID { moved.insert(id) }
         }
