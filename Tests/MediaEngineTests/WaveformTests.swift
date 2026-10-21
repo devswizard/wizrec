@@ -106,12 +106,15 @@ private func referencePeaks(_ src: any MediaSource, stream: Int, rate: Double, c
             got.append(t)
         }
         #expect(got.map { $0.requestedTime.seconds } == [0.1, 1.2, 2.9].map { secs($0).seconds })
-        // A keyframe at or before each time (the encoder places one at least every 15 frames).
+        // A keyframe at or before each time (the encoder places one at least every 15 frames,
+        // sometimes more often: the key interval is a maximum, so read the file's real keyframes).
+        let keyframes = try await Synth.syncTimes(url)
+        #expect(keyframes.first == .zero && keyframes.count >= 90 / 15, "\(keyframes.map(\.seconds)) got \(got.map(\.presentationTime.seconds))")
         for t in got {
             let lag = t.requestedTime.seconds - t.presentationTime.seconds
             #expect(lag >= 0 && lag <= 15.0 / 30 + 1e-6, "lag \(lag)")
+            #expect(keyframes.contains(t.presentationTime), "thumbnail at \(t.presentationTime.seconds) s is a keyframe")
         }
-        #expect(got[0].presentationTime == .zero)
         for t in got {
             #expect(t.image.width == 64)
             #expect(t.image.height == 13)

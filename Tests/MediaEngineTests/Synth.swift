@@ -111,6 +111,30 @@ enum Synth {
         if writer.status != .completed { throw writer.error ?? MediaError.decodeFailed("finishWriting") }
     }
 
+    /// Presentation times of the sync samples (full or partial) of `url`'s first video track, as
+    /// the file holds them. `AVVideoMaxKeyFrameIntervalKey` is only a maximum: the encoder may put
+    /// extra keyframes in (seen under load), so tests read the real ones instead of assuming them.
+    static func syncTimes(_ url: URL) async throws -> [CMTime] {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first,
+              track.canProvideSampleCursors,
+              let cursor = track.makeSampleCursorAtFirstSampleInDecodeOrder() else {
+            throw MediaError.decodeFailed("no sample cursor for \(url.lastPathComponent)")
+        }
+        // Cursor times are media times; the edit list (B-frame composition delay) maps them onto
+        // the track's timeline, where frame 0 is at 0.
+        let mapping = try await track.load(.segments).first { !$0.isEmpty }?.timeMapping
+        let shift: CMTime = mapping.map { CMTimeSubtract($0.target.start, $0.source.start) } ?? .zero
+        var out: [CMTime] = []
+        repeat {
+            let sync = cursor.currentSampleSyncInfo
+            if sync.sampleIsFullSync.boolValue || sync.sampleIsPartialSync.boolValue {
+                out.append(CMTimeAdd(cursor.presentationTimeStamp, shift))
+            }
+        } while cursor.stepInDecodeOrder(byCount: 1) == 1
+        return out.sorted()
+    }
+
     /// Sample `i` of the test sine: amplitude 0.5, silent before `onset` seconds.
     static func sine(_ i: Int, rate: Double, frequency: Double, onset: Double = 0) -> Double {
         let t = Double(i) / rate
