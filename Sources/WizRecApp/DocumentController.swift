@@ -1,4 +1,5 @@
 import AppKit
+import PlayerKit
 import UniformTypeIdentifiers
 
 /// Maps project files to `ProjectDocument` by extension, so opening works even
@@ -36,11 +37,45 @@ final class WizRecDocumentController: NSDocumentController {
                                      didReviewAllSelector: didReviewAllSelector, contextInfo: contextInfo)
     }
 
+    /// Enables files by extension (`OpenableFile`): with Camtasia installed, `.cmproj` files carry
+    /// Camtasia's own type, so a content-type filter would grey them out.
+    private let openFilter = OpenPanelFilter()
+
     override func beginOpenPanel(_ openPanel: NSOpenPanel, forTypes inTypes: [String]?,
                                  completionHandler: @escaping (Int) -> Void) {
-        openPanel.allowedContentTypes = ProjectDocument.contentTypes
+        openPanel.allowedContentTypes = []
+        openPanel.delegate = openFilter
         openPanel.treatsFilePackagesAsDirectories = false
         openPanel.allowsMultipleSelection = true
+        openPanel.message = String(localized: "Choose a project, or a video, audio or image file to start a new project with.")
         openPanel.begin { completionHandler($0.rawValue) }
+    }
+
+    /// A media file opens as a new untitled project with the file on the timeline at 0;
+    /// projects open as usual.
+    override func openDocument(withContentsOf url: URL, display displayDocument: Bool,
+                               completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
+        guard OpenableFile(url) == .media else {
+            super.openDocument(withContentsOf: url, display: displayDocument, completionHandler: completionHandler)
+            return
+        }
+        do {
+            let doc = try openUntitledDocumentAndDisplay(true)
+            if doc.windowControllers.isEmpty { doc.makeWindowControllers() }
+            let editor = doc.windowControllers.lazy.compactMap { $0 as? EditorWindowController }.first
+            editor?.importFiles([url], place: true, at: 0)
+            completionHandler(doc, false, nil)
+        } catch {
+            completionHandler(nil, false, error)
+        }
+    }
+}
+
+/// File ▸ Open filter: projects and media by extension, plus folders to browse into.
+final class OpenPanelFilter: NSObject, NSOpenSavePanelDelegate {
+    func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
+        if OpenableFile(url) != nil { return true }
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return values?.isDirectory == true && values?.isPackage != true
     }
 }

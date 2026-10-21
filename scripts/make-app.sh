@@ -101,7 +101,7 @@ $SPARKLE_KEYS
             <key>CFBundleTypeRole</key><string>Editor</string>
             <key>LSHandlerRank</key><string>Alternate</string>
             <key>LSTypeIsPackage</key><true/>
-            <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.cmproj</string></array>
+            <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.cmproj</string><string>com.techsmith.camtasiamacproject</string></array>
             <key>CFBundleTypeExtensions</key><array><string>cmproj</string></array>
             <key>NSDocumentClass</key><string>ProjectDocument</string>
         </dict>
@@ -109,8 +109,15 @@ $SPARKLE_KEYS
             <key>CFBundleTypeName</key><string>Project File</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
             <key>LSHandlerRank</key><string>Alternate</string>
-            <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.tscproj</string></array>
+            <key>LSItemContentTypes</key><array><string>com.devswizard.wizrec.tscproj</string><string>com.techsmith.techsmithproject</string></array>
             <key>CFBundleTypeExtensions</key><array><string>tscproj</string></array>
+            <key>NSDocumentClass</key><string>ProjectDocument</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key><string>Media</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
+            <key>LSItemContentTypes</key><array><string>public.movie</string><string>public.audio</string></array>
             <key>NSDocumentClass</key><string>ProjectDocument</string>
         </dict>
     </array>
