@@ -178,6 +178,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             commit: { [weak self] in self?.commitPreview() },
             set: { [weak self] f, v in self?.setField(f, v) },
             setSpeed: { [weak self] v in self?.setSpeed(v) },
+            setDuration: { [weak self] t in self?.setDuration(t) },
             setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) },
             previewBackground: { [weak self] n, v in self?.previewBackground(n, v) },
             setBackground: { [weak self] n, v in self?.setBackground(n, v) })))
@@ -313,7 +314,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let sel = timelineModel.selection
         inspector.selectionCount = sel.count
         let next = sel.count == 1 ? sel.first.flatMap(inspection(of:)) : nil
-        inspector.speedEditable = next.map { n in model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } } } ?? false
+        if inspector.grid != engine.grid { inspector.grid = engine.grid }
+        // Clip Speed works on top-level clips with media time (not images or annotations).
+        inspector.speedEditable = next.map { n in
+            !["IMFile", "Callout"].contains(n.typeName)
+                && model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } }
+        } ?? false
         if next != inspector.inspection { inspector.inspection = next }
         let caption = selectedDynamicCaption?.style
         if caption != inspector.captionStyle { inspector.captionStyle = caption }
@@ -383,11 +389,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         run("Change background") { try model.set(changes) }
     }
 
-    /// Clip speed from the inspector, as an exact rational (percent precision); later clips ripple.
-    private func setSpeed(_ speed: Double) {
-        guard let i = inspector.inspection, speed.isFinite, speed > 0 else { return }
-        let r = Rational(max(1, Int64((speed * 100).rounded())), 100)
-        run("Clip speed") { try model.perform(SetClipSpeed(clipID: i.clipID, speed: r, ripple: true)) }
+    /// Clip speed from the inspector (exact rational, two-decimal precision); later clips ripple.
+    /// The duration is floored to a frame and the media range kept (ED2b).
+    private func setSpeed(_ speed: Rational) {
+        guard let i = inspector.inspection, speed.num > 0, speed.den > 0 else { return }
+        run(String(localized: "Clip Speed")) { try model.perform(SetClipSpeed(clipID: i.clipID, speed: speed, ripple: true)) }
+    }
+
+    /// Clip duration from the inspector's Clip Speed Duration field (ticks, floored to a frame by
+    /// `SetClipDuration`); the media range is kept and later clips ripple (ED2b).
+    private func setDuration(_ ticks: Int64) {
+        guard let i = inspector.inspection, ticks > 0 else { return }
+        run(String(localized: "Clip Speed")) { try model.perform(SetClipDuration(clipID: i.clipID, duration: ticks, ripple: true)) }
     }
 
     func undoEdit() { run("Undo") { try model.undoLast() } }
