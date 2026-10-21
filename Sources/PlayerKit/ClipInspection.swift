@@ -6,6 +6,8 @@ import TSCProjKit
 /// Inspector fields of a clip, with the parameter keys they edit.
 public enum InspectorField: String, CaseIterable, Sendable {
     case positionX, positionY, scale, rotation, cropLeft, cropTop, cropRight, cropBottom, opacity, volume
+    /// One axis of the scale (canvas handles with Shift: free scale, ui-workflow.md §8.1).
+    case scaleX, scaleY
 
     /// Parameter keys written by this field (scale writes both axes).
     public var keys: [String] {
@@ -13,6 +15,8 @@ public enum InspectorField: String, CaseIterable, Sendable {
         case .positionX: ["translation0"]
         case .positionY: ["translation1"]
         case .scale: ["scale0", "scale1"]
+        case .scaleX: ["scale0"]
+        case .scaleY: ["scale1"]
         case .rotation: ["rotation2"]
         case .cropLeft: ["geometryCrop0"]
         case .cropTop: ["geometryCrop1"]
@@ -26,7 +30,7 @@ public enum InspectorField: String, CaseIterable, Sendable {
     /// Camtasia default when the key is absent (`docs/specs/defaults.md`).
     public var defaultValue: Double {
         switch self {
-        case .scale, .opacity, .volume: 1
+        case .scale, .scaleX, .scaleY, .opacity, .volume: 1
         default: 0
         }
     }

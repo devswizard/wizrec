@@ -3,9 +3,9 @@ import MetalKit
 import PlayerKit
 import RenderEngine
 
-/// The Metal canvas plus mouse editing (ui-workflow.md §8, our own design): click selects the
-/// topmost clip under the pointer; dragging its body moves it, a corner scales it about its
-/// centre, the knob above it rotates it (⇧ snaps to 15°), and in crop mode the edge handles crop
+/// The Metal canvas plus mouse editing (ui-workflow.md §8, §8.1): click selects the topmost clip
+/// under the pointer; dragging its body moves it, a corner or side handle scales it with the
+/// opposite corner or side fixed (Shift: free / one axis), the knob above it rotates it [WizRec] (⇧ snaps to 15°), and in crop mode the edge handles crop
 /// it. Every drag previews live and is one undo step on release (TimelineEngine `SetParameter`
 /// through the document model), so the inspector follows. Accepts drops of files and bin items
 /// (placed at the playhead).
@@ -111,10 +111,16 @@ final class EditorCanvasView: MTKView {
             var y = (i.values[.positionY] ?? 0) + dy
             if !event.modifierFlags.contains(.option) { x = x.rounded(); y = y.rounded() }
             editor.preview(i.changes(.positionX, x) + i.changes(.positionY, y))
-        case .corner:
-            guard let f = d.frame else { return }
-            let v = CanvasGeometry.scale(from: i.values[.scale] ?? 1, center: f.center, start: d.startCanvas, current: now)
-            editor.preview(i.changes(.scale, v))
+        case .corner, .edge:
+            // The opposite corner or side stays put; Shift scales freely (ui-workflow.md §8.1).
+            guard let f = d.frame, let r = CanvasGeometry.resize(d.handle, frame: f, start: d.startCanvas, current: now,
+                                                                  free: event.modifierFlags.contains(.shift)) else { return }
+            func round(_ v: Double, _ q: Double) -> Double { (v * q).rounded() / q }
+            let sx = round((i.values[.scaleX] ?? 1) * r.x, 10_000), sy = round((i.values[.scaleY] ?? 1) * r.y, 10_000)
+            let x = round((i.values[.positionX] ?? 0) + r.dx, 1000), y = round((i.values[.positionY] ?? 0) + r.dy, 1000)
+            let uniform = r.x == r.y && i.values[.scaleX] == i.values[.scaleY]
+            let scale = uniform ? i.changes(.scale, sx) : i.changes(.scaleX, sx) + i.changes(.scaleY, sy)
+            editor.preview(scale + i.changes(.positionX, x) + i.changes(.positionY, y))
         case .rotate:
             guard let f = d.frame else { return }
             let v = CanvasGeometry.rotation(from: i.values[.rotation] ?? 0, center: f.center, start: d.startCanvas,
@@ -147,6 +153,7 @@ final class EditorCanvasView: MTKView {
         let p = convert(event.locationInWindow, from: nil)
         switch selectedHandle(at: p)?.handle {
         case .corner: NSCursor.crosshair.set()
+        case .edge(let e): (e == .left || e == .right ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
         case .rotate: NSCursor.pointingHand.set()
         case .crop(let e): (e == .left || e == .right ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
         case .body: NSCursor.openHand.set()
@@ -275,7 +282,8 @@ final class SelectionOverlayView: NSView {
         let k = NSBezierPath(ovalIn: NSRect(x: knob.x - 5, y: knob.y - 5, width: 10, height: 10))
         NSColor.white.setFill(); k.fill()
         accent.setStroke(); k.stroke()
-        for p in pts {
+        let sides = CanvasCropEdge.allCases.compactMap { f.edgeMidpoints[$0] }.map(view)
+        for p in pts + sides {
             let r = NSRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)
             NSColor.white.setFill()
             NSBezierPath(rect: r).fill()
