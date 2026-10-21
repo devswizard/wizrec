@@ -433,8 +433,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     /// Backgrounds library double-click: the background at the playhead (60 s, lowest free
-    /// track), selected. With a group open on the timeline it goes on that group's bottom inner
-    /// track at the playhead instead (a Rev group then records it, `placeBackground(_:inGroup:)`).
+    /// track), selected. With a group open on the timeline it goes on a new top inner track of
+    /// that group at the playhead instead; the group never grows (`placeBackground(_:inGroup:atPlayhead:)`).
     /// One undo step ("Add Background").
     func placeBackground(_ bg: BackgroundAsset) -> Bool {
         let at = engine.currentTicks
@@ -445,10 +445,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             do {
                 let clip: Int64
                 if let group {
-                    let inner = try GroupTiming.innerTime(group: group, timeline: at, in: model.project)
-                    let num: Int64 = inner.num, den: Int64 = max(inner.den, 1)
-                    let ticks: Int64 = num >= 0 ? num / den : (num - den + 1) / den   // floor
-                    clip = try await model.placeBackground(bg, inGroup: group, track: 0, at: ticks)
+                    clip = try await model.placeBackground(bg, inGroup: group, atPlayhead: at)
                 } else {
                     clip = try await model.placeBackground(bg, at: at)
                 }

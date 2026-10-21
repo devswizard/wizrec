@@ -475,6 +475,35 @@ public final class EditorDocumentModel {
         return id
     }
 
+    /// Library double-click with group `groupID` open: the background at project time `playhead`
+    /// mapped onto the group's inner timeline (floored to a tick, not clamped: outside the group's
+    /// window the clip is kept there, hidden), on a new top inner track. The group never grows
+    /// (group-edits §8.6; like a drop above the inner tracks and Camtasia's "new top track at the
+    /// playhead" placement). Being on a new top track, it gets no Rev keys. One undo step; returns
+    /// the clip id.
+    @discardableResult
+    public func placeBackground(_ background: BackgroundAsset, inGroup groupID: Int64,
+                                atPlayhead playhead: Int64) async throws -> Int64 {
+        let inner = try GroupTiming.innerTime(group: groupID, timeline: playhead, in: project)
+        let num: Int64 = inner.num, den: Int64 = max(inner.den, 1)
+        let ticks: Int64 = num >= 0 ? num / den : (num - den + 1) / den   // floor
+        guard let count = Self.innerTrackCount(groupID, in: project) else { throw EditError.invalid("no group \(groupID)") }
+        return try await placeBackground(background, inGroup: groupID, track: count, at: ticks)
+    }
+
+    /// Number of inner tracks of group `groupID` (anywhere); nil when there is no such group.
+    static func innerTrackCount(_ groupID: Int64, in project: Project) -> Int? {
+        var count: Int?
+        for t in project.tracks {
+            for c in t.clips {
+                c.walk { inner, _ in
+                    if count == nil, inner.id == groupID, inner.kind.typeName == "Group" { count = inner.tracks.count }
+                }
+            }
+        }
+        return count
+    }
+
     /// True when clip `groupID` (anywhere) is a group with `metadata.groupType` "revMedia".
     static func isRevGroup(_ groupID: Int64, in project: Project) -> Bool {
         var rev = false
