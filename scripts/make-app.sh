@@ -57,7 +57,7 @@ for l in "$APP"/Contents/Resources/*.lproj; do
     LOCALIZATIONS="$LOCALIZATIONS<string>$(basename "$l" .lproj)</string>"
 done
 
-VERSION=${VERSION:-0.1.3}
+VERSION=${VERSION:-0.1.4}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
 # Bundle id: com.devswizard.WizRec (DECISIONS 2026-10-20); WIZREC_BUNDLE_ID overrides it.

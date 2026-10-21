@@ -1,19 +1,19 @@
 <!--
   Release notes used by .github/workflows/release.yml for the draft GitHub Release.
-  Written for v0.1.3 (earlier notes are in git history and on their GitHub Releases).
+  Written for v0.1.4 (earlier notes are in git history and on their GitHub Releases).
   For a later release: rewrite "What's new", update "Known limits", and change the
-  version in the download line and the tag in the links (v0.1.3) before tagging.
+  version in the download line and the tag in the links (v0.1.4) before tagging.
   Check with `scripts/release/check-notes.sh <version>`: release.yml runs it on a tag and
   stops before building while a TODO(release) line, another version's DMG name or another
   tag's source link is left. See docs/RELEASING.md.
 -->
 
-A polish release of **WizRec**, the free, open-source screen recorder and
+An editing release of **WizRec**, the free, open-source screen recorder and
 video editor for the Mac by Devs Wizard. It opens your Camtasia projects.
 
 ## Download
 
-Download **WizRec-0.1.3.dmg** below. Nothing else to install: FFmpeg and everything
+Download **WizRec-0.1.4.dmg** below. Nothing else to install: FFmpeg and everything
 WizRec needs are inside the app.
 
 **You need:** a Mac with Apple silicon (M1 or later) and macOS 14 Sonoma or later.
@@ -35,49 +35,51 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 
 ## What's new
 
-**Getting started**
+**Edit on the canvas**
 
-- **An empty project explains itself.** The canvas offers **Record Screen** and
-  **Import Media…**, the media bin and the timeline say what goes there, and the
-  properties panel tells you to select a clip. Play and step buttons stay off until
-  there is something to play.
-- **Drop files anywhere.** Drag videos, images or audio from Finder onto the start
-  screen, the canvas, the timeline or the media bin. The canvas shows where the drop
-  goes; several files are placed one after another. A dropped project opens in its
-  own window, and files WizRec can't use get a plain explanation instead of nothing.
+- **Move, scale and rotate with the mouse.** Select a clip on the canvas and drag it,
+  drag a corner to scale it about its centre, or drag the round knob to rotate it
+  (hold Shift for 15° steps). The properties panel follows, and each drag is one undo
+  step. On an animated property the change goes in as a keyframe at the playhead.
+- **Crop mode.** Choose **Crop** in the toolbar, **Clip ▸ Crop Mode** (⌥⌘C) or the
+  canvas menu, then drag the edge handles. Press Esc to leave.
 
-**Editor**
+**Drag from the library**
 
-- **Timeline toolbar.** Undo, Redo, Cut, Copy, Paste, Split, Delete, Ripple Delete,
-  Add Track, Snapping and zoom now sit right above the timeline. Each tooltip shows
-  its keyboard shortcut, and buttons are greyed out when they can't act.
-- **Smarter placement.** Media dropped on the canvas, double-clicked in the media bin
-  or imported goes in at the playhead, on the lowest track with room for the whole
-  clip, or on a new track on top. Dropping on a busy spot in the timeline inserts at
-  a clip's start (and moves the later clips right) when you drop near it, otherwise
-  uses a free track above. While you drag, the timeline shows where the clip will land.
-- **Clip speed by duration.** In the properties panel, type a new **Duration** for a
-  clip and WizRec sets the speed to match; **Speed** shows the actual value to two
-  decimals.
+- Drag an **annotation** or **background** onto the canvas (it goes in at the playhead)
+  or onto the timeline (where you drop it).
+- Drag an **effect**, **audio effect** or **transition** onto a clip on the timeline or
+  the canvas; the clip is outlined while you hover. A transition goes on both ends of
+  the clip in one step.
 
-**Keyboard and accessibility**
+**Right-click menus**
 
-- **Tab moves between panes:** media/library → canvas → properties → timeline and
-  back (Shift-Tab the other way), and walks the properties fields top to bottom.
-  Media bin tiles can be focused, and Space or Return adds the focused one at the
-  playhead.
+- **Clips:** Split, Delete, Ripple Delete, Clip Speed (25–400 %), Extend Frame, Remove
+  Transition or Effect, Duplicate, Ripple Cut.
+- **Tracks:** Add Track Above/Below, Remove Track, Lock, Mute Audio, Hide Video,
+  Magnetic.
+- **Canvas:** Cut, Copy, Paste, Duplicate, Delete, Split, Scale (Fit, Fill, 200/100/50/25
+  %), Crop Mode, Group, Ungroup, Stitch, Separate.
+- New in the Edit menu: **Duplicate** (⌘D) and **Ripple Cut** (⇧⌘X).
 
-**Fixes**
+**Captions**
 
-- The timeline no longer paints over the area above it after a resize.
-- Empty-state text can no longer make the window taller than the screen.
-- Importing a file that probes but isn't media no longer adds it.
-- Fixed a rare crash when video frames were released while the decoder that made
-  them was shutting down.
+- A new **Captions** tab in the sidebar: **Generate Captions** turns the speech in
+  your clips into captions on the timeline, **Add at Playhead** adds one by hand, and
+  each caption can be edited or deleted in the list. Import and export SRT files there
+  too. Drag a dynamic caption style onto a clip with speech to add animated captions.
 
-See the [0.1.2 release](https://github.com/devswizard/wizrec/releases/tag/v0.1.2) for the
-previous changes (start screen with recent projects, editor toolbar, opening projects when
-Camtasia is installed, opening a video directly).
+**Projects and drops**
+
+- **New projects start with two empty tracks,** like Camtasia.
+- **Drops into an open group** now follow the same placement rules as the main
+  timeline instead of refusing with "Cannot add to the group". With a group open,
+  media dropped on the canvas or double-clicked in the media bin goes into that group.
+- **Dragging a file from Finder over the timeline** now previews the clip's real length.
+
+See the [0.1.3 release](https://github.com/devswizard/wizrec/releases/tag/v0.1.3) for the
+previous changes (empty states, drops everywhere, timeline toolbar, smarter placement,
+Clip Speed by duration, Tab between panes).
 
 ## Known limits
 
@@ -100,11 +102,11 @@ Camtasia is installed, opening a video directly).
 ## Source code and licences
 
 WizRec is free software under the
-[GNU General Public License v3.0 or later](https://github.com/devswizard/wizrec/blob/v0.1.3/LICENSE).
-Its source code for this release is the `v0.1.3` tag of
-[devswizard/wizrec](https://github.com/devswizard/wizrec/tree/v0.1.3).
+[GNU General Public License v3.0 or later](https://github.com/devswizard/wizrec/blob/v0.1.4/LICENSE).
+Its source code for this release is the `v0.1.4` tag of
+[devswizard/wizrec](https://github.com/devswizard/wizrec/tree/v0.1.4).
 The bundled libraries (FFmpeg and its codecs, Sparkle) are listed with their licences in
-[THIRD_PARTY_NOTICES.md](https://github.com/devswizard/wizrec/blob/v0.1.3/THIRD_PARTY_NOTICES.md)
+[THIRD_PARTY_NOTICES.md](https://github.com/devswizard/wizrec/blob/v0.1.4/THIRD_PARTY_NOTICES.md)
 and, with exact versions, in `WizRec.app/Contents/Resources/Licenses/MANIFEST.txt`; their
 source code is available from each project at those versions and from the Homebrew
 formulae that built them.

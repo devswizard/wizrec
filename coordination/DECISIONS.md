@@ -323,3 +323,35 @@ Dated log. Newest last.
 - **2026-10-21 · Shared texture cache (session 10, media14):** `LockedTextureCache` /
   `CacheTexture` move from RenderEngine to MediaEngine (public) so `MetalToneMapper` uses the
   same locked pattern; RenderEngine's copy is deleted.
+- **2026-10-21 · New projects have two empty tracks (session 11, timeline15, ui-workflow §2):**
+  `ProjectBundle.create`/`ProjectTemplate.newProject` default `trackCount` 2; each track has the
+  shape of Camtasia's saved empty track (`trackIndex`, `medias: []`, `parameters: {}` + a
+  `trackAttributes` entry). A busy drop on track 0 of a fresh project uses track 1 first.
+- **2026-10-21 · Drops with a group open (session 11, app15, QA16-F1):** timeline drops into an
+  open group go through `DropClip(group:)` (§8.7), never refuse with "would overlap". Canvas
+  drops and media-bin double-clicks with a group open go into it by the canvas rule (lowest
+  inner track with room at the playhead, else a new top inner track) [WizRec; Camtasia [?]].
+  Rev keys only when a background really lands on inner track 0.
+- **2026-10-21 · Animation presets (session 11, timeline15, animation.md §1–§2):** `AddAnimation`
+  writes a 1 s segment ending at the playhead's media time. [WizRec] where unobserved: 1 s on
+  the media axis when `scalar` ≠ 1; Tilt translation ±canvasWidth/4; Tilt Right scale
+  (canvasWidth/2)/mediaWidth (fits the one 2.4 observation; 0.5 without a media size); Full
+  Opacity starts from 0 only when the parameter has no keyframes; a keyframe at the same
+  `endTime` has its value replaced.
+- **2026-10-21 · Track and selection commands (session 11, timeline15):** `MoveTrack` carries
+  `trackAttributes`; `RenameTrack` "" = default numbered name; `SplitAllTracks` skips locked
+  tracks and clips that only touch the playhead at an edge; `TimelineSelection.clips(at:)`
+  includes locked tracks unless `unlockedOnly` [WizRec until observed].
+- **2026-10-21 · Duplicate and Ripple Cut (session 11, app15):** composed in the app as one
+  `CompoundCommand` each ("Duplicate": paste right after the selection on its track, else a
+  new top track, group paste rule inside groups, clipboard untouched; "Ripple Cut": copy +
+  ripple `DeleteClips`) [WizRec until Camtasia's Duplicate placement is observed].
+- **2026-10-21 · Generated caption grouping (session 11, app15):** ≤ 8 words, ≤ 4 s, a break
+  at a pause ≥ 0.7 s or a sentence end [WizRec].
+- **2026-10-21 · UI-check window layout (session 11, app15):** UI checks launch with
+  `--ephemeral-layout`; the editor frame, split positions, toolbar configuration and Settings
+  frame are then neither read nor written, so runs never leak into the user's app.
+- **2026-10-21 · No IOSurface texture reuse cache (session 11, media15):** measured 21–28 µs
+  per 4K frame for texture creation (CPU encode +0.04–0.11 ms/frame, GPU ±0.05 ms); below the
+  0.3 ms threshold. A surface-ID cache would hand out textures over recycled pool surfaces;
+  today's design is safe because `CacheTexture` retains its `CVPixelBuffer`.
