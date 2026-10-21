@@ -38,6 +38,8 @@ let expected: [(tab: String, id: String)] = ((try? String(contentsOfFile: args[3
 let tabs: [String] = expected.reduce(into: [String]()) { if !$0.contains($1.tab) { $0.append($1.tab) } }
 
 var failures = 0
+/// Tiles Tab reached that the lazy grid had not realized when the walk started (all tabs).
+var unrealizedReached = 0
 func pass(_ s: String) { print("PASS \(s)") }
 func fail(_ s: String) { print("FAIL \(s)"); failures += 1 }
 
@@ -116,6 +118,19 @@ func focusedIdentifier() -> String {
     return string(f as! AXUIElement, kAXIdentifierAttribute)
 }
 
+/// A tile's accessibility problems (role, title, description, press, focus) and its label.
+func inspect(_ t: AXUIElement) -> (problems: [String], label: String) {
+    let role = string(t, kAXRoleAttribute), title = string(t, kAXTitleAttribute)
+    let desc = string(t, kAXDescriptionAttribute)
+    var problems: [String] = []
+    if role != kAXButtonRole { problems.append("role \(role.isEmpty ? "none" : role)") }
+    if title.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXTitle") }
+    if desc.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXDescription") }
+    if !actions(t).contains(kAXPressAction) { problems.append("no AXPress (actions \(actions(t)))") }
+    if !settable(t, kAXFocusedAttribute) { problems.append("AXFocused not settable") }
+    return (problems, title.isEmpty ? desc : title)
+}
+
 /// The focused element for a log line: its identifier, or its role and title/description.
 func focusedDescription() -> String {
     guard let f = attr(app, kAXFocusedUIElementAttribute) else { return "nothing" }
@@ -145,17 +160,19 @@ for tab in tabs {
     wait(1)
 
     // Collect every tile, scrolling the list from top to bottom (the grid is lazy).
-    var seen: [String: AXUIElement] = [:]
+    // Each tile is inspected while it is on screen: once the lazy grid scrolls it away, its
+    // element is gone and reads as empty.
+    var seen: [String: (problems: [String], label: String)] = [:]
     var order: [String] = []
     func collect() {
         for t in tiles(in: window) {
             let id = string(t, kAXIdentifierAttribute)
             if seen[id] == nil { order.append(id) }
-            seen[id] = t
+            if seen[id] == nil || !string(t, kAXRoleAttribute).isEmpty { seen[id] = inspect(t) }
         }
     }
     collect()
-    if let any = seen.values.first, let area = scrollArea(of: any),
+    if let any = tiles(in: window).first, let area = scrollArea(of: any),
        let bar = attr(area, kAXVerticalScrollBarAttribute).map({ $0 as! AXUIElement }) {   // swiftlint:disable:this force_cast
         for step in 0...20 {
             AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, NSNumber(value: Double(step) / 20))
@@ -174,17 +191,9 @@ for tab in tabs {
     var labels: [String: [String]] = [:]
     var bad: [String] = []
     for id in order {
-        guard let t = seen[id] else { continue }
-        let role = string(t, kAXRoleAttribute), title = string(t, kAXTitleAttribute)
-        let desc = string(t, kAXDescriptionAttribute)
-        var problems: [String] = []
-        if role != kAXButtonRole { problems.append("role \(role.isEmpty ? "none" : role)") }
-        if title.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXTitle") }
-        if desc.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXDescription") }
-        if !actions(t).contains(kAXPressAction) { problems.append("no AXPress (actions \(actions(t)))") }
-        if !settable(t, kAXFocusedAttribute) { problems.append("AXFocused not settable") }
-        if !problems.isEmpty { bad.append("\(id): \(problems.joined(separator: ", "))") }
-        labels[title.isEmpty ? desc : title, default: []].append(id)
+        guard let f = seen[id] else { continue }
+        if !f.problems.isEmpty { bad.append("\(id): \(f.problems.joined(separator: ", "))") }
+        labels[f.label, default: []].append(id)
     }
     if bad.isEmpty { pass("\(tab): \(order.count) tiles: AXButton, title + description, AXPress, focusable") }
     else { fail("\(tab): \(bad.count) tile(s) incomplete: \(bad.prefix(6).joined(separator: "; "))") }
@@ -248,6 +257,7 @@ for tab in tabs {
     let notReached = want.filter { !visitedSet.contains($0) }
     if notReached.isEmpty, visited.count == want.count {
         let offscreen = visited.filter { !realizedAtTop.contains($0) }.count
+        unrealizedReached += offscreen
         pass("\(tab): Tab visits all \(want.count) tiles once (\(offscreen) not realized at the start)")
     } else {
         fail("\(tab): Tab visited \(visited.count) of \(want.count) tiles; not reached \(notReached.prefix(6)); stopped at \"\(leftTo)\"")
@@ -274,6 +284,10 @@ for tab in tabs {
         fail("\(tab): Tab from the search field went to \"\(focusedIdentifier())\" the second time, not \(entry)")
     }
 }
+
+// The walk must have crossed the lazy grid's edge somewhere (the check runs a small window).
+if unrealizedReached > 0 { pass("Tab reached \(unrealizedReached) tile(s) the lazy grid had not realized") }
+else { fail("every tile was realized from the start: the walk never crossed the lazy grid's edge (window too tall?)") }
 
 print(failures == 0 ? "ax-audit: all checks passed" : "ax-audit: \(failures) failure(s)")
 exit(Int32(min(failures, 125)))
