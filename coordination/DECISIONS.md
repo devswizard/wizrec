@@ -275,7 +275,7 @@ Dated log. Newest last.
   track or a new top one, never grows the group [obs]; multi-row payloads keep row order
   [WizRec]. Rev media (`groupType` "revMedia") is closed: no copy out, no paste in [inf].
   Group keys never travel with nested clips, `ShaderVidSource` does [obs]. `InsertClipInGroup`
-  (media-bin drops) still grows and requires the window [WizRec; Camtasia ?].
+  (media-bin drops): superseded by the session 9 entry below.
 - **2026-10-21 · Shader keyframes (amends "Shader background origin metadata"):**
   `SetSourceEffectParameters` keyframes add or reuse `animationTracks.visual`
   `{endTime, duration}` [obs §11.1 Q3]; `AnimationSync` keeps both entry shapes.
@@ -285,3 +285,23 @@ Dated log. Newest last.
 - **2026-10-21 · [WizRec] keeps:** midpoint insert for a magnetic drop inside a clip
   (Camtasia's refusal is only [inf], UI-level); `RippleTrim` as a WizRec-only command
   (Camtasia has no ripple-trim gesture, ED4).
+- **2026-10-21 · Media-bin drops into an open group (session 9, group-edits §8.6, RT-025):**
+  `InsertClipInGroup` follows Camtasia [obs]: no growth of the group or any enclosing group;
+  no clamp (negative or past-the-end inner start kept, the clip is hidden); track == inner
+  track count adds a new top inner track; an occupied spot on a non-magnetic inner track is
+  refused; the canvas-default transform is re-expressed through the enclosing groups in long
+  form. Supersedes the 2026-10-19 group-edit rule "a drop past a group's end grows it; drops
+  before mediaStart rejected". A library double-click into an open group places the item at
+  the playhead mapped into the group, on a new top inner track [WizRec, mirrors §8.6 and §11.2].
+- **2026-10-21 · Clip Speed rounding (session 9, edit-semantics ED2b, RT-024):** `SetClipSpeed`
+  and the new `SetClipDuration` floor `duration` to a whole frame, keep `mediaStart` and
+  `mediaDuration`, and write `scalar = duration / mediaDuration` as a reduced rational [obs].
+- **2026-10-21 · Loudness rate for projects without a sample rate (session 9):** sources are
+  measured at the mixer's own rate when `audioFormatSampleRate` is missing or invalid
+  [WizRec; Camtasia always writes the key]; otherwise at the project rate (audio.md §2.1).
+  Removes the 10× export slowdown of such projects.
+- **2026-10-21 · Assets-panel backgrounds (session 9, shader-backgrounds §11.2, RT-026):**
+  no `ShaderVidSource` outside Rev, so WizRec's rule stands.
+- **2026-10-21 · CI test builds optimized (session 9, qa12):** test builds use
+  `-Xswiftc -O` (debug config, `-enable-testing`), serial media step 324 s → 89 s locally;
+  enabled after the RenderEngine texture-lifetime crash it exposed is fixed (render12).
