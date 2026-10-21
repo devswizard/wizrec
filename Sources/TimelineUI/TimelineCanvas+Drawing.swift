@@ -569,6 +569,17 @@ extension TimelineCanvas {
                 ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(2)
                 ctx.stroke(r.insetBy(dx: 1, dy: 1))
             }
+        case .app(_, _, let target)?:
+            if let id = target.clipID, let (track, c) = snapshot.clip(id),
+               let r = L.clipRect(track: track, start: c.start, duration: c.duration) {
+                ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(3)
+                ctx.addPath(CGPath(roundedRect: r.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 5, cornerHeight: 5, transform: nil))
+                ctx.strokePath()
+            } else {
+                let x = L.x(ofTicks: target.ticks).rounded()
+                Palette.marqueeStroke.setFill()
+                ctx.fill(CGRect(x: x - 1, y: L.clipArea.minY, width: 2, height: L.clipArea.height))
+            }
         case nil: break
         }
         if let g = guide {

@@ -92,7 +92,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.delegate = self
         canvas.editor = self
         selectionOverlay.editor = self
-        canvas.registerForDraggedTypes(MediaDrop.types)
+        canvas.registerForDraggedTypes(MediaDrop.types + LibraryDragKind.types)
 
         renderer = CanvasRenderer(view: canvas)
         renderer?.engine = engine
@@ -128,6 +128,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         var announced = Set<URL>()
         timelineModel.contextMenuItems = { [weak self] context in self?.timelineMenuItems(context) ?? [:] }
+        timelineModel.onLibraryDrop = { [weak self] type, name, target, perform in
+            self?.timelineLibraryDrop(type, name, target, perform: perform) ?? false
+        }
         timelineModel.fileClipDuration = { url in
             let d = durations.duration(of: url)
             if let d, announced.insert(url).inserted {
@@ -419,6 +422,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         CanvasGeometry.frame(of: clipID, plan: engine.drawState().plan, project: model.project)
     }
 
+    /// Redraws the selection and drop outlines over the canvas.
+    func refreshCanvasOverlay() { selectionOverlay.needsDisplay = true }
+
     /// Canvas ▸ Crop Mode: edge handles on the selected clip crop it; again (or Esc) leaves it.
     @objc func toggleCropMode(_ sender: Any?) {
         ui.cropMode.toggle()
@@ -562,8 +568,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     /// Annotations library double-click: the callout at the playhead (5 s, above the clips
     /// there), selected. One undo step.
-    func insertCallout(_ preset: CalloutPreset) -> Bool {
-        let c = CalloutInsertion.command(preset, project: model.project, playhead: engine.currentTicks)
+    func insertCallout(_ preset: CalloutPreset, at ticks: Int64? = nil) -> Bool {
+        let c = CalloutInsertion.command(preset, project: model.project, playhead: ticks ?? engine.currentTicks)
         var ok = false
         run(String(localized: "Add Callout")) { try model.perform(c); ok = true }
         if let id = c.clipID { select([id]) }
@@ -574,8 +580,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// track), selected. With a group open on the timeline it goes on a new top inner track of
     /// that group at the playhead instead; the group never grows (`placeBackground(_:inGroup:atPlayhead:)`).
     /// One undo step ("Add Background").
-    func placeBackground(_ bg: BackgroundAsset) -> Bool {
-        let at = engine.currentTicks
+    func placeBackground(_ bg: BackgroundAsset, at ticks: Int64? = nil, track: Int? = nil) -> Bool {
+        let at = ticks ?? engine.currentTicks
         let group = timelineModel.openGroups.last
         ui.isImporting = true
         Task {
@@ -585,7 +591,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 if let group {
                     clip = try await model.placeBackground(bg, inGroup: group, atPlayhead: at)
                 } else {
-                    clip = try await model.placeBackground(bg, at: at)
+                    clip = try await model.placeBackground(bg, at: at, track: track)
                 }
                 select([clip])
             } catch {

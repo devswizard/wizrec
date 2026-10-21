@@ -171,25 +171,45 @@ final class EditorCanvasView: MTKView {
 
     // MARK: Drops
 
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+
+    /// Media: the whole canvas is the target. Library tiles: annotations and backgrounds the
+    /// canvas (at the playhead), clip items the clip under the pointer (outlined).
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard let editor else { return [] }
+        if let (kind, name) = LibraryDragKind.read(sender.draggingPasteboard) {
+            let ok = editor.canvasLibraryDrop(kind, name, point: canvasPoint(convert(sender.draggingLocation, from: nil)),
+                                              perform: false)
+            let whole = ok && !kind.needsClip
+            if editor.ui.canvasDropTargeted != whole { editor.ui.canvasDropTargeted = whole }
+            return ok ? .copy : []
+        }
         let ok = MediaDrop.read(sender.draggingPasteboard) != nil
-        editor?.ui.canvasDropTargeted = ok
+        if editor.ui.canvasDropTargeted != ok { editor.ui.canvasDropTargeted = ok }
         return ok ? .copy : []
     }
 
-    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        MediaDrop.read(sender.draggingPasteboard) == nil ? [] : .copy
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { endDropFeedback() }
+
+    override func draggingEnded(_ sender: any NSDraggingInfo) { endDropFeedback() }
+
+    private func endDropFeedback() {
+        guard let editor else { return }
+        editor.ui.canvasDropTargeted = false
+        if editor.ui.canvasDropClip != nil { editor.ui.canvasDropClip = nil; editor.refreshCanvasOverlay() }
     }
 
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) { editor?.ui.canvasDropTargeted = false }
-
-    override func draggingEnded(_ sender: any NSDraggingInfo) { editor?.ui.canvasDropTargeted = false }
-
-    /// A drop adds at the playhead on the lowest track with room for the whole clip, else on a
-    /// new top track (ui-workflow.md §4); dropped projects open in their own window.
+    /// A media drop adds at the playhead on the lowest track with room for the whole clip, else
+    /// on a new top track (ui-workflow.md §4); dropped projects open in their own window. A
+    /// library tile goes where `draggingUpdated` showed.
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        editor?.ui.canvasDropTargeted = false
-        guard let drop = MediaDrop.read(sender.draggingPasteboard), let editor else { return false }
+        defer { endDropFeedback() }
+        guard let editor else { return false }
+        if let (kind, name) = LibraryDragKind.read(sender.draggingPasteboard) {
+            return editor.canvasLibraryDrop(kind, name, point: canvasPoint(convert(sender.draggingLocation, from: nil)),
+                                            perform: true)
+        }
+        guard let drop = MediaDrop.read(sender.draggingPasteboard) else { return false }
         editor.place(drop, track: nil, at: editor.engine.currentTicks)
         return true
     }
@@ -204,6 +224,7 @@ final class SelectionOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
+        drawDropClip()
         guard let editor, editor.timelineModel.selection.count == 1, let id = editor.timelineModel.selection.first,
               let f = editor.canvasFrame(of: id) else { return }
         let canvas = editor.engine.scene.canvasSize
@@ -261,5 +282,21 @@ final class SelectionOverlayView: NSView {
             accent.setStroke()
             NSBezierPath(rect: r).stroke()
         }
+    }
+
+    /// The clip a library tile is dragged onto: a thick accent outline with a light fill.
+    private func drawDropClip() {
+        guard let editor, let id = editor.ui.canvasDropClip, let f = editor.canvasFrame(of: id) else { return }
+        let canvas = editor.engine.scene.canvasSize
+        let pts = f.corners.map { CanvasGeometry.viewPoint($0, viewSize: bounds.size, canvasSize: canvas) }
+        let path = NSBezierPath()
+        path.move(to: pts[0])
+        for p in pts.dropFirst() { path.line(to: p) }
+        path.close()
+        NSColor.controlAccentColor.withAlphaComponent(0.15).setFill()
+        path.fill()
+        path.lineWidth = 3
+        NSColor.controlAccentColor.setStroke()
+        path.stroke()
     }
 }

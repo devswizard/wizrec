@@ -17,6 +17,8 @@ final class EditorUIState {
     var activity: String?
     /// Canvas crop mode: the selected clip shows edge handles that crop it (ui-workflow.md §8).
     var cropMode = false
+    /// The clip a library tile dragged over the canvas would go onto (outlined); nil otherwise.
+    var canvasDropClip: Int64?
     private var messageToken = 0
 
     func show(_ text: String, seconds: Double = 6) {
@@ -135,7 +137,9 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     /// Media drags over the overlay's own controls (e.g. the empty canvas's buttons) go to this
     /// view (the canvas below), so the whole canvas area takes drops.
     weak var dropTarget: NSView? {
-        didSet { if dropTarget != nil { registerForDraggedTypes(MediaDrop.types) } else { unregisterDraggedTypes() } }
+        didSet {
+            if dropTarget != nil { registerForDraggedTypes(MediaDrop.types + LibraryDragKind.types) } else { unregisterDraggedTypes() }
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

@@ -58,6 +58,14 @@ public final class TimelineModel {
     /// keep their own target and enabled state (the menu does not auto-enable).
     @ObservationIgnored public var contextMenuItems: ((TimelineMenuContext) -> [TimelineMenuSection: [NSMenuItem]])?
 
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-1b).
+
+    /// App-handled library tiles (`TimelineView.appLibraryTypes`: annotations, backgrounds, audio
+    /// effects, animations) dragged over the timeline: pasteboard type, tile name, target, and
+    /// `perform` (false while hovering: may it drop here; true on drop: do it). Returns whether it
+    /// can (hover) or did (drop). Nil: such tiles are refused.
+    @ObservationIgnored public var onLibraryDrop: ((NSPasteboard.PasteboardType, String, TimelineLibraryTarget, _ perform: Bool) -> Bool)?
+
     public init(undo: UndoStack) { self.undo = undo }
 }
 

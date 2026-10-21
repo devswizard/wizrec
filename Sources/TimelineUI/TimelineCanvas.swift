@@ -25,6 +25,8 @@ enum TimelineDrag: Equatable {
 enum LibraryDrop: Equatable {
     case effect(name: String, clipID: Int64)
     case transition(name: String, left: Int64?, right: Int64?)
+    /// An app-handled tile (`TimelineModel.onLibraryDrop`) the app accepts at `target`.
+    case app(type: String, name: String, target: TimelineLibraryTarget)
 }
 
 /// Draws the timeline and turns events into edits. Lives inside `TimelineView`.
@@ -72,7 +74,8 @@ final class TimelineCanvas: NSView {
         rebuildIfNeeded()
         lastPlayhead = model.playhead
         art.onUpdate = { [weak self] in self?.needsDisplay = true }
-        registerForDraggedTypes([.fileURL, TimelineView.sourceIDType, TimelineView.effectType, TimelineView.transitionType])
+        registerForDraggedTypes([.fileURL, TimelineView.sourceIDType, TimelineView.effectType, TimelineView.transitionType]
+                                + TimelineView.appLibraryTypes)
         observeModel()
         observePlayhead()
     }
@@ -568,6 +571,8 @@ final class TimelineCanvas: NSView {
         let ok = switch drop {
         case .effect(let name, let id): editor.addEffect(named: name, to: id)
         case .transition(let name, let l, let r): editor.addTransition(named: name, left: l, right: r)
+        case .app(let type, let name, let target):
+            model.onLibraryDrop?(NSPasteboard.PasteboardType(type), name, target, true) ?? false
         }
         if !ok { NSSound.beep() }
         return ok
@@ -579,6 +584,11 @@ final class TimelineCanvas: NSView {
         rebuildIfNeeded()
         if let item = libraryItem(sender.draggingPasteboard) {
             libraryTarget = libraryDrop(item, at: convert(sender.draggingLocation, from: nil))
+            needsDisplay = true
+            return libraryTarget == nil ? [] : .copy
+        }
+        if let item = appLibraryItem(sender.draggingPasteboard) {
+            libraryTarget = appLibraryDrop(item, at: convert(sender.draggingLocation, from: nil))
             needsDisplay = true
             return libraryTarget == nil ? [] : .copy
         }
@@ -631,6 +641,10 @@ final class TimelineCanvas: NSView {
         defer { dropTarget = nil; dropPreview = nil; libraryTarget = nil; needsDisplay = true }
         if let item = libraryItem(sender.draggingPasteboard) {
             guard let drop = libraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
+            return perform(drop)
+        }
+        if let item = appLibraryItem(sender.draggingPasteboard) {
+            guard let drop = appLibraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
             return perform(drop)
         }
         guard let payload = dropPayload(sender) else { return false }
