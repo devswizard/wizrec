@@ -116,6 +116,19 @@ import WizRecTestSupport
                                 env: ["WIZREC_SPARKLE_PUBKEY": Self.key]).status != 0)
     }
 
+    /// QA11-3: variables set but empty (CI sets unused ones to "", update-appcast.sh passes
+    /// `WIZREC_SPARKLE_FEED='' WIZREC_SPARKLE_PUBKEY=''`) count as unset: the config file decides.
+    @Test func emptyEnvironmentPairFallsBackToTheConf() throws {
+        let empty = ["WIZREC_SPARKLE_FEED": "", "WIZREC_SPARKLE_PUBKEY": ""]
+        let on = try runWithConf("feed_url = \(Self.feed)\npublic_ed_key = \(Self.key)\n", env: empty)
+        #expect(on.status == 0 && on.out.contains("<string>\(Self.feed)</string>") && on.out.contains("<string>\(Self.key)</string>"))
+        let off = try runWithConf("feed_url = \(Self.feed)\npublic_ed_key =\n", env: empty)
+        #expect(off.status == 0 && off.out.isEmpty)
+        // One empty, one set is still half a pair.
+        #expect(try runWithConf("feed_url = \(Self.feed)\npublic_ed_key =\n",
+                                env: ["WIZREC_SPARKLE_FEED": "", "WIZREC_SPARKLE_PUBKEY": Self.key]).status != 0)
+    }
+
     @Test func committedConfKeepsTheUpdaterOffOrValid() throws {
         // The committed file must always produce a valid result: nothing (no key yet) or both keys.
         let conf = Self.script.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
