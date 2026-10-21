@@ -73,7 +73,14 @@ struct GoldenHarnessSelfTests {
         let testCase = try #require(TestGen.cases.first { $0.name == "keyframes-linear" })
         let caseDir = try TestGen.write(testCase, media: media, to: dir)
         let golden = GoldenCase(name: testCase.name, directory: caseDir)
+        // Four of the case's 13 frames (QA11-2: each costs ~1.3 s twice at 1080p in debug builds):
+        // a still start and three frames where the marker moves 9–27 px per frame, so a reference
+        // one frame late must fail. The reference movie shrinks to 76 frames as well.
+        var trimmed = try golden.manifest()
+        trimmed.frames = [0, 20, 30, 75]
+        try trimmed.write(to: caseDir.appendingPathComponent("golden.json"))
         let m = try golden.manifest()
+        #expect(m.frames == [0, 20, 30, 75])
         let bundle = try ProjectBundle(url: golden.url(m.project))
         let renderer = OfflineRenderer(scene: SceneModel(project: bundle.project, resolve: bundle.resolve), pool: MediaPool())
 
@@ -97,10 +104,14 @@ struct GoldenHarnessSelfTests {
         #expect(failed.isEmpty, "\(failed)")
 
         try await writeReference(offset: 1)
+        var lateFailures: [Int] = []
         await withKnownIssue("reference one frame late on purpose") {
             let late = try #require(try await runGoldenCase(golden))
             #expect(late.contains { !$0.passed })
+            lateFailures = late.filter { !$0.passed }.map(\.frame)
         }
+        // Outside the known-issue scope: every moving frame fails, the still one passes.
+        #expect(lateFailures == [20, 30, 75])
     }
 }
 
