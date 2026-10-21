@@ -42,7 +42,8 @@ final class FakeWriter: FinishableWriter, @unchecked Sendable {
     func finishWriting(completionHandler handler: @escaping @Sendable () -> Void) {
         guard let finishAfter else { return }
         let calls = finishCallbacks
-        DispatchQueue.global().asyncAfter(deadline: .now() + finishAfter) { calls.hit(); handler() }
+        // Own thread, not a GCD worker: other tests may hold the pool (HANDOFF §0 lesson).
+        Thread.detachNewThread { Thread.sleep(forTimeInterval: finishAfter); calls.hit(); handler() }
     }
     func cancelWriting() { cancelGate?.wait() }
 }
