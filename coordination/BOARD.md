@@ -364,3 +364,23 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 - timeline11 (2a3fd35 + notes): TL11-1..5. **1107 tests green, 17 known issues.**
 - Demo (built app, copy of demo project): snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 2.3 s.
 - **Session 8 complete: all agents DONE, all branches merged.** Follow-ups and NEED_USER in docs/HANDOFF.md §0.
+
+# Session 9 — CI time, audio export speed, tile focus, open [?] rules, v0.1.1 (2026-10-21)
+
+Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| AUD12-1 | audio | claimed | export with missing/invalid `audioFormatSampleRate` no slower than ~1.5x valid; perf test gated `WIZREC_PERF=1` |
+| AUD12-2 | audio | claimed | resampler / Clip Speed stretch faster in debug, output bytes unchanged (hash test) |
+| QA12-1 | qa | claimed | serial CI media step measurably faster (optimized test builds or `-Osize` TestGenKit) |
+| QA12-2 | qa | claimed | integration tests for every merge; flaky watch 3 runs |
+| QA12-3 | qa | claimed | golden self-test 176/180 frames under load: reproduce or harden |
+| APP12-1 | app | claimed | library tiles: Tab at grid ends + past last realized tile; AX audit extended |
+| APP12-2 | app | claimed | `scripts/ui-checks/run-all.sh` green on a fresh build |
+| RES12-1 | researcher | claimed | save-only answers: Assets-panel background, Clip Speed rounding, media-bin drop into open group |
+| SHIP12-1 | ship | claimed | actionlint clean on all workflows (release.yml SC2010/SC2046) |
+| SHIP12-2 | ship | claimed | v0.1.1 notes; rpath-clean DMG verified locally |
+| SHIP12-3 | ship | claimed | Sparkle on/off check of built Info.plist; RELEASING steps for the key |
+
+## Session 9 merges

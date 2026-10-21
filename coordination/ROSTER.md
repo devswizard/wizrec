@@ -1,7 +1,7 @@
 # Roster
 
 SendMessage addresses of the live agents, written by the lead after each spawn.
-Session 8 agents all finished; their branches are merged. None is live.
+Session 9 agents are live (table at the end).
 
 ## Session 3 (2026-10-19)
 
@@ -109,3 +109,17 @@ change a rule.
 | Name | Address | Branch |
 |---|---|---|
 | timeline | aaffbd7cae20f3e8c | `agent/timeline11` |
+
+## Session 9 (2026-10-21)
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` |
+| audio | a5e50cd2c31366da1 | `agent/audio12` |
+| qa | aa801c2a531989d7c | `agent/qa12` |
+| app | a9a2780a0ee678a38 | `agent/app12` |
+| researcher | a29ba75d311dd1bc1 | `agent/researcher12` |
+| ship | ad02da61f248cb773 | `agent/ship12` |
+
+Not spawned: timeline (only if RES12-1 changes a rule), render and captions
+(no licensed exports).
