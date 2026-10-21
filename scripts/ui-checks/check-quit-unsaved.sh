@@ -26,14 +26,17 @@ fingerprint() {
 both_opened() { [ "$(grep -c '^WizRec: opened demo-[ab]\.cmproj' "$WORK/app.log" 2>/dev/null)" -ge 2 ]; }
 asking() { has_el "Don't Save"; }
 
-# add_markers: key M in each project window (the timeline has focus after opening).
+# add_markers: key M in each project window (the timeline has focus after opening): M in the
+# key window, ⌘` (next window), M again. Raising a window through accessibility does not
+# reliably make it key; ⌘` does.
 add_markers() {
-    local w
-    for w in demo-a demo-b; do
-        [ "$(ax raise "$w")" = ok ] || { fail "no window $w"; return 1; }
-        ax keys m >/dev/null
-        sleep 0.5
-    done
+    [ "$(ax raise demo-a)" = ok ] || { fail "no window demo-a"; return 1; }
+    ax keys m >/dev/null
+    sleep 0.5
+    ax keys '`' cmd >/dev/null
+    sleep 0.8
+    ax keys m >/dev/null
+    sleep 0.5
 }
 
 # expect_quiet_exit <seconds> <what>: the app exits within <seconds> without a save alert.
