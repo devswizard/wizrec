@@ -12,7 +12,7 @@ import WizRecTestSupport
 /// CVMetalTextures a command buffer kept alive (SIGSEGV in
 /// `CVMetalTextureCache::bufferBackingNotInUse`). Wrappers now keep their cache alive and every
 /// create, flush and final release runs under the cache's lock (`LockedTextureCache`).
-@Suite(.enabled(if: hasGPU)) struct TextureCacheLifetimeTests {
+@Suite(.serialized, .enabled(if: hasGPU)) struct TextureCacheLifetimeTests {
     @Test func wrapperKeepsItsCacheAlive() throws {
         let device = try #require(gpu)
         var cache = LockedTextureCache(device: device)
@@ -27,10 +27,13 @@ import WizRecTestSupport
         let box = OSAllocatedUnfairLock<CacheTexture?>(uncheckedState: wrapped)
         wrapped = nil
         try Deadline.blocking("release on another thread", seconds: 10) { done in
-            DispatchQueue.global().async {
+            // A dedicated thread, not a GCD worker: on a loaded CI runner the global pool can be
+            // saturated by blocked workers, and the release would never run (CI run 35).
+            let releaser = Thread {
                 box.withLockUnchecked { $0 = nil }
                 done()
             }
+            releaser.start()
         }
         #expect(weakCache == nil)
     }
