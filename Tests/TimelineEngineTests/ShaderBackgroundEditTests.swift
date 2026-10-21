@@ -82,10 +82,43 @@ private func sourceEffect(_ overrides: [String: String] = [:]) -> String {
      "keyframes" : [{"endTime" : 45, "time" : 30, "value" : 4.0, "interp" : "linr", "duration" : 15}]}
     """#
     #expect(try params(proj) == (try JSON.parse(sourceEffect(["Speed": speed]))).object?["parameters"])
-    // The same keyframe again only updates its value.
+    // The keyframe window is listed in animationTracks.visual as {endTime, duration} (§11.1 Q3).
+    let anim = try JSON.parse(#"{"visual" : [{"endTime" : 45, "duration" : 15}]}"#)
+    #expect(proj.tracks[0].clips[0].object["animationTracks"] == anim)
+    // The same keyframe again only updates its value and reuses the entry.
     try SetSourceEffectParameters(clipID: 10, changes: [.init("Speed", 4, keyframeAt: 45)]).apply(to: proj)
     #expect(try params(proj).object?["Speed"]?.object?["keyframes"]?.array?.count == 1)
-    #expect(proj.tracks[0].clips[0].object["animationTracks"] == J.emptyObject)
+    #expect(proj.tracks[0].clips[0].object["animationTracks"] == anim)
+}
+
+@MainActor @Test func backgroundKeyframesAddOrReuseAnimationEntries() throws {
+    // An existing transform animation 30–40 (range form) and a menu animation ending at 60
+    // ({endTime, duration}) stay. A Speed keyframe at 40 (window 30–40) reuses the first;
+    // Pos.x at 60 (30–60) and a second Speed keyframe at 50 (40–50) add entries in time order.
+    let existing = #"{"visual" : [{"endTime" : 40, "duration" : 10, "range" : [30, 10], "interp" : "eioe"}, {"endTime" : 60, "duration" : 20}]}"#
+    let proj = try makeProject(
+        tracks: tracks(track(0, [leaf(10, start: 0, dur: 60, ms: "30", src: 2, anim: existing)
+            .replacingOccurrences(of: #""parameters" : {}"#, with: #""parameters" : {}, "sourceEffect" : \#(sourceEffect())"#)])),
+        sourceBin: "[\(bgSource), \(movieSource)]")
+    let reuse = SetSourceEffectParameters(clipID: 10, changes: [.init("Speed", 3, keyframeAt: 40), .init("Pos.x", 100, keyframeAt: 60)])
+    try expectReversible(reuse, on: proj)
+    try reuse.apply(to: proj)
+    let clip = proj.tracks[0].clips[0].object
+    // Speed 30–40 and Pos.x 30–60 (first keyframe from the visible start): 30–60 is new.
+    #expect(clip["animationTracks"] == (try JSON.parse(#"{"visual" : [{"endTime" : 40, "duration" : 10, "range" : [30, 10], "interp" : "eioe"}, {"endTime" : 60, "duration" : 30}, {"endTime" : 60, "duration" : 20}]}"#)))
+    let split = SetSourceEffectParameters(clipID: 10, changes: [.init("Speed", 5, keyframeAt: 50)])
+    try expectReversible(split, on: proj)
+    try split.apply(to: proj)
+    #expect(proj.tracks[0].clips[0].object["animationTracks"] == (try JSON.parse(#"{"visual" : [{"endTime" : 40, "duration" : 10, "range" : [30, 10], "interp" : "eioe"}, {"endTime" : 60, "duration" : 30}, {"endTime" : 50, "duration" : 10}, {"endTime" : 60, "duration" : 20}]}"#)))
+    // Constants never touch animationTracks.
+    let before = proj.tracks[0].clips[0].object["animationTracks"]
+    try SetSourceEffectParameters(clipID: 10, changes: [.init("Color0-red", 0.1)]).apply(to: proj)
+    #expect(proj.tracks[0].clips[0].object["animationTracks"] == before)
+    #expect(try Project(data: proj.serialized()).serialized() == proj.serialized())
+    // A later transform edit re-syncs animationTracks: the shader windows stay (with their
+    // {endTime, duration} shape); only the unused 40–60 entry goes.
+    try SetParameter(clipID: 10, parameter: "scale0", value: 0.5).apply(to: proj)
+    #expect(proj.tracks[0].clips[0].object["animationTracks"] == (try JSON.parse(#"{"visual" : [{"endTime" : 40, "duration" : 10, "range" : [30, 10], "interp" : "eioe"}, {"endTime" : 60, "duration" : 30}, {"endTime" : 50, "duration" : 10}]}"#)))
 }
 
 @MainActor @Test func missingBackgroundParameterUsesEffectDefDefault() throws {

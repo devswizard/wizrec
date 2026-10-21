@@ -31,8 +31,11 @@ public struct SourceEffectChange: Sendable, Equatable {
 ///   `{type: "double", defaultValue: <effectDef default>, interp: "linr"}` [obs form, §6]
 ///   before the change; with no `effectDef` entry its default is the new value [inf].
 /// - Bare-number parameters stay bare; string parameters (`sourceFileType`) are rejected.
-/// - `animationTracks` is not changed: whether Camtasia lists `sourceEffect` keyframe windows
-///   there is unknown [?] (QUESTION to main, 2026-10-20).
+/// - Keyframes are listed in `animationTracks.visual` [obs, §11.1 Q3]: for every keyframe
+///   window (`time` … `endTime`, non-empty) of a parameter this command keyframed, an entry
+///   `{endTime, duration}` is added unless one with that window exists (reused as is). No
+///   entry is changed or removed; constants change nothing there.
+/// - Revert restores the original bytes.
 @MainActor public final class SetSourceEffectParameters: EditCommand {
     public let name = "Change Background"
     public let clipID: Int64
@@ -71,6 +74,14 @@ public struct SourceEffectChange: Sendable, Equatable {
                     ParamWriter.setConstant(params, c.name, c.value)
                 }
             }
+            var windows: [AnimationSync.Window] = []
+            for name in Set(changes.filter { $0.keyframeAt != nil }.map(\.name)) {
+                for k in params[name]?.object?["keyframes"]?.array?.items.compactMap(\.object) ?? [] {
+                    let t: Int64 = k["time"]?.int ?? 0
+                    windows.append(AnimationSync.Window(time: t, endTime: k["endTime"]?.int ?? t))
+                }
+            }
+            AnimationSync.addEntries(clip, for: windows)
         }
     }
 
