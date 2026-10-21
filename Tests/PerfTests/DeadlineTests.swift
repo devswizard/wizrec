@@ -38,9 +38,9 @@ struct DeadlineTests {
             try await Task.sleep(nanoseconds: 30_000_000_000)
             return 1
         }
-        let start = Date()
+        let start = SuspendingClock.now
         await #expect(throws: DeadlineExceeded.self) { try await Deadline.value(of: t, "sleeper", seconds: 0.1) }
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(SuspendingClock.now - start < .seconds(10))
         await #expect(throws: CancellationError.self) { try await t.value }
     }
 
@@ -111,8 +111,8 @@ struct DeadlineTests {
     }
 
     @Test func processTimesOutAndIsKilled() throws {
-        let start = Date()
+        let start = SuspendingClock.now
         #expect(throws: DeadlineExceeded.self) { try TestProcess.run("/bin/sleep", ["30"], seconds: 0.2) }
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(SuspendingClock.now - start < .seconds(10))
     }
 }
