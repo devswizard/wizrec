@@ -43,6 +43,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
     private var recorderHUD: RecorderHUDController?
+    /// Tab / Shift-Tab between the panes: library sidebar → canvas → inspector → timeline.
+    let keyLoop = EditorKeyLoop()
     /// The toolbar's delegate (NSToolbar holds it weakly).
     private let toolbarItems = EditorToolbar()
     /// The last media drop into an open group while it imports and places (`placeInGroup`).
@@ -140,8 +142,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     private func buildLayout(in window: NSWindow) {
         let bar = NSHostingView(rootView: TransportBar(engine: engine))
-        let overlay = PassthroughHostingView(rootView: CanvasOverlay(engine: engine, model: model, ui: ui,
-                                                            relink: { [weak self] in self?.showRelink(nil) }))
+        let overlay = PassthroughHostingView(rootView: CanvasOverlay(
+            engine: engine, model: model, ui: ui,
+            relink: { [weak self] in self?.showRelink(nil) },
+            record: { [weak self] in self?.newRecording(nil) },
+            importMedia: { [weak self] in self?.importMedia(nil) }))
+        overlay.dropTarget = canvas
         let center = NSView()
         for v in [canvas, selectionOverlay, overlay, bar] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -202,6 +208,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         for v in [top, timelineView] as [NSView] { root.addArrangedSubview(v) }
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
+        keyLoop.panes = [
+            EditorKeyLoop.Pane(view: bin),
+            EditorKeyLoop.Pane(view: center, extraStops: [canvas]),
+            EditorKeyLoop.Pane(view: props),
+            EditorKeyLoop.Pane(view: timelineView, singleStop: timelineView),
+        ]
         root.defaultSizes = { size in [max(360, size.height - 230)] }
         if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
@@ -500,28 +512,54 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
-    /// Imports `urls` into the bin; with `place`, also onto the timeline at `ticks`.
-    func importFiles(_ urls: [URL], place: Bool, track: Int? = nil, at ticks: Int64? = nil) {
+    /// Imports `urls` into the bin; with `place`, also onto the timeline at `ticks`. Projects
+    /// among them open in their own window; folders and other documents are reported.
+    func importFiles(_ given: [URL], place: Bool, track: Int? = nil, at ticks: Int64? = nil) {
+        let sorted = DroppedFiles(given)
+        if !sorted.projects.isEmpty { (NSDocumentController.shared as? WizRecDocumentController)?.openFiles(sorted.projects) }
+        let unsupported = sorted.unsupportedMessage()
+        let urls = sorted.media
+        guard !urls.isEmpty else {
+            if let unsupported { ui.show(unsupported, seconds: 10) }
+            return
+        }
         ui.isImporting = true
         Task {
-            var failures: [String] = []
+            var failures: [String] = unsupported.map { [$0] } ?? []
             var t = ticks ?? engine.currentTicks
+            var placed: [String] = []
+            var imported = 0
             for u in urls {
                 do {
                     if place {
                         let clip = try await model.importAndInsert(u, at: t, track: track)
-                        if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
+                        if let (i, c) = model.project.tracks.enumerated().lazy
+                            .compactMap({ (i, tr) in tr.clips.first { $0.id == clip }.map { (i, $0) } }).first {
+                            t = c.end
+                            placed.append("\(clip)@track\(i)")
+                        }
                         select([clip])
                     } else {
                         try await model.importMedia(u)
                     }
+                    imported += 1
                 } catch {
-                    failures.append("\(u.lastPathComponent): \(Self.describe(error))")
+                    failures.append(Self.importFailure(u, error))
                 }
             }
             ui.isImporting = false
-            if !failures.isEmpty { ui.show("Import failed — " + failures.joined(separator: "; "), seconds: 10) }
+            // UI checks read this line (drops onto the bin, canvas and timeline).
+            print("WizRec: imported \(imported) of \(urls.count) "
+                  + "place=\(place) clips=[\(placed.joined(separator: ","))] bin=\(model.project.sourceBin.count)")
+            fflush(stdout)
+            if !failures.isEmpty { ui.show(failures.joined(separator: " "), seconds: 10) }
         }
+    }
+
+    /// One plain sentence for a file that could not be imported.
+    static func importFailure(_ url: URL, _ error: any Error) -> String {
+        if case DocumentError.unsupportedMedia = error { return describe(error) }
+        return String(localized: "“\(url.lastPathComponent)” couldn’t be imported: \(describe(error))")
     }
 
     /// Places a bin item at the playhead.
@@ -826,7 +864,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private func installKeys() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { () -> Bool in
-                guard let self, event.window === self.window, !(self.window?.firstResponder is NSText) else { return false }
+                guard let self, event.window === self.window, let window = self.window else { return false }
+                // Tab / Shift-Tab: the window's pane loop decides at pane edges (library tiles
+                // handle their own Tab and leave through `keyLoop.leave`).
+                let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                if event.keyCode == 48, mods.subtracting(.shift).isEmpty, window.attachedSheet == nil {
+                    if window.firstResponder is LibraryTileAccessibility.Element { return false }
+                    return self.keyLoop.handleTab(in: window, backward: mods.contains(.shift))
+                }
+                guard !(window.firstResponder is NSText) else { return false }
                 // A focused library tile takes Space (press) instead of play/pause.
                 if event.keyCode == 49, self.window?.firstResponder is LibraryTileAccessibility.Element { return false }
                 return self.handleKey(event)

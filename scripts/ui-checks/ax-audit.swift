@@ -17,9 +17,14 @@
 //   - keyboard: Tab from a focused tile moves keyboard focus to another tile (key view loop);
 //   - keyboard walk: Tab from the search field enters the grid, Tab visits every tile of the
 //     tab once (tiles the lazy grid has not realized scroll into view), Tab from the last
-//     tile leaves the grid, Shift-Tab from the first tile returns to the search field;
+//     tile leaves the library panel for the canvas (the window's pane loop), Shift-Tab from the
+//     first tile returns to the search field;
 //
-// and that every expected tile of the tab was found. Prints PASS/FAIL lines; exit status is
+// and that every expected tile of the tab was found. Then the window's key loop (APP14-2):
+// with no clip selected, Tab goes library → canvas → timeline → library (the empty inspector
+// is skipped) and Shift-Tab the other way; with one clip selected (a click on the canvas), Tab
+// from the canvas reaches the inspector's fields and leaves them for the timeline; on the Media
+// tab, Tab from the timeline reaches the first media tile, and Tab from the last tile the canvas. Prints PASS/FAIL lines; exit status is
 // the number of failures (capped at 125).
 import ApplicationServices
 import Foundation
@@ -267,8 +272,10 @@ for tab in tabs {
         fail("\(tab): Tab from the last tile \(lastTile) left focus there")
     } else if leftTo.hasPrefix("library.") {
         fail("\(tab): Tab from the last tile \(lastTile) went back to tile \(leftTo)")
+    } else if leftTo == "editor.canvas" {
+        pass("\(tab): Tab from the last tile \(lastTile) leaves the library for the canvas")
     } else {
-        pass("\(tab): Tab from the last tile \(lastTile) leaves the grid (to \(focusedDescription()))")
+        fail("\(tab): Tab from the last tile \(lastTile) went to \(focusedDescription()), not to the canvas (editor.canvas)")
     }
     // Back at the top: Shift-Tab from the first tile goes to the search field.
     focusSearch()
@@ -283,6 +290,125 @@ for tab in tabs {
     } else {
         fail("\(tab): Tab from the search field went to \"\(focusedIdentifier())\" the second time, not \(entry)")
     }
+}
+
+// MARK: Window key loop (APP14-2)
+
+/// Presses (Shift-)Tab and returns the focused identifier ("" when it has none).
+func tab(shift: Bool = false) -> String {
+    key(48, shift: shift)
+    wait(0.4)
+    return focusedIdentifier()
+}
+
+/// The focused element's role.
+func focusedRole() -> String {
+    guard let f = attr(app, kAXFocusedUIElementAttribute) else { return "" }
+    return string(f as! AXUIElement, kAXRoleAttribute)   // swiftlint:disable:this force_cast
+}
+
+func element(_ id: String) -> AXUIElement? { first(window, where: { string($0, kAXIdentifierAttribute) == id }) }
+
+/// Screen frame (top-left origin) of an element.
+func frame(_ e: AXUIElement) -> CGRect? {
+    guard let p = attr(e, kAXPositionAttribute), let z = attr(e, kAXSizeAttribute) else { return nil }
+    var pt = CGPoint.zero, sz = CGSize.zero
+    // swiftlint:disable:next force_cast
+    guard AXValueGetValue(p as! AXValue, .cgPoint, &pt), AXValueGetValue(z as! AXValue, .cgSize, &sz) else { return nil }
+    return CGRect(origin: pt, size: sz)
+}
+
+/// A real left click at a screen point (HID tap).
+func click(_ p: CGPoint) {
+    for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+        guard let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { continue }
+        e.setIntegerValueField(.mouseEventClickState, value: type == .mouseMoved ? 0 : 1)
+        e.post(tap: .cghidEventTap)
+        wait(type == .mouseMoved ? 0.15 : 0.05)
+    }
+    wait(0.4)
+}
+
+func selectTab(_ title: String) -> Bool {
+    guard let b = first(window, where: {
+        string($0, kAXRoleAttribute) == kAXRadioButtonRole
+            && (string($0, kAXTitleAttribute) == title || string($0, kAXDescriptionAttribute) == title)
+    }) else { return false }
+    AXUIElementPerformAction(b, kAXPressAction as CFString)
+    wait(1)
+    return true
+}
+
+func expectFocus(_ what: String, _ got: String, _ want: (String) -> Bool, _ wanted: String) {
+    if want(got) { pass("key loop: \(what) → \(got)") }
+    else { fail("key loop: \(what) went to \(got.isEmpty ? focusedDescription() : got), not to \(wanted)") }
+}
+
+if let libraryTab = tabs.last, selectTab(libraryTab), let search = element("librarySearch") {
+    // No selection: the inspector has nothing to focus and is skipped.
+    AXUIElementSetAttributeValue(search, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    wait(0.3)
+    expectFocus("Shift-Tab from the library search field", tab(shift: true), { $0 == "editor.timeline" }, "the timeline")
+    expectFocus("Shift-Tab from the timeline", tab(shift: true), { $0 == "editor.canvas" }, "the canvas (empty inspector skipped)")
+    expectFocus("Shift-Tab from the canvas", tab(shift: true), { $0.hasPrefix("library.") }, "the last library tile")
+    if let canvas = element("editor.canvas") {
+        AXUIElementSetAttributeValue(canvas, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        wait(0.3)
+    }
+    expectFocus("Tab from the canvas", tab(), { $0 == "editor.timeline" }, "the timeline (empty inspector skipped)")
+    expectFocus("Tab from the timeline", tab(), { $0 == "librarySearch" }, "the library search field")
+
+    // One clip selected: the inspector's fields are in the loop between canvas and timeline.
+    if let canvas = element("editor.canvas"), let f = frame(canvas) {
+        click(CGPoint(x: f.midX, y: f.midY))
+        if focusedIdentifier() == "editor.canvas" {
+            var role = ""
+            var steps = 0
+            var id = tab()
+            role = focusedRole()
+            if role == kAXTextFieldRole {
+                pass("key loop: Tab from the canvas → an inspector field (\(id.isEmpty ? role : id))")
+                while focusedRole() == kAXTextFieldRole, steps < 40 { id = tab(); steps += 1 }
+                expectFocus("Tab past the last inspector field (\(steps) fields)", id, { $0 == "editor.timeline" }, "the timeline")
+                expectFocus("Shift-Tab from the timeline", tab(shift: true), { _ in focusedRole() == kAXTextFieldRole },
+                            "the last inspector field")
+            } else {
+                fail("key loop: with a clip selected, Tab from the canvas went to \(focusedDescription()), not to an inspector field")
+            }
+        } else {
+            fail("key loop: a click on the canvas left focus on \(focusedDescription())")
+        }
+    } else {
+        fail("key loop: no canvas (editor.canvas) in the accessibility tree")
+    }
+
+    // Media tab: its tiles are pane stops too.
+    if selectTab("Media"), let timeline = element("editor.timeline") {
+        AXUIElementSetAttributeValue(timeline, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        wait(0.3)
+        let firstMedia = tab()
+        expectFocus("Media tab: Tab from the timeline", firstMedia, { $0.hasPrefix("bin.") }, "the first media tile")
+        var last = firstMedia
+        var n = 1
+        while true {
+            let next = tab()
+            if !next.hasPrefix("bin.") || next == last || n > 200 {
+                expectFocus("Media tab: Tab from the last media tile \(last) (\(n) tiles)", next, { $0 == "editor.canvas" }, "the canvas")
+                break
+            }
+            last = next
+            n += 1
+        }
+        if let first = element(firstMedia) {
+            AXUIElementSetAttributeValue(first, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            wait(0.3)
+            expectFocus("Media tab: Shift-Tab from the first media tile", tab(shift: true), { $0 == "editor.timeline" }, "the timeline")
+        }
+    } else {
+        fail("key loop: no Media tab or no timeline (editor.timeline)")
+    }
+} else {
+    fail("key loop: no library tab with a search field to start from")
 }
 
 // The walk must have crossed the lazy grid's edge somewhere (the check runs a small window).

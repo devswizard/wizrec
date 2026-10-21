@@ -6,14 +6,15 @@ import PlayerKit
 /// the tiles near the visible area, so the grid keeps its own order (`LibraryFocusOrder`, every
 /// tile, realized or not). Tab to a tile that is not realized scrolls it into view and focuses
 /// it once its element appears. At the ends focus leaves for the search field (Shift-Tab) or
-/// the key view after the panel (Tab).
+/// the next pane of the window (Tab).
 @MainActor final class LibraryTileFocus {
     /// Tile identifiers (`library.<name>`) in reading order, as the grid shows them now.
     var order: [String] = []
     /// Scrolls the tile with this identifier into view (`backward`: toward the top).
     var scrollTo: (_ id: String, _ backward: Bool) -> Void = { _, _ in }
-    /// Focuses the search field above the grid.
-    var focusSearchField: () -> Void = {}
+    /// Focuses the search field above the grid; nil when the grid has none (the media bin):
+    /// Shift-Tab from the first tile then leaves the panel backwards.
+    var focusSearchField: (() -> Void)? = {}
 
     private final class Weak { weak var element: LibraryTileAccessibility.Element? }
     private var elements: [String: Weak] = [:]
@@ -58,11 +59,11 @@ import PlayerKit
             DispatchQueue.main.async { [weak self] in self?.resolvePending() }
         case .searchField:
             pending = nil
-            focusSearchField()
+            if let focusSearchField { focusSearchField() } else if let element { leavePanel(from: element, backward: true) }
         case .leavePanel:
             pending = nil
             guard let element else { return }
-            leavePanel(from: element)
+            leavePanel(from: element, backward: false)
         }
     }
 
@@ -78,16 +79,19 @@ import PlayerKit
         return true
     }
 
-    /// Tab from the last tile: the key view AppKit's loop puts after the panel (the split
-    /// view pane holding the grid); with no such key view the loop wraps to the search field.
-    private func leavePanel(from element: LibraryTileAccessibility.Element) {
+    /// Tab from the last tile (Shift-Tab from the first, without a search field): the editor
+    /// window's pane loop (`EditorKeyLoop`) moves to the next pane. Elsewhere, the key view
+    /// AppKit's loop puts after the panel (the split view pane holding the grid); with no such
+    /// key view the loop wraps to the search field.
+    private func leavePanel(from element: LibraryTileAccessibility.Element, backward: Bool) {
         guard let window = element.window else { return }
+        if let loop = (window as? EditorWindow)?.editor?.keyLoop, loop.leave(from: element, backward: backward) { return }
         let pane = Self.pane(of: element)
         if let next = pane.nextValidKeyView, next !== pane, !next.isDescendant(of: pane),
            window.makeFirstResponder(next) {
             return
         }
-        focusSearchField()
+        focusSearchField?()
     }
 
     /// The split view pane (or the outermost view below the window's content view) holding `view`.

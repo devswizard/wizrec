@@ -25,7 +25,8 @@ public enum DocumentError: Error, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .unsupportedMedia(let s): "WizRec cannot read \(s)."
+        case .unsupportedMedia(let s):
+            String(localized: "WizRec can’t read “\(s)”. The file may be damaged, or its format isn’t supported.")
         case .noRoom(let s): s
         case .noSuchSource(let id): "Source \(id) is not in the project."
         }

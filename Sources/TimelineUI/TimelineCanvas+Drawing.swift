@@ -20,6 +20,7 @@ extension TimelineCanvas {
         drawClips(ctx, L, dirty)
         drawGroupWindow(ctx, L)
         drawPreviews(ctx, L)
+        drawEmptyHint(L)
         ctx.restoreGState()
 
         drawRuler(ctx, L, dirty)
@@ -31,6 +32,28 @@ extension TimelineCanvas {
         drawCorner(ctx, L)
         drawBreadcrumb(ctx, L)
         drawPlayhead(ctx, L)
+    }
+
+    /// The hint on an empty top-level timeline (ui-workflow.md §5): what goes here and how.
+    static var emptyHint: String {
+        String(localized: "Drag media here from the Media tab or from Finder, or record your screen.")
+    }
+
+    func drawEmptyHint(_ L: TimelineLayout) {
+        guard snapshot.groupPath.isEmpty, snapshot.allClips.isEmpty, dropTarget == nil else { return }
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let text = NSAttributedString(string: Self.emptyHint, attributes: [
+            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+            .foregroundColor: Palette.secondaryText,
+            .paragraphStyle: style,
+        ])
+        let area = L.clipArea
+        let h = text.boundingRect(with: CGSize(width: max(40, area.width - 40), height: 200),
+                                  options: [.usesLineFragmentOrigin]).height
+        let rect = CGRect(x: area.minX + 20, y: area.minY + max(8, (min(area.height, 160) - h) / 2),
+                          width: max(40, area.width - 40), height: h + 2)
+        text.draw(with: rect, options: [.usesLineFragmentOrigin])
     }
 
     // MARK: Open group (breadcrumb + window)

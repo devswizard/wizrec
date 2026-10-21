@@ -13,6 +13,25 @@ final class EditorCanvasView: MTKView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Draw a focus ring while focused from the keyboard (Tab); a click clears it.
+    var showsKeyboardFocus = false {
+        didSet { if showsKeyboardFocus != oldValue { noteFocusRingMaskChanged() } }
+    }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        guard showsKeyboardFocus, window?.firstResponder === self else { return }
+        bounds.insetBy(dx: 1, dy: 1).fill()
+    }
+    override func resignFirstResponder() -> Bool {
+        showsKeyboardFocus = false
+        return super.resignFirstResponder()
+    }
+    override func accessibilityIdentifier() -> String { "editor.canvas" }
+    override func isAccessibilityFocused() -> Bool { window?.firstResponder === self }
+    override func setAccessibilityFocused(_ focused: Bool) {
+        if focused { window?.makeFirstResponder(self) }
+    }
+
     // VoiceOver: the canvas is the video preview; clips are selected on the timeline.
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .image }
@@ -30,6 +49,7 @@ final class EditorCanvasView: MTKView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        showsKeyboardFocus = false
         guard let editor else { return }
         let p = convert(event.locationInWindow, from: nil)
         guard let c = canvasPoint(p) else { editor.select([]); return }
@@ -66,10 +86,23 @@ final class EditorCanvasView: MTKView {
     // MARK: Drops
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let ok = MediaDrop.read(sender.draggingPasteboard) != nil
+        editor?.ui.canvasDropTargeted = ok
+        return ok ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         MediaDrop.read(sender.draggingPasteboard) == nil ? [] : .copy
     }
 
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { editor?.ui.canvasDropTargeted = false }
+
+    override func draggingEnded(_ sender: any NSDraggingInfo) { editor?.ui.canvasDropTargeted = false }
+
+    /// A drop adds at the playhead on the lowest track with room for the whole clip, else on a
+    /// new top track (ui-workflow.md §4); dropped projects open in their own window.
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        editor?.ui.canvasDropTargeted = false
         guard let drop = MediaDrop.read(sender.draggingPasteboard), let editor else { return false }
         editor.place(drop, track: nil, at: editor.engine.currentTicks)
         return true

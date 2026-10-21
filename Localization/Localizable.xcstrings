@@ -93,6 +93,12 @@
     "Add to Timeline at Playhead" : {
 
     },
+    "Add video, audio or image files (⌘I)" : {
+
+    },
+    "Add video, audio or image files to the media bin (⌘I)" : {
+
+    },
     "An export is still running. Close anyway?" : {
 
     },
@@ -261,6 +267,9 @@
     "Clip" : {
 
     },
+    "Clip Speed" : {
+
+    },
     "Close" : {
 
     },
@@ -322,10 +331,10 @@
     "Drop a .cmproj or .tscproj project, or a video, audio or image file." : {
 
     },
-    "Drop media files here\nor choose File ▸ Import Media…" : {
+    "Drop projects or media files anywhere in this window." : {
 
     },
-    "Drop projects or media files anywhere in this window." : {
+    "Drop to add at the playhead" : {
 
     },
     "Duration" : {
@@ -582,6 +591,9 @@
     "Playhead position" : {
 
     },
+    "Press to add at the playhead" : {
+
+    },
     "Previous Frame  (←)" : {
 
     },
@@ -616,6 +628,15 @@
 
     },
     "Record" : {
+
+    },
+    "Record Screen" : {
+
+    },
+    "Record your screen into this project (⌘R)" : {
+
+    },
+    "Record your screen, or add videos, images and audio.\nYou can also drag files onto the canvas, the timeline or the media bin." : {
 
     },
     "Redo" : {
@@ -783,9 +804,6 @@
     "Speech recognition needs a download: %arg" : {
 
     },
-    "Speed" : {
-
-    },
     "Split at Playhead  (S)" : {
 
     },
@@ -914,6 +932,12 @@
     "Your privacy" : {
 
     },
+    "Your recordings and imported media appear here. Drag files here from Finder, or:" : {
+
+    },
+    "Your video starts here" : {
+
+    },
     "Zoom" : {
 
     },
@@ -967,6 +991,16 @@
     },
     "“%arg” can’t be found" : {
 
+    },
+    "“%arg” couldn’t be imported: %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "“%1$arg” couldn’t be imported: %2$arg"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
