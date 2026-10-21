@@ -347,6 +347,64 @@ struct LibraryTileAccessibility: NSViewRepresentable {
             if !press() { NSSound.beep() }
             return true
         }
+
+        // Keyboard: Tab / Shift-Tab reach every tile (key view loop), Space / Return press it,
+        // and the focus ring shows which tile has focus. Assistive apps can move focus here.
+        override var acceptsFirstResponder: Bool { true }
+        override var canBecomeKeyView: Bool { true }
+        override func becomeFirstResponder() -> Bool {
+            noteFocusRingMaskChanged()
+            return true
+        }
+        override func resignFirstResponder() -> Bool {
+            noteFocusRingMaskChanged()
+            return true
+        }
+        override var focusRingMaskBounds: NSRect { bounds }
+        override func drawFocusRingMask() {
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+        }
+        override func keyDown(with event: NSEvent) {
+            let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if mods.isEmpty, [49, 36, 76].contains(event.keyCode) {   // Space, Return, keypad Enter
+                _ = accessibilityPerformPress()
+            } else if event.keyCode == 48, mods.subtracting(.shift).isEmpty, focusNeighbour(backward: mods.contains(.shift)) {
+                return   // Tab / Shift-Tab
+            } else {
+                super.keyDown(with: event)
+            }
+        }
+
+        /// Moves keyboard focus to the next (previous) tile in reading order. SwiftUI's hosting
+        /// view leaves these AppKit views out of the window's key view loop, so the tiles chain
+        /// themselves. False at either end: Tab then leaves the grid the usual way.
+        private func focusNeighbour(backward: Bool) -> Bool {
+            guard let window, let root = window.contentView else { return false }
+            var tiles: [Element] = []
+            func collect(_ view: NSView) {
+                for sub in view.subviews {
+                    if let tile = sub as? Element { if !tile.isHiddenOrHasHiddenAncestor { tiles.append(tile) } } else { collect(sub) }
+                }
+            }
+            collect(root)
+            // Reading order in window coordinates (y up): rows top to bottom, then left to right.
+            let keyed: [(row: Int, x: Int, tile: Element)] = tiles.map { t in
+                let r: NSRect = t.convert(t.bounds, to: nil)
+                return (row: -Int(r.midY.rounded()), x: Int(r.minX.rounded()), tile: t)
+            }
+            let ordered: [Element] = keyed.sorted { $0.row != $1.row ? $0.row < $1.row : $0.x < $1.x }.map(\.tile)
+            guard let i = ordered.firstIndex(where: { $0 === self }) else { return false }
+            let j = backward ? i - 1 : i + 1
+            guard ordered.indices.contains(j) else { return false }
+            let next = ordered[j]
+            guard window.makeFirstResponder(next) else { return false }
+            next.scrollToVisible(next.bounds)
+            return true
+        }
+        override func isAccessibilityFocused() -> Bool { window?.firstResponder === self }
+        override func setAccessibilityFocused(_ focused: Bool) {
+            if focused { window?.makeFirstResponder(self) }
+        }
     }
 
     func makeNSView(context: Context) -> Element { Element() }

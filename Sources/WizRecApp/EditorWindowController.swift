@@ -807,6 +807,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { () -> Bool in
                 guard let self, event.window === self.window, !(self.window?.firstResponder is NSText) else { return false }
+                // A focused library tile takes Space (press) instead of play/pause.
+                if event.keyCode == 49, self.window?.firstResponder is LibraryTileAccessibility.Element { return false }
                 return self.handleKey(event)
             }
             return handled ? nil : event
