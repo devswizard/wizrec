@@ -315,3 +315,11 @@ Dated log. Newest last.
   pinned). Decode digests are exact everywhere.
 - **2026-10-21 · CI known-issues annotation (session 9, qa12):** each test step prints a
   "Known issues" notice listing every `withKnownIssue` (readable without login).
+- **2026-10-21 · Start screen after the last close (session 10, user):** closing the last
+  project shows the start screen even when "Show start screen at launch" is off (kept).
+- **2026-10-21 · actionlint in CI (session 10, ship14):** separate ubuntu job, actionlint
+  1.7.12 release binary pinned by SHA-256 (checked against the release's checksums file by
+  the lead); release.yml checks the notes (`check-notes.sh`) on tags before building.
+- **2026-10-21 · Shared texture cache (session 10, media14):** `LockedTextureCache` /
+  `CacheTexture` move from RenderEngine to MediaEngine (public) so `MetalToneMapper` uses the
+  same locked pattern; RenderEngine's copy is deleted.
