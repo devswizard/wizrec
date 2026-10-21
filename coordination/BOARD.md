@@ -422,7 +422,7 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 | APP14-3 | app | claimed | Clip Speed inspector: Duration via `SetClipDuration` (ED2b); Speed shows effective speed to 2 decimals |
 | RES14-1 | researcher | done | `docs/specs/ui-workflow.md`: Camtasia main-window workflow, own words (wall-reviewed) |
 | RES14-2 | researcher | done | save-only: occupied inner-spot drop (§8.6), Assets `ident` rule (§11.2) |
-| QA14-1 | qa | claimed | flaky watch: 5 full runs `-O` + loaded machine |
+| QA14-1 | qa | done | flaky watch: 5 full runs `-O` + loaded machine |
 | QA14-2 | qa | done | integration tests: start screen, toolbar, Open by extension, media as new project, every session-10 merge |
 | QA14-3 | qa | done | review the 17 known issues |
 | SHIP14-1 | ship | done | actionlint step in CI |
