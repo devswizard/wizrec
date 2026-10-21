@@ -103,3 +103,9 @@ change a rule.
 | qa | a862fd369d7165c0b | `agent/qa11` |
 | ship | a43d6432cc8626a6d | `agent/ship11` |
 | researcher | ae13ef514b82d7bd3 | `agent/researcher11` |
+
+### Session 8 wave 2 (researcher's answers changed rules)
+
+| Name | Address | Branch |
+|---|---|---|
+| timeline | aaffbd7cae20f3e8c | `agent/timeline11` |

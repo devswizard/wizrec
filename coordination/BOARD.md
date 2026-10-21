@@ -328,18 +328,18 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 |---|---|---|---|
 | S8-CI | main | claimed | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
 | EXP11-1 | export | done | `MovieExport.finish`, `MediaFileWriter.finishWriting`, `AudioExport` ready loop bounded; a stuck writer ends with an error the UI shows; injected-stuck-writer tests |
-| APP11-1 | app | claimed | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
+| APP11-1 | app | done | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
 | APP11-2 | app | claimed | `--quit-after` with several unsaved documents: test + UI check |
-| APP11-3 | app | todo | Swift 6.3 slow spots > 50 ms fixed (measured with the 6.3.3 recipe) |
+| APP11-3 | app | done | Swift 6.3 slow spots > 50 ms fixed (measured with the 6.3.3 recipe) |
 | APP11-4 | app | todo | automated accessibility audit of library tiles (stands in for the manual VoiceOver pass) |
-| QA11-1 | qa | claimed | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
-| QA11-2 | qa | claimed | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
-| QA11-3 | qa | todo | integration tests for every session-8 merge; flaky watch (3 runs) |
-| SHIP11-1 | ship | claimed | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
-| SHIP11-2 | ship | review | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
-| SHIP11-3 | ship | claimed | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
-| RES11-1 | researcher | todo | save-only experiments: copy/paste inside groups (4 items), shader origin metadata (3 items) |
-| RES11-2 | researcher | claimed | automate the former manual checks ED2–ED4 and CA1 text/bold runs (save-only) |
+| QA11-1 | qa | done | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
+| QA11-2 | qa | done | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
+| QA11-3 | qa | claimed | integration tests for every session-8 merge; flaky watch (3 runs) |
+| SHIP11-1 | ship | done | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
+| SHIP11-2 | ship | done | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
+| SHIP11-3 | ship | done | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
+| RES11-1 | researcher | done | save-only experiments: copy/paste inside groups (4 items), shader origin metadata (3 items) |
+| RES11-2 | researcher | done | automate the former manual checks ED2–ED4 and CA1 text/bold runs (save-only) |
 
 ## Session 8 merges
 
@@ -348,3 +348,15 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 - researcher11 ED2–ED4 (2a15787, wall-reviewed): Clip Speed matches `SetSpeed`; magnetic drops match except drops inside a clip (Camtasia refuses [inf]); Shift-drag of a start edge is a plain trim (no ripple gesture found yet).
 - CI run 22 green on 2a15787; Publish run 2 made **v0.1.0 public** (2026-10-20T23:03Z).
 - Blocked from 22:31: the Mac screen locked (and the Mac slept once); Camtasia driving and UI checks wait for the user to unlock.
+- ship11 + ship11b (9e16679, de5e751): build run paths stripped and verified; Sparkle feed prepared (raw.githubusercontent.com appcast, `release/sparkle.conf`, key empty → off). CI 23 green.
+- app11 (e5b990d): async `renderImage`, `UnsavedEditsOnQuit.prepareQuit`, locked-screen-safe UI checks, AX audit tooling; APP11-3 measured (one-time Observation/AppKit costs, no change). CI 24 green.
+- qa11 (c2c7244): `BlockingPull` bounded readers (2 crashes fixed), `Deadline` ignores system sleep, serial media step 408 → 294 s, integration tests; 1093 tests, 17 known issues; flaky watch 3/3.
+- researcher11 slice 2 (dccee94, wall-reviewed): copy/paste in groups (transform baked in canvas space, paste never grows the group, clamps to the window), Rev groups can't be opened, shader keyframes add `animationTracks.visual`, classic caption text saved as RTF (no bold runs), no ripple-trim gesture in Camtasia.
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| TL11-1 | timeline | todo | copy out of a group bakes the canvas transform; paste into a group re-expresses it |
+| TL11-2 | timeline | todo | paste into an open group clamps to the window, never grows the group |
+| TL11-3 | timeline | todo | `SetSourceEffectParameters` keyframes add the `animationTracks.visual` entry |
+| TL11-4 | timeline | todo | ClassicCaptions reader strips RTF `value.text` |
+| TL11-5 | timeline | todo | `revMedia` groups closed to inner copy/paste [inf] |
