@@ -23,6 +23,8 @@ func scratchDir(_ name: String) throws -> URL {
             card.draw(frame: n, fps: 30, in: ctx)
         }
         #expect(movie.timescale == 30000)
+        #expect(MP4SampleCount.videoTracks(url) == [60], "samples in the box tree")
+        #expect(MP4SampleCount.videoTracks(dir.appendingPathComponent("none.mp4")) == nil)
 
         let info = try await MovieFrameReader.info(url)
         #expect(info.width == 480 && info.height == 270)

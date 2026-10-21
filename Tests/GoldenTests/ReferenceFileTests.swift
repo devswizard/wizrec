@@ -88,6 +88,7 @@ import TSCProjKit
         }
         let info = try await MovieFrameReader.info(url)
         #expect(info.width == 320 && info.height == 180 && abs(info.fps - 30) < 0.01)
+        #expect(MP4SampleCount.videoTracks(url) == [6], "samples in the .mov box tree")
         let frames = try await MovieFrameReader.frames(url, indices: [0, 5])
         let five = try #require(frames[5])
         #expect(card.decodeFrameNumber(five) == 5)
