@@ -26,8 +26,9 @@ import TimelineUI
     func handleTab(in window: NSWindow, backward: Bool) -> Bool {
         let v = Self.responderView(window)
         let pane = v.flatMap(paneIndex(of:))
-        let position: Int? = pane.flatMap { p in v.flatMap { position(of: $0, in: p) } }
-        return perform(WindowKeyLoop.step(pane: pane, position: position, counts: counts(), backward: backward), in: window)
+        var at: Int?
+        if let pane, let v { at = stopIndex(of: v, in: pane) }
+        return perform(WindowKeyLoop.step(pane: pane, position: at, counts: counts(), backward: backward), in: window)
     }
 
     /// Leaves the pane holding `view` in the key's direction (a library grid's Tab past its last
@@ -58,7 +59,7 @@ import TimelineUI
 
     private func counts() -> [Int] { panes.indices.map { stops(in: $0).count } }
 
-    private func position(of view: NSView, in pane: Int) -> Int? {
+    private func stopIndex(of view: NSView, in pane: Int) -> Int? {
         let s = stops(in: pane)
         return s.firstIndex { view === $0 || view.isDescendant(of: $0) }
     }
