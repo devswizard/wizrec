@@ -4,7 +4,7 @@
 --
 --   osascript ax.applescript <command> <pid> [args…]
 --
---   keys <pid> <key> [mods]   keystroke (or "esc"/"return"); mods: any of "cmd,shift,opt,ctrl"
+--   keys <pid> <key> [mods]   keystroke (or "esc"/"return"/"delete"/"up"/"down"); mods: any of "cmd,shift,opt,ctrl"
 --   windows <pid>             window titles, one per line
 --   raise <pid> <text>        app to front, the first window whose title contains <text> raised (main)
 --   dump <pid>                every element: role | title | value | description | identifier
@@ -13,6 +13,11 @@
 --   check <pid> <key>         tick the checkbox matching <key> (no-op when ticked)
 --   popup-items <pid> <key>   open the pop-up button matching <key>, list its items, close it
 --   frame <pid> <key>         "x y w h" (screen points, top-left origin) of the element; app to front
+--   enabled <pid> <key>       "true"/"false": AXEnabled of the element ("missing" when none matches)
+--   toolbar <pid> <text>      the toolbar items of the first window whose title contains <text>:
+--                             one "<description or title> | <enabled>" line each
+--   toolbar-press <pid> <text> <name>  press the toolbar item <name> (description or title) of
+--                             the first window whose title contains <text>
 --   set <pid> <key> <text>    focus the text field matching <key>, set its text, press Return
 --
 -- <key> matches an element's title (AXTitle), its description (AXDescription) or its
@@ -43,6 +48,12 @@ on run argv
 				key code 53 using mods
 			else if k is "return" then
 				key code 36 using mods
+			else if k is "delete" then
+				key code 51 using mods
+			else if k is "up" then
+				key code 126 using mods
+			else if k is "down" then
+				key code 125 using mods
 			else
 				keystroke k using mods
 			end if
@@ -63,6 +74,49 @@ on run argv
 					end try
 					delay 0.3
 					return "ok"
+				end if
+			end repeat
+			return "missing"
+		else if cmd is "toolbar-press" then
+			set frontmost of p to true
+			repeat with w in (windows of p)
+				if (name of w as text) contains (item 3 of argv) then
+					repeat with t in (toolbars of w)
+						repeat with b in (UI elements of t)
+							repeat with c in ({contents of b} & (UI elements of b))
+								if my attr(c, "AXDescription") is (item 4 of argv) or my attr(c, "AXTitle") is (item 4 of argv) then
+									perform action "AXPress" of c
+									return "ok"
+								end if
+							end repeat
+						end repeat
+					end repeat
+				end if
+			end repeat
+			return "missing"
+		else if cmd is "toolbar" then
+			set out to ""
+			repeat with w in (windows of p)
+				if (name of w as text) contains (item 3 of argv) then
+					repeat with t in (toolbars of w)
+						repeat with b in (UI elements of t)
+							set n to my attr(b, "AXDescription")
+							if n is "" then set n to my attr(b, "AXTitle")
+							-- Toolbar buttons may sit inside a group (one per item).
+							if n is "" then
+								repeat with c in (UI elements of b)
+									set n to my attr(c, "AXDescription")
+									if n is "" then set n to my attr(c, "AXTitle")
+									if n is not "" then
+										set out to out & n & " | " & my attr(c, "AXEnabled") & linefeed
+									end if
+								end repeat
+							else
+								set out to out & n & " | " & my attr(b, "AXEnabled") & linefeed
+							end if
+						end repeat
+					end repeat
+					return out
 				end if
 			end repeat
 			return "missing"
@@ -105,6 +159,8 @@ on run argv
 		else if cmd is "check" then
 			if (value of e as integer) is 0 then perform action "AXPress" of e
 			return "ok"
+		else if cmd is "enabled" then
+			return my attr(e, "AXEnabled")
 		else if cmd is "frame" then
 			-- Brings the app to the front: the caller is about to send real mouse events there.
 			set frontmost of p to true
