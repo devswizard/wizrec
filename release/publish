@@ -5,4 +5,4 @@
 # Optional flag after the tag: allow-build-rpaths, for DMGs built before bundle-dylibs.sh
 # stripped Xcode's Swift back-deploy run path (v0.1.0 has it; harmless, but verify-dmg.sh
 # now rejects it). Leave it off for every later release.
-v0.1.2
+v0.1.3
