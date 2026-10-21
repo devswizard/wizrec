@@ -1,10 +1,11 @@
 // MED14-1: the Metal tone mapper's zero-copy textures are released on Metal's completion queue
-// while other threads keep wrapping new planes through the same cache. With a raw
-// `CVMetalTextureCache` that races inside CoreVideo (REN12-1 crashed RenderEngine under -O in
-// `CVMetalTextureCache::bufferBackingNotInUse`); `LockedTextureCache` serialises it. These tests
-// would crash (or trip Thread Sanitizer) if the mapper went back to an unlocked cache.
+// (or any other thread) while other threads keep wrapping new planes, and pools are freed with
+// their buffers still wrapped. `poolFreedWhileWrapped` crashed every run while the textures came
+// from a `CVMetalTextureCache`, locked or not (see `LockedTextureCache`); they now come straight
+// from the IOSurface. The other tests pin the concurrent create/release patterns of the tone
+// mapper, RenderEngine and export.
 //
-// Default sizes run in well under a second; `WIZREC_STRESS=1` runs the heavy variant.
+// Default sizes run in about a second (debug); `WIZREC_STRESS=1` runs the heavy variant.
 
 import CFFmpeg
 import CoreVideo
@@ -18,10 +19,12 @@ import WizRecTestSupport
 /// Bounds of one stress run: worker threads, rounds per thread and picture size in pixels.
 private struct StressLoad {
     let threads: Int, rounds: Int, width: Int, height: Int
+    /// Texture caches created and freed by the cache-level test.
+    let generations: Int
 
     static let current: StressLoad = ProcessInfo.processInfo.environment["WIZREC_STRESS"] == "1"
-        ? StressLoad(threads: 8, rounds: 400, width: 320, height: 180)
-        : StressLoad(threads: 4, rounds: 16, width: 64, height: 36)
+        ? StressLoad(threads: 8, rounds: 400, width: 64, height: 36, generations: 2000)
+        : StressLoad(threads: 4, rounds: 16, width: 64, height: 36, generations: 120)
 }
 
 /// Runs `body(index)` on `count` dedicated threads and waits (bounded) until all have returned.
@@ -47,6 +50,20 @@ private func makeMapper(_ t: HDRTransfer = .pq) -> MetalToneMapper? {
                                fullRange: false))
 }
 
+/// A new, unfilled IOSurface-backed `format` buffer: every one is a new backing for the texture
+/// cache to track (pool buffers would be recycled and mostly hit existing backings).
+private func freshBuffer(_ format: OSType, _ w: Int, _ h: Int) throws -> CVPixelBuffer {
+    var buf: CVPixelBuffer?
+    let attrs: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any]() as CFDictionary,
+                                  kCVPixelBufferMetalCompatibilityKey: true]
+    let rc = CVPixelBufferCreate(nil, w, h, format, attrs as CFDictionary, &buf)
+    guard rc == kCVReturnSuccess, let buf else { throw MediaError.decodeFailed("CVPixelBufferCreate \(rc)") }
+    return buf
+}
+
+private let p010 = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+private let bgra = kCVPixelFormatType_32BGRA
+
 @Suite(.serialized, .enabled(if: MetalToneMapper.shared != nil, "no Metal device"))
 struct ToneMapMetalStressTests {
     /// One mapper shared by several threads, each converting its own frames: every `convert`
@@ -61,15 +78,14 @@ struct ToneMapMetalStressTests {
                 let src = try HDRPicture.make(kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, load.width,
                                               load.height, seed: UInt64(i + 1))
                 let pool = try BGRAPool(width: load.width, height: load.height)
-                var last: CVPixelBuffer?
                 for _ in 0..<load.rounds {
-                    let dst = try pool.make() // fresh pool buffers: new backings to wrap
-                    try mapper.convert(src, into: dst)
-                    last = dst
+                    try mapper.convert(try freshBuffer(p010, load.width, load.height),
+                                       into: try freshBuffer(bgra, load.width, load.height))
                 }
-                let ref = try pool.make()
+                let last = try pool.make(), ref = try pool.make()
+                try mapper.convert(src, into: last)
                 try mapper.reference.convert(src, into: ref)
-                if let last, HDRPicture.compare(ref, last).maxDiff > 1 {
+                if HDRPicture.compare(ref, last).maxDiff > 1 {
                     failures.withLock { $0.append("thread \(i): output differs from the CPU reference") }
                 }
             } catch {
@@ -80,8 +96,8 @@ struct ToneMapMetalStressTests {
     }
 
     /// Mappers freed with their frames still on the GPU: each thread encodes on a short-lived
-    /// mapper and a long-lived one without waiting, so wrappers (and the short-lived caches they
-    /// keep alive) are released on the completion queue while the long-lived cache keeps wrapping.
+    /// mapper and a long-lived one without waiting, so wrappers (and the short-lived factories
+    /// they keep alive) are released on the completion queue while the long-lived one keeps wrapping.
     @Test func mappersFreedWithFramesInFlight() throws {
         let load = StressLoad.current
         let gpu = try #require(MetalToneMapper.shared)
@@ -97,16 +113,17 @@ struct ToneMapMetalStressTests {
                 let t = Thread {
                     var encoded = 0
                     do {
-                        let src = try HDRPicture.make(kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, load.width,
-                                                      load.height, seed: UInt64(i + 11))
-                        let pool = try BGRAPool(width: load.width, height: load.height)
                         guard let queue = gpu.device.makeCommandQueue(),
                               let longLived = makeMapper(.hlg) else { throw MediaError.decodeFailed("no GPU") }
+                        let reference = longLived.reference // CPU LUTs built once; each mapper uploads its own
                         for _ in 0..<load.rounds {
-                            guard let shortLived = makeMapper() else { throw MediaError.decodeFailed("no mapper") }
+                            guard let shortLived = MetalToneMapper(reference) else {
+                                throw MediaError.decodeFailed("no mapper")
+                            }
                             for m in [shortLived, longLived] {
                                 guard let cb = queue.makeCommandBuffer() else { throw MediaError.decodeFailed("no cb") }
-                                try m.encode(src, into: try pool.make(), commandBuffer: cb)
+                                try m.encode(try freshBuffer(p010, load.width, load.height),
+                                             into: try freshBuffer(bgra, load.width, load.height), commandBuffer: cb)
                                 cb.addCompletedHandler { b in
                                     if b.status != .completed { bad.withLock { $0 += 1 } }
                                     finish(1)
@@ -128,48 +145,102 @@ struct ToneMapMetalStressTests {
         #expect(bad.withLock { $0 } == 0)
     }
 
-    /// The cache directly: one thread wraps planes and hands every wrapper to releaser threads,
-    /// which drop them while the producer keeps creating and flushing.
+    /// The factory directly: one thread wraps pool buffers and hands each wrapper to releaser
+    /// threads, which drop them one by one while the producer keeps creating and flushing. Each
+    /// generation ends with the factory freed by whichever thread drops its last wrapper.
     @Test func wrappersReleasedOnOtherThreads() throws {
         let load = StressLoad.current
         let device = try #require(MetalToneMapper.shared?.device)
-        let cache = try #require(LockedTextureCache(device: device))
+        let perGeneration = load.threads * 32
+        let made = OSAllocatedUnfairLock(initialState: 0)
+        for _ in 0..<load.generations {
+            // Created and freed on this thread once every wrapper of its buffers is gone (the
+            // pool-teardown case is `poolFreedWhileWrapped`).
+            let pool = try BGRAPool(width: load.width, height: load.height)
+            weak var weakCache: LockedTextureCache?
+            try { () throws -> Void in
+                let cache = try #require(LockedTextureCache(device: device))
+                weakCache = cache
+                try releasedConcurrently(cache, pool: pool, count: perGeneration, load: load, made: made)
+            }()
+            #expect(weakCache == nil, "the last wrapper frees its cache")
+        }
+        #expect(made.withLock { $0 } == perGeneration * load.generations)
+    }
+
+    /// One generation: a producer thread wraps `count` buffers of `sharedPool` through `cache`,
+    /// `load.threads` threads release them. The pool outlives the generation.
+    private func releasedConcurrently(_ cache: LockedTextureCache, pool sharedPool: BGRAPool, count: Int,
+                                      load: StressLoad, made: OSAllocatedUnfairLock<Int>) throws {
         let handOff = OSAllocatedUnfairLock<[CacheTexture]>(initialState: [])
         let producing = OSAllocatedUnfairLock(initialState: true)
-        let made = OSAllocatedUnfairLock(initialState: 0)
-        let count = load.threads * load.rounds * 4
+        nonisolated(unsafe) var producer: LockedTextureCache? = cache
+        nonisolated(unsafe) let pool = sharedPool
         try onThreads(load.threads + 1, "\(count) wrappers released on \(load.threads) threads") { i in
             if i == 0 {
                 defer { producing.withLock { $0 = false } }
-                guard let pool = try? BGRAPool(width: load.width, height: load.height) else { return }
+                guard let c = producer else { return }
+                producer = nil // from here on only the wrappers keep the cache alive
                 for n in 0..<count {
                     guard let pb = try? pool.make(),
-                          let t = cache.texture(pb, format: .bgra8Unorm, width: load.width, height: load.height)
+                          let t = c.texture(pb, format: .bgra8Unorm, width: load.width, height: load.height)
                     else { continue }
                     made.withLock { $0 += 1 }
                     handOff.withLockUnchecked { $0.append(t) }
-                    if n % 8 == 0 { cache.flush() }
+                    if n % 4 == 0 { c.flush() }
                 }
             } else {
                 while true {
-                    let batch = handOff.withLockUnchecked { q -> [CacheTexture] in
-                        defer { q.removeAll() }
-                        return q
-                    }
-                    if batch.isEmpty {
+                    let one = handOff.withLockUnchecked { $0.popLast() }
+                    if one == nil {
                         if !producing.withLock({ $0 }) && handOff.withLockUnchecked({ $0.isEmpty }) { return }
-                        Thread.sleep(forTimeInterval: 0.0001)
+                        Thread.sleep(forTimeInterval: 0.00005)
                     }
-                    // `batch` (the last references) is released here, on this thread.
+                    // `one` (the last reference) is released here, on this thread.
                 }
             }
         }
-        #expect(made.withLock { $0 } == count)
-        #expect(handOff.withLockUnchecked { $0.isEmpty })
     }
 
-    /// A wrapper released on another thread after its mapper and cache are gone still finds the
-    /// cache it came from: wrappers keep their cache alive.
+    /// Pool teardown (the REN12-1 reading): the producer thread owns the pool and frees it on exit
+    /// while its buffers are still wrapped and being released on other threads, as a decoder freed
+    /// with frames in flight does. With `CVMetalTextureCache` textures this crashed in
+    /// `CVMetalTextureCache::finalize` (`CVMetalTextureBacking::finalize`) in 12/12 debug runs,
+    /// with the lock; same pool and threads without a cache: 0/4 (2026-10-21).
+    @Test func poolFreedWhileWrapped() throws {
+        let load = StressLoad.current
+        let device = try #require(MetalToneMapper.shared?.device)
+        for _ in 0..<load.generations {
+            let cache = try #require(LockedTextureCache(device: device))
+            let handOff = OSAllocatedUnfairLock<[CacheTexture]>(initialState: [])
+            let producing = OSAllocatedUnfairLock(initialState: true)
+            try onThreads(load.threads + 1, "pool freed while wrapped") { i in
+                if i == 0 {
+                    defer { producing.withLock { $0 = false } }
+                    guard let pool = try? BGRAPool(width: load.width, height: load.height) else { return }
+                    for n in 0..<(load.threads * 32) {
+                        guard let pb = try? pool.make(),
+                              let t = cache.texture(pb, format: .bgra8Unorm, width: load.width, height: load.height)
+                        else { continue }
+                        handOff.withLockUnchecked { $0.append(t) }
+                        if n % 4 == 0 { cache.flush() }
+                    }
+                    // `pool` is freed here, on this thread, with wrapped buffers outstanding.
+                } else {
+                    while true {
+                        let one = handOff.withLockUnchecked { $0.popLast() }
+                        if one == nil {
+                            if !producing.withLock({ $0 }) && handOff.withLockUnchecked({ $0.isEmpty }) { return }
+                            Thread.sleep(forTimeInterval: 0.00005)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A wrapper released on another thread after its mapper and factory are gone: wrappers keep
+    /// their factory alive (as they kept the old cache alive).
     @Test func wrapperOutlivesItsCache() throws {
         let device = try #require(MetalToneMapper.shared?.device)
         var cache = LockedTextureCache(device: device)

@@ -26,18 +26,17 @@ import Metal
 /// IOSurface-backed 32BGRA buffer of the same size in pixels. One per decoder (as
 /// `FrameConverter` does); concurrent `convert` calls on one mapper are nevertheless safe.
 ///
-/// Texture lifetime (MED14-1): the zero-copy plane textures come from a `LockedTextureCache`
-/// and are released on Metal's completion queue once the GPU is done with them, which may be
-/// after `convert` has returned and while the next `convert` (on any thread) is wrapping new
-/// planes. A raw `CVMetalTextureCache` is not safe there: a wrapper's final release calls back
-/// into the cache, which crashed RenderEngine under `-O` (REN12-1). Every create, flush and final
-/// release therefore runs under the cache's lock, and each wrapper keeps the cache alive, so a
-/// mapper may be freed with its last frame still in flight. Guarded by `ToneMapMetalStressTests`.
+/// Texture lifetime (MED14-1): the zero-copy plane textures (`LockedTextureCache`, made straight
+/// from the IOSurfaces) are released on Metal's completion queue once the GPU is done with them,
+/// which may be after `convert` has returned and while the next `convert` (on any thread) wraps
+/// new planes, and while the decoder that owns the pools is being freed. Each wrapper holds its
+/// pixel buffer, so the pool cannot hand the surface to a new frame while the GPU reads or writes
+/// it. Guarded by `ToneMapMetalStressTests` and `TextureCacheTests`.
 final class MetalToneMapper {
     /// The CPU reference this mapper reproduces (curves, matrix, range, LUTs).
     let reference: ToneMapper
     private let gpu: GPU
-    private let cache: LockedTextureCache
+    private let textures: LockedTextureCache
     private let eotf: MTLBuffer, ootf: MTLBuffer, encode: MTLBuffer
 
     /// Process-wide Metal objects, built once (pipeline compilation costs milliseconds).
@@ -67,7 +66,7 @@ final class MetalToneMapper {
     /// GPU mapper reproducing `reference`, or nil when Metal is unavailable.
     init?(_ reference: ToneMapper) {
         guard let gpu = Self.shared else { return nil }
-        guard let cache = LockedTextureCache(device: gpu.device) else { return nil }
+        guard let textures = LockedTextureCache(device: gpu.device) else { return nil }
         let d = gpu.device
         func upload(_ raw: UnsafeRawBufferPointer) -> MTLBuffer? {
             raw.baseAddress.flatMap { d.makeBuffer(bytes: $0, length: raw.count) }
@@ -76,14 +75,14 @@ final class MetalToneMapper {
               let n = reference.encode.withUnsafeBytes(upload) else { return nil }
         self.reference = reference
         self.gpu = gpu
-        self.cache = cache
+        self.textures = textures
         (eotf, ootf, encode) = (e, o, n)
     }
 
     private func texture(_ buf: CVPixelBuffer, plane: Int, format: MTLPixelFormat) throws -> CacheTexture {
         let w = CVPixelBufferGetWidthOfPlane(buf, plane), h = CVPixelBufferGetHeightOfPlane(buf, plane)
         var rc: CVReturn = kCVReturnSuccess
-        guard let t = cache.texture(buf, format: format, width: w, height: h, plane: plane, status: &rc) else {
+        guard let t = textures.texture(buf, format: format, width: w, height: h, plane: plane, status: &rc) else {
             throw MediaError.decodeFailed("GPU tone mapping: no Metal texture for plane \(plane) (\(rc))")
         }
         return t
@@ -103,7 +102,7 @@ final class MetalToneMapper {
 
     /// Encodes the tone mapping of `src` into `dst` on `cmd` without committing it. The plane
     /// textures stay alive until `cmd` completes and are then released on Metal's completion
-    /// queue (through the cache's lock). Throws as `convert` does, before encoding anything.
+    /// queue. Throws as `convert` does, before encoding anything.
     func encode(_ src: CVPixelBuffer, into dst: CVPixelBuffer, commandBuffer cmd: any MTLCommandBuffer) throws {
         guard let lay = ToneMapper.layout(CVPixelBufferGetPixelFormatType(src)) else {
             throw MediaError.decodeFailed("GPU tone mapping: unsupported pixel format")
@@ -119,7 +118,6 @@ final class MetalToneMapper {
         let cwid = CVPixelBufferGetWidthOfPlane(src, 1), chgt = CVPixelBufferGetHeightOfPlane(src, 1)
         guard cwid > 0, chgt > 0 else { throw MediaError.decodeFailed("GPU tone mapping: empty chroma plane") }
         let ten = lay.depth > 8
-        cache.flush() // recycle the backings of frames whose wrappers were already released
         let yTex = try texture(src, plane: 0, format: ten ? .r16Uint : .r8Uint)
         let cTex = try texture(src, plane: 1, format: ten ? .rg16Uint : .rg8Uint)
         // BGRA bytes written as integers through an RGBA8 view: no float → unorm rounding.
@@ -153,7 +151,7 @@ final class MetalToneMapper {
         enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1),
                             threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
-        // The wrappers outlive the GPU work; their last release runs on the completion queue.
+        // The wrappers (and so the buffers) outlive the GPU work; released on the completion queue.
         let keep = [yTex, cTex, oTex]
         cmd.addCompletedHandler { _ in withExtendedLifetime(keep) {} }
     }
