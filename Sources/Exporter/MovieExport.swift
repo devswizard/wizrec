@@ -115,13 +115,29 @@ struct AudioPump {
 
 /// Fails an export whose writer accepts nothing for `limit` seconds (instead of spinning forever
 /// if AVAssetWriter's interleaving ever waits on input we cannot give it, or the encoder hangs).
+///
+/// Gaps are measured in seconds of awake time: a Mac that sleeps mid-export must not count the
+/// sleep as "no progress" (board EXP16-1: wall-clock gaps failed exports on wake).
 struct StallWatch {
-    var last = Date()
+    /// Seconds of awake time (stands still during system sleep); tests inject a scripted one.
+    typealias TimeSource = @Sendable () -> TimeInterval
+    /// Production time source: `systemUptime`, which excludes time the Mac spends asleep.
+    static let awakeTime: TimeSource = { ProcessInfo.processInfo.systemUptime }
+
     /// Seconds without progress before `check()` throws `ExportError.encoderStalled`.
-    var limit: TimeInterval = WriterTimeouts().stall
-    mutating func progressed() { last = Date() }
+    var limit: TimeInterval
+    let now: TimeSource
+    private(set) var last: TimeInterval
+
+    init(limit: TimeInterval = WriterTimeouts().stall, now: @escaping TimeSource = StallWatch.awakeTime) {
+        self.limit = limit
+        self.now = now
+        last = now()
+    }
+
+    mutating func progressed() { last = now() }
     func check() throws {
-        if Date().timeIntervalSince(last) > limit {
+        if now() - last > limit {
             throw ExportError.encoderStalled(seconds: Int(limit.rounded(.up)))
         }
     }

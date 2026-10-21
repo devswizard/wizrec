@@ -12,7 +12,8 @@ protocol FinishableWriter: AnyObject {
 
 extension AVAssetWriter: FinishableWriter {}
 
-/// Bounds of the waits on AVFoundation an export makes, seconds of wall time.
+/// Bounds of the waits on AVFoundation an export makes, seconds of awake time (system sleep does
+/// not count: `StallWatch` reads `systemUptime`, and Dispatch timers run on the uptime clock).
 struct WriterTimeouts: Sendable, Equatable {
     /// `finishWriting` must call back within this.
     var finish: TimeInterval = 60
