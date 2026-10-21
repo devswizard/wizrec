@@ -417,9 +417,9 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| APP14-1 | app | claimed | first-use UX pass (launch → start screen → record/import → edit → export): discoverability, empty states, errors, drops on start screen + canvas/timeline |
-| APP14-2 | app | claimed | window-level key loop library → canvas → inspector → timeline; Tab leaves the library; AX audit extended |
-| APP14-3 | app | claimed | Clip Speed inspector: Duration via `SetClipDuration` (ED2b); Speed shows effective speed to 2 decimals |
+| APP14-1 | app | done | first-use UX pass (launch → start screen → record/import → edit → export): discoverability, empty states, errors, drops on start screen + canvas/timeline |
+| APP14-2 | app | done | window-level key loop library → canvas → inspector → timeline; Tab leaves the library; AX audit extended |
+| APP14-3 | app | done | Clip Speed inspector: Duration via `SetClipDuration` (ED2b); Speed shows effective speed to 2 decimals |
 | RES14-1 | researcher | done | `docs/specs/ui-workflow.md`: Camtasia main-window workflow, own words (wall-reviewed) |
 | RES14-2 | researcher | done | save-only: occupied inner-spot drop (§8.6), Assets `ident` rule (§11.2) |
 | QA14-1 | qa | done | flaky watch: 5 full runs `-O` + loaded machine |
@@ -439,3 +439,4 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 - timeline14: `DropRules`/`DropClip` (canvas drop lowest track with room else new top; busy drop boundary insert+push ≤ 1 s [WizRec] → lowest higher track → new top; groups never grow), 23 tests. Full run 1195 tests; one flaky `windowFrameMatchesWindowList` (live window moved mid-test, 3/3 alone) → qa.
 - qa15: QA14-4 window-frame test race fixed (10/10 alone, full run green).
 - media14: `LockedTextureCache`/`CacheTexture` moved to MediaEngine, textures straight from IOSurfaces (no CVMetalTextureCache; wrappers retain their buffer); REN12-1 reread as pool teardown with frames in flight (cache+lock 12/12 crash, IOSurface path 0/30 `-O`); tone mapper on it; 4K tone map +0.1–0.5 ms/frame. Full run 1204 tests, 0 known.
+- app14: empty states (canvas Record/Import, bin, timeline, properties), drops everywhere with plain errors, timeline toolbar, DropRules wired (old PlayerKit `Placement` deleted) + hover preview, window key loop + AX audit, Clip Speed Duration/Speed fields, `check-drops.sh`; full run 1227 tests, 0 known.

@@ -35,9 +35,45 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 
 ## What's new
 
-TODO(release): main fills in the user-visible changes as the app merges land. Group them
-as in v0.1.2 (**Getting started**, **Editor**, …), one bold lead-in per item, written as
-what the user sees, with no internal names.
+**Getting started**
+
+- **An empty project explains itself.** The canvas offers **Record Screen** and
+  **Import Media…**, the media bin and the timeline say what goes there, and the
+  properties panel tells you to select a clip. Play and step buttons stay off until
+  there is something to play.
+- **Drop files anywhere.** Drag videos, images or audio from Finder onto the start
+  screen, the canvas, the timeline or the media bin. The canvas shows where the drop
+  goes; several files are placed one after another. A dropped project opens in its
+  own window, and files WizRec can't use get a plain explanation instead of nothing.
+
+**Editor**
+
+- **Timeline toolbar.** Undo, Redo, Cut, Copy, Paste, Split, Delete, Ripple Delete,
+  Add Track, Snapping and zoom now sit right above the timeline. Each tooltip shows
+  its keyboard shortcut, and buttons are greyed out when they can't act.
+- **Smarter placement.** Media dropped on the canvas, double-clicked in the media bin
+  or imported goes in at the playhead, on the lowest track with room for the whole
+  clip, or on a new track on top. Dropping on a busy spot in the timeline inserts at
+  a clip's start (and moves the later clips right) when you drop near it, otherwise
+  uses a free track above. While you drag, the timeline shows where the clip will land.
+- **Clip speed by duration.** In the properties panel, type a new **Duration** for a
+  clip and WizRec sets the speed to match; **Speed** shows the actual value to two
+  decimals.
+
+**Keyboard and accessibility**
+
+- **Tab moves between panes:** media/library → canvas → properties → timeline and
+  back (Shift-Tab the other way), and walks the properties fields top to bottom.
+  Media bin tiles can be focused, and Space or Return adds the focused one at the
+  playhead.
+
+**Fixes**
+
+- The timeline no longer paints over the area above it after a resize.
+- Empty-state text can no longer make the window taller than the screen.
+- Importing a file that probes but isn't media no longer adds it.
+- Fixed a rare crash when video frames were released while the decoder that made
+  them was shutting down.
 
 See the [0.1.2 release](https://github.com/devswizard/wizrec/releases/tag/v0.1.2) for the
 previous changes (start screen with recent projects, editor toolbar, opening projects when
