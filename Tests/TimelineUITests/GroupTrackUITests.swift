@@ -109,9 +109,10 @@ struct GroupTrackUITests {
         m.openGroups = [50]
         let e = editor(m)
         #expect(e.groupDropTarget(track: 1, ticks: 140) == GroupDropTarget(group: 50, groupPath: [50], track: 1, ticks: 60))
-        // Clamped to the visible window root 100…220 = inner 20…140.
-        #expect(e.groupDropTarget(track: 0, ticks: 30)?.ticks == 20)
-        #expect(e.groupDropTarget(track: 0, ticks: 400)?.ticks == 140)
+        // Not clamped to the visible window root 100…220 = inner 20…140 (group-edits §8.6):
+        // before inner 0 and past the window stay where dropped (the clip is hidden).
+        #expect(e.groupDropTarget(track: 0, ticks: 30)?.ticks == -50)
+        #expect(e.groupDropTarget(track: 0, ticks: 400)?.ticks == 320)
         #expect(e.groupDropTarget(track: 7, ticks: 140) == nil)
     }
 
