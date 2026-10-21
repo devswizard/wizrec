@@ -247,7 +247,11 @@ dragged from the media bin onto the new empty magnetic track 3.
 - **Drops onto a clip.** A drop whose point lies inside a clip is refused,
   as on a normal track, and a drop at a boundary inserts there. This is
   [inf]: the hover feedback was not visible to the automation, and a
-  slower drag with a 1.5 s hold made no difference.
+  slower drag with a 1.5 s hold made no difference. Session 10 refined
+  this for non-magnetic tracks (`group-edits.md` §8.7): a busy drop goes
+  to the lowest higher track with room, a drop at or just after a clip's
+  start inserts there and pushes that track's later clips, and with no
+  room it is refused [inf].
 - **Defaults.** Dropped clips get the ED0 insert defaults:
   `lockAspectRatio` true, `default-scale` "1", and `effectApplied` "none"
   [obs].

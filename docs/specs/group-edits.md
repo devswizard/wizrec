@@ -342,7 +342,8 @@ What this shows:
 - **Track choice.** A drop onto an inner track uses that track. A drop on
   the empty area above the inner tracks adds a new inner track on top. A
   drop onto an occupied spot of a non-magnetic inner track adds nothing
-  [obs].
+  [obs]. Session 10 found why: no higher inner track had room, and such a
+  drop is refused (§8.7) [inf].
 - **Timing.** Inner starts were whole frames in every case. Each start sat
   about 0.3–0.4 s before the cursor, which is the grab offset within the
   tile [inf]. The drop point therefore isn't a precise rule source; the
@@ -374,15 +375,76 @@ WizRec (`InsertClipInGroup`, DECISIONS 2026-10-21):
 - **Matches:** a drop above the inner tracks makes a new top inner track;
   no group keys travel.
 
+### 8.7 Drops onto an occupied spot (session 10, 2026-10-21, RT-028)
+
+This answers why `mb3` added nothing. The same media-bin photo (5 s) was
+dropped onto busy spots, at top level and inside an open group, with the
+timeline pane enlarged. Top-level base: a copy of `format/video-photo-base`
+(video 0–10 s on track 1, photo 0–5 s on track 2, both non-magnetic);
+saves in `camtasia_rea_refs/research/timeline/dr14/`. Group base: a fresh
+copy of `mb-base` (§8.6), opened; saves in `research/groups/mb14/`. Times
+are cursor times; the landed start is about 0.3 s earlier (grab offset)
+unless it snapped to an edge.
+
+| Case | Drop | Result | Save | Tag |
+|---|---|---|---|---|
+| Busy spot, a higher track has room | track 1 mid-video (5 s); track 2 free from 5 s | Photo on **track 2** at 5.0 s | `d1-photo-on-video-5s` | [obs] |
+| same | track 1 mid-video (15 s); track 2 free from 10 s | Photo on track 2 at 15.0 s | `d6-photo-mid-video-15s` | [obs] |
+| same, in the group | inner track 0 mid-video (7 s); inner track 1 free from 5 s | Photo on **inner track 1** at 7.63 s | `g1-on-video-7s-above-free` | [obs] |
+| Near a clip's start | track 1 at 1 s (video starts at 0) | Photo **inserted at 0**; the video **pushed** to 5 s. Only that track moved, though it is not magnetic | `d4-photo-on-video-1s` | [obs] |
+| same | track 1 at 5.3 s, just after the photo/video boundary | Inserted at 5 s; the video pushed to 10 s | `d5-photo-at-video-start` | [obs] |
+| same, in the group | inner track 0 at 2 s, approached along that track | Inserted at inner 0; the inner video pushed to 5–15 s, **past the window**; the group did not grow | `g4-busy-via-track` | [obs] |
+| Busy spot, no higher track has room | top track (photo) at 3 s | **New top track**, photo at 2.7 s | `d2-photo-on-photo-3s` | [obs] |
+| same | track 2 at 6 s, track 3 busy | New top track, photo at 6.73 s | `d3-photo-on-video-6s` | [obs] |
+| same, in the group | inner track 0 at 3 s, inner track 1 busy | **New inner track 2**, photo at inner 6.07 s, far from the cursor | `g2-on-video-3s-above-busy` | [obs] |
+| same, in the group | inner track 0 at 2 s, all inner tracks above busy, 0.9 s hold | **Nothing added** | `g3-on-video-2s-all-busy` | [obs] |
+| same, in the group | inner track 0 at 8 s (30 % into the video), approached along the track | Nothing added | `g5-video-30pct` | [obs] |
+
+What this shows:
+
+- **Open groups follow the top-level rules.** Every outcome seen inside
+  the group was also seen at top level, so `mb3` is not a group rule
+  [obs].
+- **A dropped clip is only placed where it fits whole** [obs]: on the
+  target track if free, at a clip boundary (insert and push), or on the
+  lowest higher track with room for the whole clip at that time.
+- **Insert and push also happens on non-magnetic tracks.** A drop at or
+  just after a clip's start inserts the clip there and pushes the later
+  clips on that track only. In a group the pushed clip may leave the
+  window [obs]. How far from the start this still applies (2 s worked
+  once and failed once, see below) is [?].
+- **When nothing fits, the outcome depends on the gesture** [obs]. Short
+  holds made a new top track (or inner track), sometimes at a time far
+  from the cursor. Longer holds or along-track approaches added nothing.
+  Session 8's drops inside a clip (ED3 step 5, 5′) also added nothing.
+  The most likely reading is that a busy spot with no room above is
+  **refused**, and that the new-track results came from the hover lagging
+  behind the synthetic path [inf]. The same final cursor spot gave an
+  insert in `g4` and nothing in `g3`, which supports the lag reading.
+- **So `mb3` was a refusal, not a missed drop** [inf]: inner track 0 was
+  busy at the drop time and inner track 1 had no room for 5 s.
+
+WizRec (recommended [inf]):
+
+- On a busy spot, try in order: insert at the boundary when the drop is
+  at or near a clip's start; the lowest higher track with room for the
+  whole clip; otherwise either refuse or add a new top track. Both
+  endings were observed. A new top track is more forgiving and matches
+  the canvas-drop rule (`ui-workflow.md` §4).
+- In a group, use the same order on the inner tracks. Never grow the
+  group (§8.6).
+
 ## Open
 
 - Rotation and crop in the bounding box at group creation, and rotation in
   ungroup composition [?].
 - ~~Whether drops into an open group grow the group~~: neither pastes
   (§8.3) nor media-bin drops (§8.6) grow it [obs].
-- Why a drop onto an occupied spot of a non-magnetic inner track adds
-  nothing (a refusal, or a missed drop) [?]. Session 8 saw the same for
-  drops inside a clip on a magnetic top-level track (`edit-semantics.md`
-  ED3 step 5).
+- ~~Why a drop onto an occupied spot of a non-magnetic inner track adds
+  nothing~~: a refusal when no higher inner track has room; groups follow
+  the top-level rules (§8.7) [inf from 11 drops].
+- How far after a clip's start a drop still inserts and pushes, and
+  whether a busy drop with no room is always refused (§8.7) [?]. Real
+  (non-synthetic) drags would settle it.
 - ~~How trim-start behaves on inner videos~~: `mediaStart` moves (§8.5)
   [obs].

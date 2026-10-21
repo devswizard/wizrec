@@ -92,7 +92,7 @@ middle. Undo/redo/split live in the **timeline** toolbar, not here.
 | Source → target | Result | Tag |
 |---|---|---|
 | Media bin tile → **canvas** | Adds the clip (one undoable add step) at the **playhead**, on the **lowest track with room for the whole clip** from the playhead; if none has room, a **new track on top**. Seen three times: playhead 0 with tracks 1–2 busy → new track 3; playhead 7 s → track 2 (free from 5 s, while track 3 was also free); playhead 5.5 s → track 3, because track 2 had only 1.5 s free before its next clip | [obs] `ui1`–`ui3`; rule [inf] from 3 cases |
-| Media bin tile → **timeline** track | Lands at the drop point on that track; onto the empty area above the top track, a new track. Onto an occupied spot, nothing (non-magnetic) or an insert at a boundary (magnetic) | [obs] RT-020, RT-025 |
+| Media bin tile → **timeline** track | Lands at the drop point on that track; onto the empty area above the top track, a new track. Onto an occupied spot: at or just after a clip's start, an insert that pushes that track's later clips; elsewhere, the lowest higher track with room; with no room, refused (`group-edits.md` §8.7) | [obs] RT-020, RT-025, RT-028; the no-room case [inf] |
 | Annotation / callout tile → canvas | New callout, 5 s, at the playhead | [obs] RT-017 |
 | Visual / audio / cursor effect, behaviour, animation tile → a clip (timeline or canvas) | Adds that item to the clip | [obs] RT-010, RT-016 |
 | Transition tile → a clip edge or a cut | One- or two-sided transition | [obs] RT-016 |
