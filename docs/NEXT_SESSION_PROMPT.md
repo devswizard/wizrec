@@ -36,37 +36,55 @@ GOAL (session 10), in priority order:
    line `v0.1.3` → public) and `scripts/release/update-appcast.sh v0.1.3` only
    if sign_update can reach the key. Without a key, ship a release only for
    user-visible changes worth it.
-3. Pending work below (no user input needed), with agents.
+3. Pending work below (no user input needed), with agents. User-visible
+   fixes first: I test every release myself. When a batch of them is green,
+   ship v0.1.3 (rpath-clean, no key needed) and install it in /Applications
+   for me (quit my WizRec only if it isn't running; otherwise ask).
 4. Only if I delivered licensed Camtasia reference exports: golden parity
    M1/M4/M5/M6 and the "Still needs a licensed export" list at the end of
    docs/testing/camtasia-session-2.md. Never use the trial's watermarked
    exports or saved thumbnails as references.
 
-PENDING WORK → AGENTS (branches `agent/<name>13`, all from main)
+PENDING WORK → AGENTS (branches `agent/<name>14`, all from main)
+I test the installed app myself (/Applications/WizRec.app). Agents never touch
+/Applications and never quit or kill my WizRec; they use build/WizRec.app.
 - app (owns Sources/WizRecApp/**, Sources/PlayerKit/**, Sources/TimelineUI/**,
-  scripts/ui-checks/**): APP13-1 window-level key loop (library sidebar →
-  canvas → inspector → timeline, Tab leaves the library panel; AX audit
-  extended); APP13-2 Clip Speed inspector: Duration field through
-  TimelineEngine `SetClipDuration` (ED2b), Speed field shows the effective
-  speed to 2 decimals; run scripts/ui-checks/run-all.sh at the end.
+  scripts/ui-checks/**):
+  APP14-1 first-use UX pass: walk the everyday flows as a new user (launch →
+  start screen → record or import → edit → export) in the built app and fix
+  what is missing or confusing (discoverability of Record/Export/Import,
+  empty states, error messages, drag and drop onto the start screen and the
+  canvas/timeline); use the researcher's list of Camtasia's main-window
+  features (RES14-1) as a checklist, our own design.
+  APP14-2 window-level key loop (library sidebar → canvas → inspector →
+  timeline; Tab leaves the library panel; AX audit extended).
+  APP14-3 Clip Speed inspector: Duration field through TimelineEngine
+  `SetClipDuration` (ED2b); Speed shows the effective speed to 2 decimals.
+  Run scripts/ui-checks/run-all.sh at the end; send me window snapshots
+  (`-WizRec.WindowSnapshots`) of every changed screen.
+- researcher (owns docs/specs/**, docs/ledger/**, docs/testing/**; the only
+  agent that may drive Camtasia): RES14-1 behavioural list of Camtasia
+  2026.2.3's main-window workflow (start screen, toolbar, tool panels, menus,
+  canvas tools, timeline tools) read from its UI by UI scripting, in our own
+  words, no screenshots or assets in the repo → docs/specs/ui-workflow.md;
+  RES14-2 remaining [?] answerable by save-only experiments (drop onto an
+  occupied inner spot, Assets `ident` rule). You review at the wall.
 - qa (owns Tests/**, TestGenKit, WizRecTestSupport, the ci.yml test steps):
-  QA13-1 flaky watch under `-O` (5 full runs) and on loaded machines;
-  QA13-2 integration tests for every merge; QA13-3 `inheritedStderrDoesNotHang`
-  took 6.3 s on a loaded CI runner — make the bound meaningful there (or
-  explain); QA13-4 review the 17 known issues: still needed?
+  QA14-1 flaky watch under `-O` (5 full runs) and on a loaded machine;
+  QA14-2 integration tests for every merge (start screen, toolbar, Open by
+  extension, media opens as a new project); QA14-3 review the 17 known
+  issues: still needed?
 - ship (owns .github/** except qa's test steps, scripts/release/**,
-  docs/RELEASING.md): SHIP13-1 actionlint step in CI; goal 2 when a key exists.
-- media (owns Sources/MediaEngine/**): MED13-1 `ToneMappingMetal` to the
+  docs/RELEASING.md): SHIP14-1 actionlint step in CI; goal 2 when a key exists.
+- media (owns Sources/MediaEngine/**): MED14-1 `ToneMappingMetal` to the
   RenderEngine-style locked texture cache if it can release wrappers off the
   caller thread (else document why it is safe), with a stress test.
-- researcher (owns docs/specs/**, docs/ledger/**, docs/testing/**; the only
-  agent that may drive Camtasia): RES13-1 list the remaining [?] in
-  docs/specs answerable by save-only experiments (e.g. why a drop onto an
-  occupied inner spot adds nothing, the Assets `ident` rule) and answer the
-  ones that matter for interoperability. You review at the wall.
-- timeline: only if RES13-1 changes a rule.
+- timeline: only if RES14-2 changes a rule or app needs a new command.
 - render / captions / audio: only with licensed exports (goal 4) or a
   finding from qa.
+- Open question for me (ask once, batched): with "Show start screen at
+  launch" off, should closing the last project still show the start screen?
+  (Default kept: yes.)
 
 READ FIRST, in order:
 1. CLAUDE.md (hard rules, architecture, milestones, current state)
@@ -91,8 +109,9 @@ STEP 0 (you alone): CHECK, don't ask, wherever you can.
 - The permission classifier blocks reading the keychain GitHub token and
   keychain writes (`generate_keys`): never try; use workflows with
   GITHUB_TOKEN instead, and leave key creation to me.
-- Ask me ONCE, batched, only what you can't check: usually nothing (Sparkle
-  key = `release/sparkle.conf`; licensed exports = `scripts/golden.sh --status`).
+- Ask me ONCE, batched, only what you can't check (Sparkle key =
+  `release/sparkle.conf`; licensed exports = `scripts/golden.sh --status`),
+  plus the start-screen question below.
 
 STEP 1 (you alone):
 - `swift build && swift test` on main: expect the §0 test count; sum the
@@ -105,7 +124,7 @@ STEP 1 (you alone):
 STEP 2: spawn the agents above in ONE message (up to 6; CI stays with you);
 spawn an owner agent for any product bug a test finding uncovers.
 Each prompt: "Read coordination/AGENT_BRIEF.md first", its name,
-`git switch -c agent/<name>13 main`, its tasks, "commit small and often; never
+`git switch -c agent/<name>14 main`, its tasks, "commit small and often; never
 push; no AI attribution lines; before REVIEW: full swift test + the 6.3.3
 build; don't end your turn while your own background work runs; no
 background polling loops". Record addresses in coordination/ROSTER.md, tasks
