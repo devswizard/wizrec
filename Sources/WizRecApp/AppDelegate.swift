@@ -63,10 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
 
-    /// Dock icon clicked with no window open: the start screen.
+    /// Dock icon clicked with no window open: the start screen. With projects open (minimized,
+    /// say) AppKit's usual handling brings them back instead.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         let o = AppEnvironment.options
-        if !flag, o.startScreen || !o.isScripted { StartWindowController.shared.present() }
+        guard !flag, NSDocumentController.shared.documents.isEmpty else { return true }
+        if o.startScreen || !o.isScripted { StartWindowController.shared.present() }
         return false
     }
 
