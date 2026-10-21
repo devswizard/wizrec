@@ -42,12 +42,24 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
   longer waits for the graphics card on the main thread.
 - **Captions typed in Camtasia** (saved as rich text) now show their text in WizRec
   instead of raw formatting codes.
+- **A rare crash while rendering is fixed.** Closing a project or exporting while the
+  preview was still drawing frames could crash WizRec.
+- **Faster audio export**, especially for projects that don't store an audio sample
+  rate (up to about ten times faster), with exactly the same sound.
+- **Caption errors are shown in full**: when speech recognition fails right away, the
+  error message now always includes the reason.
 
 **Editing, closer to Camtasia**
 - **Copy and paste with groups** works the way Camtasia does it: clips copied out of a
   group keep their place and size on the canvas, and clips pasted into a group stay
   inside the group's time range (on a free track inside it) instead of making the group
   longer. Copying from or pasting into a Rev media group is not allowed, as in Camtasia.
+- **Clip Speed** rounds the way Camtasia does: when a speed doesn't give a whole number
+  of frames, the clip keeps all of its media and the speed is adjusted very slightly.
+  The new duration can also be set directly.
+- **Dropping media into an open group** works like Camtasia: the group keeps its length,
+  and the clip lands where you drop it (on a new track above when you drop it over the
+  tracks). A Library item double-clicked while a group is open goes in at the playhead.
 - **Animated shader backgrounds**: keyframes you set on a background's settings are now
   saved the way Camtasia saves them, so the animation survives a later move or resize
   of the clip.
@@ -56,7 +68,8 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 - The tiles on every **Library** tab can be reached with the keyboard: **Tab** and
   **Shift-Tab** move between tiles, **Space** or **Return** acts like a click on the
   focused tile, and VoiceOver reads each tile's name. Space on a
-  focused tile no longer starts playback.
+  focused tile no longer starts playback. Tab also reaches tiles that are scrolled out
+  of view.
 
 **Download and app bundle**
 - The app no longer carries file paths from the machine that built it, and every
