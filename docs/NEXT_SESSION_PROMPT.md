@@ -9,12 +9,13 @@ workflow if useful. I want automated solutions: do everything yourself, decide
 sensible defaults, and only ask me what truly needs me.
 
 WHERE SESSION 8 ENDED (2026-10-21)
-- main is green on GitHub (see docs/HANDOFF.md §0 for the run and test count).
+- main `b49023c` is green on GitHub (CI run 28) and locally: 1107 tests,
+  17 known issues (15 golden-harness + 2 LoadGate).
 - v0.1.0 is PUBLIC (published by .github/workflows/publish.yml with the
   workflow's GITHUB_TOKEN; checked from the public URL).
 - Sparkle feed prepared (release/appcast.xml via raw.githubusercontent.com,
   release/sparkle.conf) but OFF: no key yet.
-- No open agent branches; every session-8 agent is merged.
+- No open agent branches or worktrees; every session-8 agent is merged.
 - Full story: docs/HANDOFF.md §0 (session-8 snapshot, follow-ups, NEED_USER).
 
 GOAL (session 9), in priority order:
