@@ -138,5 +138,6 @@ branches were deleted with the user's OK.
 | qa | a83c02807d01b29aa | `agent/qa14` |
 | ship | a3296c90fdf81c33a | `agent/ship14` |
 | media | a99c28289e51bce2e | `agent/media14` |
+| timeline | a170779a586fd4dc1 | `agent/timeline14` (drop placement §4/§8.7) |
 
-Not spawned (no finding / no licensed exports yet): timeline, render, captions, audio.
+Not spawned (no finding / no licensed exports yet): render, captions, audio.

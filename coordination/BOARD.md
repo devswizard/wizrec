@@ -420,15 +420,18 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 | APP14-1 | app | claimed | first-use UX pass (launch → start screen → record/import → edit → export): discoverability, empty states, errors, drops on start screen + canvas/timeline |
 | APP14-2 | app | claimed | window-level key loop library → canvas → inspector → timeline; Tab leaves the library; AX audit extended |
 | APP14-3 | app | claimed | Clip Speed inspector: Duration via `SetClipDuration` (ED2b); Speed shows effective speed to 2 decimals |
-| RES14-1 | researcher | claimed | `docs/specs/ui-workflow.md`: Camtasia main-window workflow, own words (wall-reviewed) |
-| RES14-2 | researcher | claimed | save-only: occupied inner-spot drop (§8.6), Assets `ident` rule (§11.2) |
+| RES14-1 | researcher | done | `docs/specs/ui-workflow.md`: Camtasia main-window workflow, own words (wall-reviewed) |
+| RES14-2 | researcher | done | save-only: occupied inner-spot drop (§8.6), Assets `ident` rule (§11.2) |
 | QA14-1 | qa | claimed | flaky watch: 5 full runs `-O` + loaded machine |
-| QA14-2 | qa | claimed | integration tests: start screen, toolbar, Open by extension, media as new project, every session-10 merge |
-| QA14-3 | qa | claimed | review the 17 known issues |
+| QA14-2 | qa | done | integration tests: start screen, toolbar, Open by extension, media as new project, every session-10 merge |
+| QA14-3 | qa | done | review the 17 known issues |
 | SHIP14-1 | ship | done | actionlint step in CI |
 | SHIP14-2 | ship | done | v0.1.3 notes draft + local rpath-clean DMG check (no key: updater off) |
 | MED14-1 | media | claimed | `ToneMappingMetal` locked texture cache or documented safety + stress test |
+| TL14-1 | timeline | claimed | canvas drop (lowest track with room, else new top) + busy timeline drop (boundary insert+push → lowest higher track → new top), top level and open groups; pure placement fn + command |
 
 ## Session 10 merges
 
 - ship14: actionlint 1.7.12 CI job (pinned, sha256 checked, matcher annotations), `check-notes.sh` (release.yml on tags), v0.1.3 notes draft, verify-dmg without window restoration; local 0.1.3 DMG rpath-clean, updater off.
+- researcher14: ui-workflow.md complete (§1–§12, wall-reviewed), group-edits §8.7 busy drops (RT-028), shader-backgrounds §11.3 `ident` rule (RT-029; our import already matches).
+- qa14: StartScreenWorkflowIntegrationTests (6), all 17 known issues removed (self-tests collect expected failures; `LoadGate.verdict`), callbacks on own threads; flaky watch 5/5 `-O` + 3/3 at load 56–67 green.
