@@ -113,4 +113,91 @@ enum GroupGeometry {
         o["parameters"] = .object(p)
         return p
     }
+
+    /// Moves a clip's transform by `t' = a + b × t`, `s' = b × s` per axis (x: `translation0`/
+    /// `scale0`, y: `translation1`/`scale1`), keyframe values too. Changed keys are written in the
+    /// long form (`{type, defaultValue, interp}`), as Camtasia writes pasted parameters [obs,
+    /// group-edits.md §3, §8.2]; a missing key is added (long form, canonical position) only when
+    /// its value changes. Audio clips (`AMFile`) are left alone. No-op for the identity.
+    static func reexpress(_ clip: JSONObject, x: GroupSpace.Axis, y: GroupSpace.Axis) {
+        guard clip.clipType != "AMFile", let o = owner(clip) else { return }
+        let ops: [(name: String, f: (Double) -> Double, active: Bool)] = [
+            ("translation0", { (v: Double) -> Double in x.a + x.b * v }, x.a != 0 || x.b != 1),
+            ("translation1", { (v: Double) -> Double in y.a + y.b * v }, y.a != 0 || y.b != 1),
+            ("scale0", { (v: Double) -> Double in x.b * v }, x.b != 1),
+            ("scale1", { (v: Double) -> Double in y.b * v }, y.b != 1),
+        ]
+        guard ops.contains(where: { $0.active }) else { return }
+        let p = params(o)
+        for op in ops where op.active { mapLong(p, op.name, op.f) }
+    }
+
+    /// `map`, writing the long form: a bare number becomes `{type: "double", defaultValue,
+    /// interp: "eioe"}` in place; a missing key is inserted in that form when `f` changes the
+    /// default.
+    static func mapLong(_ params: JSONObject, _ name: String, _ f: (Double) -> Double) {
+        let d = ParamWriter.defaultValue(name)
+        guard let v = params[name] else {
+            let nv = f(d)
+            if nv != d { insert(params, name, J.param(nv)) }
+            return
+        }
+        if v.object == nil, let n = v.double {
+            params[name] = J.param(f(n))
+        } else {
+            map(params, name, f)
+        }
+    }
+}
+
+/// The constant position/scale a stack of groups applies to the clips inside them
+/// (group-edits.md §6, §8.2): `canvas = t + s × local` per axis, `t` in canvas px, `s` a
+/// factor. Rotation is not composed [?]; an animated group position or scale counts with its
+/// constant (`defaultValue`) [WizRec].
+struct GroupSpace: Equatable {
+    /// `v' = a + b × v` on one axis.
+    typealias Axis = (a: Double, b: Double)
+
+    var tx = 0.0, ty = 0.0, sx = 1.0, sy = 1.0
+
+    static let identity = GroupSpace()
+
+    var isIdentity: Bool { self == .identity }
+
+    init(tx: Double = 0, ty: Double = 0, sx: Double = 1, sy: Double = 1) {
+        self.tx = tx; self.ty = ty; self.sx = sx; self.sy = sy
+    }
+
+    /// Reads `json` (`[tx, ty, sx, sy]`); nil when missing or malformed.
+    init?(_ v: JSON?) {
+        guard let a = v?.array?.items.compactMap(\.double), a.count == 4, a.allSatisfy(\.isFinite) else { return nil }
+        self.init(tx: a[0], ty: a[1], sx: a[2], sy: a[3])
+    }
+
+    /// `[tx, ty, sx, sy]`, as stored in a clipboard payload.
+    var json: JSON { J.arr([J.dbl(tx), J.dbl(ty), J.dbl(sx), J.dbl(sy)]) }
+
+    /// This space followed by group `g` inside it.
+    @MainActor func entering(_ g: JSONObject) -> GroupSpace {
+        let p = g["parameters"]?.object
+        let gtx = GroupGeometry.constant(p, "translation0", 0), gty = GroupGeometry.constant(p, "translation1", 0)
+        let gsx = GroupGeometry.constant(p, "scale0", 1), gsy = GroupGeometry.constant(p, "scale1", 1)
+        return GroupSpace(tx: tx + sx * gtx, ty: ty + sy * gty, sx: sx * gsx, sy: sy * gsy)
+    }
+
+    /// The space of clips inside `groups` (outermost first).
+    @MainActor static func of(_ groups: [JSONObject]) -> GroupSpace {
+        var s = GroupSpace.identity
+        for g in groups { s = s.entering(g) }
+        return s
+    }
+
+    /// The map that re-expresses a clip given in space `from` in this space:
+    /// `local' = (from(local) − t) / s` per axis. Nil when this space has a zero scale.
+    func relative(from: GroupSpace) -> (x: Axis, y: Axis)? {
+        guard sx != 0, sy != 0 else { return nil }
+        let x: Axis = ((from.tx - tx) / sx, from.sx / sx)
+        let y: Axis = ((from.ty - ty) / sy, from.sy / sy)
+        return (x, y)
+    }
 }

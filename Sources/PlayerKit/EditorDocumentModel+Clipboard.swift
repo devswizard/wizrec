@@ -55,9 +55,10 @@ extension EditorDocumentModel {
     /// bundle, sources whose relative `src` would not resolve here are imported from there
     /// (copied into `media/<ts>/`) and relinked in the same step.
     ///
-    /// `group`: an open group to paste into. `track` is then its inner track, `ticks` stays
-    /// project-timeline time (mapped to the group's inner time), and an overlap falls back to
-    /// a new inner track on top of the group [WizRec].
+    /// `group`: an open group to paste into. `track` is then ignored: `ticks` stays
+    /// project-timeline time (mapped to the group's inner time and clamped to its window), and
+    /// the paste takes the lowest free inner track or a new one on top; the group never grows
+    /// (`PasteClips(_:group:at:)`, group-edits.md §8.3).
     @discardableResult
     public func paste(_ payload: ClipboardPayload, origin: URL?, track: Int?, at ticks: Int64,
                       group: Int64? = nil) async throws -> [Int64] {
@@ -69,13 +70,7 @@ extension EditorDocumentModel {
         }
         let t = track ?? 0
         if let group {
-            do {
-                return try attempt([{ _, _ in PasteClips(payload, group: group, track: t, at: .timeline(ticks)) }])
-            } catch {
-                guard let top = innerTracks(of: group)?.count else { throw error }
-                return try attempt([{ _, _ in AddGroupTrack(group: group, at: top) },
-                                    { _, _ in PasteClips(payload, group: group, track: top, at: .timeline(ticks)) }])
-            }
+            return try attempt([{ _, _ in PasteClips(payload, group: group, at: .timeline(ticks)) }])
         }
         do {
             return try attempt([{ _, _ in PasteClips(payload, track: t, at: ticks) }])

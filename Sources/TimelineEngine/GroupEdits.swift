@@ -89,6 +89,12 @@ enum GroupChain {
         return loc
     }
 
+    /// True for Rev media: a group with `metadata.groupType` `"revMedia"`, which Camtasia never
+    /// opens (group-edits.md §8.1 [obs]), so WizRec treats it as closed for copy/paste [inf].
+    static func isRevMedia(_ g: JSONObject) -> Bool {
+        g.clipType == "Group" && g["metadata"]?.object?["groupType"]?.string == "revMedia"
+    }
+
     /// Group objects from the outermost enclosing group down to `groupID` itself.
     static func groups(to groupID: Int64, in project: Project) throws -> [JSONObject] {
         let loc = try locateGroup(groupID, in: project)
