@@ -747,7 +747,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             try? await Task.sleep(nanoseconds: 300_000_000)
             refreshInspector()
                 try? await Task.sleep(nanoseconds: 100_000_000)
-            writeSnapshot(to: out.appendingPathComponent(String(format: "frame-%06.2fs.png", t)),
+            await writeSnapshot(to: out.appendingPathComponent(String(format: "frame-%06.2fs.png", t)),
                           note: settled ? "" : " (frames still decoding)")
         }
         if options.autoplay {
@@ -755,7 +755,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             engine.play()
             for n in 1...3 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                writeSnapshot(to: out.appendingPathComponent("playing-\(n).png"), note: "")
+                await writeSnapshot(to: out.appendingPathComponent("playing-\(n).png"), note: "")
             }
         }
     }
@@ -763,17 +763,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// Window content as PNG, with the Metal canvas rendered offscreen into its frame
     /// (Metal layers are not captured by `cacheDisplay`). Everything is composed into a fresh
     /// bitmap: drawing into the rep `cacheDisplay` filled broke later SwiftUI captures.
-    private func writeSnapshot(to url: URL, note: String) {
-        guard let root = window?.contentView, let cached = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
+    /// The canvas is rendered first (awaiting the GPU without blocking the main thread), then the
+    /// window is cached, so both show the same state.
+    private func writeSnapshot(to url: URL, note: String) async {
+        guard let root = window?.contentView else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let rect = canvas.convert(canvas.bounds, to: root)
+        let image = await renderer?.renderImage(size: CGSize(width: rect.width * scale, height: rect.height * scale))
+        guard let cached = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
         root.cacheDisplay(in: root.bounds, to: cached)
         guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: cached.pixelsWide, pixelsHigh: cached.pixelsHigh,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
         out.size = root.bounds.size   // before the context, so drawing is in points
         guard let ctx = NSGraphicsContext(bitmapImageRep: out) else { return }
-        let scale = window?.backingScaleFactor ?? 2
-        let rect = canvas.convert(canvas.bounds, to: root)
-        let image = renderer?.renderImage(size: CGSize(width: rect.width * scale, height: rect.height * scale))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = ctx
         cached.draw(in: root.bounds)

@@ -22,3 +22,31 @@ extension LaunchOptions {
     /// all other runs ask, scripted steps without `--quit-after` included.
     public var unsavedEditsOnQuit: UnsavedEditsOnQuit { quitAfter == nil ? .ask : .discard }
 }
+
+/// A document the quit policy inspects and, in `--quit-after` runs, marks clean (the app's
+/// `ProjectDocument`; tests use stand-ins).
+@MainActor
+public protocol QuitReviewedDocument: AnyObject {
+    /// Name shown in the discard notice (the window title).
+    var quitDisplayName: String { get }
+    /// Whether the document has unsaved edits.
+    var hasUnsavedEdits: Bool { get }
+    /// Drops the edits for this quit: the document must report no unsaved edits afterwards,
+    /// so neither NSDocument's review nor the close asks or saves.
+    func discardEditsForQuit()
+}
+
+extension UnsavedEditsOnQuit {
+    /// Applies the policy to every open document before a quit (the timed quit and the
+    /// unsaved-documents review of ⌘Q). `.ask` changes nothing. `.discard` marks every edited
+    /// document clean, in order, and returns the one notice line to log (nil when none was
+    /// edited, e.g. on the second call of the same quit).
+    @MainActor
+    public func prepareQuit(_ documents: [any QuitReviewedDocument]) -> String? {
+        guard self == .discard else { return nil }
+        let edited = documents.filter(\.hasUnsavedEdits)
+        let line = Self.discardNotice(documents: edited.map(\.quitDisplayName))
+        for doc in edited { doc.discardEditsForQuit() }
+        return line
+    }
+}

@@ -7,6 +7,9 @@
 #   copies (e.g. one running from a mounted DMG) are never touched.
 # - Defaults the checks depend on are passed as `-Key value` argument-domain pairs, so the
 #   user's stored preferences are neither read nor changed.
+# - A locked screen (or a session not on the console) stalls System Events and AXUIElement
+#   calls: `gui_lock` refuses to start then (exit 3), and every `ax` call is bounded by
+#   AX_TIMEOUT s; a timed-out call on a screen that got locked meanwhile ends the check.
 # - The first launch of a freshly built app is slow (the system assesses the new binary, caches
 #   are cold). Window waits poll up to FIRST_LAUNCH_TIMEOUT s until a launch of this exact
 #   binary has shown its project once (a stamp next to the app), then up to LAUNCH_TIMEOUT s.
@@ -21,6 +24,7 @@ GUI_OWNER=${GUI_OWNER:-app}
 WATCHDOG=${WATCHDOG:-180}
 LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-45}
 FIRST_LAUNCH_TIMEOUT=${FIRST_LAUNCH_TIMEOUT:-150}
+AX_TIMEOUT=${AX_TIMEOUT:-30}
 WARM_STAMP="$(dirname "$APP")/.$(basename "$APP").ui-warm"
 
 APP_PID=""
@@ -32,13 +36,48 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 pass() { log "PASS $*"; }
 fail() { log "FAIL $*"; FAILURES=$((FAILURES + 1)); }
 
+# screen_state: unlocked | locked | off-console (screen-state.py).
+screen_state() { ioreg -n Root -d1 -a 2>/dev/null | /usr/bin/python3 -I "$UI_DIR/screen-state.py"; }
+
+# require_screen: ends the check (exit 3) unless the screen is unlocked and on the console.
+require_screen() {
+    local s
+    s=$(screen_state)
+    [ "$s" = unlocked ] && return 0
+    # To stderr: callers often run inside $(…). TERM reaches the check's own shell ($$ is the
+    # same in subshells), whose trap cleans up and exits 3.
+    log "FAIL screen is $s: UI checks need an unlocked, logged-in console session; unlock and rerun" >&2
+    kill -TERM $$
+    exit 3
+}
+
+# run_bounded <seconds> <command…>: runs the command (stdout passes through), killing it after
+# <seconds>; status 124 on timeout.
+run_bounded() {
+    local limit=$1 pid watch rc
+    shift
+    "$@" &
+    pid=$!
+    ( sleep "$limit"; kill -9 "$pid" 2>/dev/null ) > /dev/null 2>&1 &
+    watch=$!
+    wait "$pid"
+    rc=$?
+    kill "$watch" 2>/dev/null
+    wait "$watch" 2>/dev/null
+    [ "$rc" -eq 137 ] && rc=124
+    return "$rc"
+}
+
 gui_lock() {
+    require_screen
     while ! mkdir "$GUI_LOCK" 2>/dev/null; do
         log "GUI lock held by $(cat "$GUI_LOCK/owner" 2>/dev/null || echo '?'); retrying in 30 s"
         sleep 30
+        require_screen
     done
-    echo "$GUI_OWNER" > "$GUI_LOCK/owner"
     HAVE_LOCK=1
+    echo "$GUI_OWNER" > "$GUI_LOCK/owner"
+    require_screen
 }
 
 gui_unlock() {
@@ -80,7 +119,10 @@ app_alive() { [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; }
 # Quits the app if it still runs (Quit, then kill after 15 s), and stops the watchdog.
 stop_app() {
     if app_alive; then
-        ax keys q cmd >/dev/null 2>&1 || true
+        # No UI scripting on a locked screen (it stalls): kill instead.
+        if [ "$(screen_state)" = unlocked ]; then
+            run_bounded "$AX_TIMEOUT" osascript "$UI_DIR/ax.applescript" keys "$APP_PID" q cmd >/dev/null 2>&1 || true
+        fi
         wait_until 15 '! app_alive' || kill -9 "$APP_PID" 2>/dev/null || true
     fi
     [ -n "$WATCH_PID" ] && kill "$WATCH_PID" 2>/dev/null || true
@@ -96,9 +138,20 @@ cleanup() {
         if [ "$FAILURES" -eq 0 ]; then rm -rf "$WORK"; else rm -rf "$WORK/exports"; fi
     fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'cleanup; exit 3' INT TERM
 
-ax() { osascript "$UI_DIR/ax.applescript" "$1" "$APP_PID" "${@:2}"; }
+# ax <command> [args…]: ax.applescript against the launched app, bounded by AX_TIMEOUT s.
+ax() {
+    local rc
+    run_bounded "$AX_TIMEOUT" osascript "$UI_DIR/ax.applescript" "$1" "$APP_PID" "${@:2}"
+    rc=$?
+    if [ "$rc" -eq 124 ]; then
+        log "ax $1 timed out after $AX_TIMEOUT s" >&2
+        require_screen
+    fi
+    return "$rc"
+}
 
 # wait_until <seconds> <shell condition>: polls every 0.5 s.
 wait_until() {

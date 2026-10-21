@@ -16,6 +16,11 @@ enum AppEnvironment {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let options = AppEnvironment.options
+        // `-WizRec.PrintLibrary YES` (UI checks): list every library tile, "<tab> <identifier>".
+        if UserDefaults.standard.bool(forKey: "WizRec.PrintLibrary") {
+            for tile in SidebarView.libraryManifest() { print("library-tile \(tile.tab) \(tile.identifier)") }
+            fflush(stdout)
+        }
         // Scripted runs (--quit-after) never start the updater.
         if options.quitAfter == nil { AppUpdater.shared.start() }
         for path in options.paths {

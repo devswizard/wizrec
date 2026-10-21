@@ -214,18 +214,22 @@ final class ProjectDocument: NSDocument {
                             options: options)
     }
 
-    /// `discardUnsavedEditsBeforeQuit` for `documents` only.
+    /// `discardUnsavedEditsBeforeQuit` for `documents` only (policy: `UnsavedEditsOnQuit.prepareQuit`).
     static func discardUnsavedEdits(in documents: [ProjectDocument], options: LaunchOptions) {
-        guard options.unsavedEditsOnQuit == .discard else { return }
-        let edited = documents.filter { $0.isDocumentEdited }
-        if let line = UnsavedEditsOnQuit.discardNotice(documents: edited.map(\.displayName)) {
+        if let line = options.unsavedEditsOnQuit.prepareQuit(documents) {
             Swift.print(line)   // not NSDocument.print(_:)
             fflush(stdout)
         }
-        for doc in edited {
-            doc.discardsEditsForQuit = true
-            doc.updateChangeCount(.changeCleared)
-        }
+    }
+}
+
+extension ProjectDocument: QuitReviewedDocument {
+    var quitDisplayName: String { displayName ?? fileURL?.lastPathComponent ?? "Untitled" }
+    var hasUnsavedEdits: Bool { isDocumentEdited }
+
+    func discardEditsForQuit() {
+        discardsEditsForQuit = true
+        updateChangeCount(.changeCleared)
     }
 }
 

@@ -64,9 +64,12 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         engine.recordDraw(frame: state.frame, cpuMs: (CACurrentMediaTime() - t0) * 1000, stale: state.stale > 0)
     }
 
-    /// Renders the engine's current state offscreen at `size` px (sRGB, 8-bit), synchronously.
-    /// For snapshots and diagnostics; nil when the compositor is unavailable.
-    public func renderImage(size: CGSize) -> CGImage? {
+    /// Renders the engine's current state offscreen at `size` px (sRGB, 8-bit). For snapshots and
+    /// diagnostics; nil when the compositor is unavailable or the GPU work failed.
+    ///
+    /// Never blocks the main thread on the GPU: the caller suspends until the command buffer's
+    /// completion handler fires, and the main actor keeps serving other work meanwhile.
+    public func renderImage(size: CGSize) async -> CGImage? {
         let w = Int(size.width.rounded()), h = Int(size.height.rounded())
         guard let engine, let compositor, w > 0, h > 0 else { return nil }
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
@@ -75,8 +78,13 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         guard let tex = device.makeTexture(descriptor: d), let cb = queue.makeCommandBuffer() else { return nil }
         let state = engine.drawState()
         do { try compositor.encode(state.plan, frames: state.frames, into: tex, commandBuffer: cb) } catch { return nil }
-        cb.commit()
-        cb.waitUntilCompleted()
+        let completed: Bool = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            cb.addCompletedHandler { buffer in c.resume(returning: buffer.status == .completed) }
+            cb.commit()
+        }
+        // The source frames' textures must outlive the GPU work that samples them.
+        withExtendedLifetime(state) {}
+        guard completed else { return nil }
         var bytes = [UInt8](repeating: 0, count: w * h * 4)
         tex.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
         guard let provider = CGDataProvider(data: Data(bytes) as CFData),
