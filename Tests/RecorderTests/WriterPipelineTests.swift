@@ -3,6 +3,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
+import WizRecTestSupport
 @testable import Recorder
 
 /// Synthetic capture buffers, so the writer pipeline is tested without any capture permission.
@@ -65,6 +66,20 @@ enum Synth {
     }
 }
 
+/// True when `writer` dropped no sample. The non-real-time writer waits at most 2 s for the
+/// encoder per sample, then drops it (`MediaFileWriter.append`); on an overloaded machine (load
+/// average ≈ 130 seen) that wait runs out. A drop is therefore a timing bound (`LoadGate`): it
+/// fails on a quiet machine and is a known issue above `LoadGate.maxLoad`; callers skip the
+/// checks that only follow from it (gaps, sample counts).
+func noDrops(_ writer: MediaFileWriter, appended expected: Int? = nil,
+             sourceLocation: SourceLocation = #_sourceLocation) -> Bool {
+    let dropped = writer.droppedCount, appended = writer.appendedCount
+    let ok = dropped == 0 && (expected.map { appended == $0 } ?? true)
+    LoadGate.expect(ok, "writer dropped \(dropped), appended \(appended)\(expected.map { " of \($0)" } ?? "") samples",
+                    sourceLocation: sourceLocation)
+    return ok
+}
+
 func tempDir() -> URL {
     let u = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-rec-tests-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
@@ -98,11 +113,11 @@ func tempDir() -> URL {
         #expect(abs(r.duration - 2) < 0.01)
         #expect(r.size == CGSize(width: 320, height: 180))
         #expect(r.pts.first == 0)
+        #expect((r.pts.last ?? 0) < 2)
+        guard noDrops(writer) else { return }
         let maxGap = zip(r.pts, r.pts.dropFirst()).map { $1 - $0 }.max() ?? 0
         #expect(maxGap < 1.0 / 30 + 0.002, "no gap across the pause")
-        #expect((r.pts.last ?? 0) < 2)
         #expect(r.pts.count >= 58 && r.pts.count <= 60)
-        #expect(writer.droppedCount == 0)
     }
 
     /// A static screen delivers no frame after the start: the held warm-up frame fills the file.
@@ -151,10 +166,10 @@ func tempDir() -> URL {
         buffers(100, 150)
         let end = clock.stop(at: h(3))
         #expect(try await writer.finish(at: end))
-        #expect(writer.appendedCount == 100)
         let r = try await readBack(writer.url, type: .audio)
-        #expect(abs(r.duration - 2) < 0.05)
         #expect((r.pts.first ?? 1) < 0.001)
+        guard noDrops(writer, appended: 100) else { return }
+        #expect(abs(r.duration - 2) < 0.05)
     }
 
     @Test func retimeShiftsAllEntries() throws {
