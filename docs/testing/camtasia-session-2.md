@@ -376,7 +376,9 @@ Properties).
 | 8 | An audio export of `research/audio/au1-audio.cmproj` and `au1c-fades.cmproj` | Same folder, *Export Audio Only* | Fade curve shape; the sound of Audio Compression, Emphasize (ducking) and Pitch |
 | 9 | Part H in full (TM1–TM3 recordings, CE1–CE3) | Session 2 Part H | These need your own screen recordings, which automation can't make privately; CE2 and CE3 also need exports |
 
-Not export-related, but still manual (they need mouse drags that the
-automation can't do reliably): ED2 (Clip Speed 1.5× from the Properties
-field), ED3 (magnetic track drops) and ED4 (Shift-drag ripple trim), from
-session 2 Part J; typing caption text and bold runs in CA1.
+The former manual checks ED2 (Clip Speed 1.5× from the Properties field),
+ED3 (magnetic track drops), ED4 (Shift-drag of a clip edge) and CA1 (typing
+caption text) were automated in session 8 (ledger RT-020, RT-023;
+`edit-semantics.md` Part J, `captions.md` §1). Nothing manual is left
+outside the export list above. CA1's "one word bold" can't be done:
+Camtasia 2026.2.3 classic captions have no per-word styling.

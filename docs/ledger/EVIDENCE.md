@@ -4,6 +4,23 @@ This file records every use of REA tools and every static analysis of
 TechSmith binaries. Each entry gives the evidence id, the target's SHA-256,
 the method, the conclusion and any open unknowns.
 
+## Status (2026-10-21, session 8)
+
+- **Method 3 only** (UI automation and saves), entries RT-020 to RT-023.
+  Still no REA tool use, no binary analysis, no exports, and nothing
+  licensing-related.
+- **One screen capture was attempted and failed.** It was a
+  `screencapture -R` of the timeline strip (not the canvas), meant for
+  orientation. The terminal has no Screen Recording permission, so no image
+  was produced. All layout came from the accessibility tree.
+- **New helpers in `camtasia_rea_refs/_automation/`**: `pdump`, `pf.py`,
+  `fieldat`, `pressat`, `capkeys`, `captype`, `elmenu2`, `menuen`,
+  `openmenu`, `actions`, `state`, `front`, `winpos`, `wins`, `session`,
+  `clipdiff.py`, `caps.py`, `srcfx.py`. `mouse` gained slow-step and hold
+  settings and modifier key events. None contain TechSmith assets.
+- **The user's demo project** was copied into `research/groups/` and only
+  the copy was opened (RT-022). The `.trec` was neither read nor logged.
+
 ## Status (2026-10-20, end of session 5)
 
 - **Still no REA tool use and no binary analysis.** Session 5 added only
@@ -50,7 +67,7 @@ so the static-REA permission in `coordination/DECISIONS.md` was not needed.
 
 ## Entries
 
-### Method 3: runtime observation by UI automation (session 5, from 2026-10-20)
+### Method 3: runtime observation by UI automation (session 5, from 2026-10-20; session 8 added RT-020 to RT-023)
 
 Approved in DECISIONS 2026-10-20. The researcher drives the installed
 Camtasia 2026.2.3 (`/Applications/Camtasia.app`, bundle
@@ -91,3 +108,7 @@ playhead time field, Properties text fields and panel context menus.
 | RT-018 | 2026-10-20 | Part J (ED0, ED1), UnifiedMedia split | `format/video-photo-base` + our own `research/timeline/media/av-card.mp4` (test card + synthetic speech) → `research/timeline/ed0-insert`; its saved JSON with fresh media copies → `ju-base` → `ju2-split-extend` | Insert defaults (image 5 s, unified = shorter stream floored to a frame); Extend Frame = StitchedMedia with an IMFile "Frame of …" reading the video's last frame; UnifiedMedia split keeps the parent and child times identical | `edit-semantics.md` (Part J, X7 #9) |
 | RT-019 | 2026-10-20 | AI Noise Removal without `ExtandableEffectData` | `research/audio/au1-audio` copy with the blob removed by a text edit → `dfn-noblob-plain`, `dfn-noblob-saved` (Amount set to 50 via the Properties field) | Opens without alert; the effect is kept and the blob regenerated on save; Amount edits work; `default-…-Amount` metadata records the prior value | `audio.md` §3.3 |
 | RT-020 | 2026-10-20 | Part J ED2–ED4 (session 8; synthetic CGEvent drags, AX field typing) | `format/video-photo-base` copy → `research/timeline/ed11/ed2-speed`, `ed3a-magnetic-two`, `ed3-magnetic`, `ed3b-magnetic-append`, `ed3c-magnetic-delete`, `ed4a-before`, `ed4-ripple-try1`, `ed4-shift-trim` | Clip Speed field 1.5 → `scalar` "2/3", duration 10/1.5, metadata only; magnetic flag in `trackAttributes`, track packed from 0, boundary drop inserts, mid-clip drop refused, Delete closes gaps; Shift-drag of a start edge is a plain (multi-selection) trim, no ripple | `edit-semantics.md` (Part J ED2–ED4) |
+| RT-020b | 2026-10-21 | ED4 follow-up gestures | `research/timeline/ed11/ed4a-before` → `ed4b-plain-trim`, `ed4c-shift-end`, `ed4d-trimstart-playhead` (Command- and Option-drag: no change, not saved) | Plain and Shift edge drags are the same trim; Command/Option drags do nothing; Shift on the end edge and Trim Start to Playhead do not ripple; only Ripple Cut/Delete exist | `edit-semantics.md` (ED4) |
+| RT-021 | 2026-10-21 | Copy/paste with groups | `format/video-photo-base` copy → `research/groups/g1-group` … `g11-speed-copy-out` | Open group shows only its inner tracks (`isOpen` true); Clip Speed disabled on groups; copied clips keep duration/scalar but carry a canvas-space transform (baked at top level, re-expressed in the target group); paste maps playhead through start/mediaStart, clamps to the window start, uses a free inner track or adds one on top, never grows the group | `group-edits.md` §8 |
+| RT-022 | 2026-10-21 | Rev media and shader origin keys | copy of `~/Documents/demo project.cmproj` (user's own, outside the repo) → `research/groups/rev0-saved`, `rev2-bg-changed` (+`rev2-backup`), `rev3-autosave` (Camtasia autosave copy), `rev4-bg-copy`, `rev5-plain-group`, `rev6-shader-anim` | Rev media can't be opened; the Rev editor background change rewrites the clip, its `ShaderVidSource` and the group's `RevBackground`; unpack drops `Rev*` keys and keeps `ShaderVidSource`; plain groups get no Rev keys; a Custom animation plus a shader parameter edit writes an `animationTracks.visual` window and a matching `sourceEffect` keyframe. Camtasia Assets tiles did not accept synthetic input (Q1 outside Rev still open). Save As of the unpacked project failed twice (empty bundle); File ▸ Save in place was used instead. The `.trec` was never read or logged | `shader-backgrounds.md` §11.1, `group-edits.md` §8.4 |
+| RT-023 | 2026-10-21 | CA1 caption text | `research/captions/ca1-captions` copy → `research/captions/ca11/ca11-try1`, `ca11-try2`, `ca11-captions`; hand-edited copy `ca11-plain-in` → `ca11-plain-saved` | The caption editor (caption lane click) writes Cocoa RTF into `value.text`; no per-word styling (Text ▸ Bold disabled, Cmd-B closes the editor); style sheet writes `captionAttributes.fontSize`; plain-text captions are read and kept | `captions.md` §1 |

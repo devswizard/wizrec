@@ -77,9 +77,36 @@ here, as the content is personal.
 - Split, ripple delete and move keep every caption keyframe on each piece.
   None are pruned or shifted, so a piece can carry captions outside its
   media window (`edit-semantics.md` X7 #4 has the same rule).
-- Typing caption text, bold runs and font-size changes require the caption
-  editor, which the automation doesn't reach. The non-empty form stays as in
-  the run format above [inf].
+- Typing caption text, bold runs and font-size changes were done in
+  session 8 (below).
+
+**CA1 caption text (runtime saves, session 8, 2026-10-21, RT-023)**
+
+Saves are under `camtasia_rea_refs/research/captions/ca11/`. Base: a copy
+of `ca1-captions` (four empty 4 s captions on a 13.17 s audio clip).
+
+| Claim | Evidence | Tag |
+|---|---|---|
+| **The caption editor.** Clicking a caption in the caption lane above the timeline ruler opens a "Caption Editor" over the canvas. It has a text area ("Caption Text"), a *Duration* slider and field, *Previous/Next Caption*, *Play Caption*, and a style button | — | [obs] |
+| **The style button** opens one global sheet: Font, Size, Text colour, Background colour and Opacity. It writes `timeline.captionAttributes`; Size 32 → 40 gave `fontSize` 40 (`defaultFontSize` stayed true) | `ca11-captions` | [obs] |
+| **No bold or other per-word styling.** *Text ▸ Bold/Italic/Underline* are disabled while the text area is being edited. Cmd-B closes the editor and changes nothing. `textAttributes` stays null on every caption | `ca11-try2`, `ca11-captions` | [obs] |
+| **Text typed in the editor is saved as RTF** in `value.text`: a Cocoa RTF document (`{\rtf1\ansi\ansicpg1252\cocoartf2907 … \f0\fs36 \cf2 one bold word}`, font ArialMT, 18 pt, colour 54/66/74). This happens even for plain words. The RTF style is the editor's display style, not the caption style: it stays at `\fs36` after `fontSize` changes to 40 | `ca11-try1`, `ca11-captions` | [obs] |
+| **Plain text is accepted.** A caption whose `text` is a bare string (written by hand into a copy) shows in the editor, and an untouched caption is saved back as the same bare string | `ca11-plain-in` → `ca11-plain-saved` | [obs] |
+| Rendering uses `captionAttributes`, not the RTF's font, size or colour | [inf: the RTF style never changes and matches the editor's look] | [inf] |
+
+Rules for WizRec:
+
+- **Readers.** When `value.text` starts with `{\rtf`, convert it to plain
+  text (for example with `NSAttributedString` RTF import) and ignore its
+  attributes. Otherwise use it as is [inf]. `textAttributes` may still be
+  honoured if present, but Camtasia 2026.2.3 never writes it for classic
+  captions [obs].
+- **Writers.** Plain strings are fine, because Camtasia reads them and keeps
+  them [obs]. WizRec doesn't need to write RTF.
+- **[WizRec] ClassicCaptions differs.** It treats `text` as plain text and
+  would show RTF source to the user. That is a reader gap to fix.
+- **Bold runs** are not a Camtasia classic-caption feature. Drop that test
+  expectation.
 
 ## 2. Transcription (the words)
 
@@ -281,7 +308,8 @@ Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/captions/`.
   1. New project. Add any 10-s video with speech.
   2. Trim 1 s off its start.
   3. Add three captions by hand (*Captions ▸ Add Caption*), with different
-     text and durations, and make one word bold.
+     text and durations. (Done in session 8; a bold word isn't possible,
+     because classic captions have no per-word styling: §1.)
   4. Change the caption font size once.
   5. Save as `ca1-captions.cmproj`.
 - **CA2: dynamic captions.**

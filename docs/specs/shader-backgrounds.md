@@ -372,11 +372,70 @@ WizRec's rules (`SetShaderVidSource`, `EditorDocumentModel.placeBackground(_:inG
 - Both are plain metadata: `ShaderVidSource` travels with the clip (split halves, copies,
   moves, ungroup); `RevBackground` stays with its group and goes away when it is ungrouped.
 
-Open questions (no researcher session without licensed exports):
+### 11.1 Session 8 answers (runtime saves, 2026-10-21, RT-022)
 
-- [?] Does Camtasia write `ShaderVidSource` for a background placed from its own library
-  panel outside Rev? **[WizRec]** no (only the Rev case is observed).
-- [?] Does `RevBackground` change when the Rev background clip is deleted or moved?
-  **[WizRec]** it is kept as it is.
-- [?] Are `sourceEffect` keyframe windows listed in `animationTracks.visual`?
-  **[WizRec]** no: `SetSourceEffectParameters` leaves `animationTracks` unchanged.
+Source: a copy of the demo project (Rev media whose background is
+`cooltonesshifting`), driven through Camtasia's own UI. Saves are under
+`camtasia_rea_refs/research/groups/`: `rev0-saved` to `rev6-shader-anim`.
+
+**Q1: is `ShaderVidSource` written outside Rev?**
+
+- **The Rev editor writes it** [obs, `rev2-bg-changed`]. In *Modify Rev
+  Media… ▸ Background*, choosing `oceandepths` and pressing *Save* did the
+  following:
+  - copied the library file into a new `media/<stamp>/` source (a new
+    `sourceBin` entry; the old `cooltonesshifting` entry stays in the bin);
+  - replaced the background clip on inner track 0 (new `src`,
+    `attributes.ident` "oceandepths", and the new file's `sourceEffect`
+    parameter set with its own defaults);
+  - set `ShaderVidSource` to the new file's absolute library path inside
+    the app bundle.
+- **Camtasia Assets ▸ Dynamic Backgrounds** is where Camtasia places a
+  library background outside Rev. Its tiles did not accept synthetic
+  drags, double-clicks or right-clicks (the drags work from the media bin).
+  This path is still **[?]**.
+- Media-bin imports have no `ShaderVidSource` (SH2, §11 table) [obs].
+- **WizRec keeps its rule** (write the key only for the Rev placement). It
+  matches everything observed.
+
+**Q2: does `RevBackground` change when the background clip is deleted or moved?**
+
+- **That can't happen in Camtasia** [obs]:
+  - Rev media cannot be opened (*View ▸ Open Group* is disabled;
+    `group-edits.md` §8.1), so its inner clips can't be deleted or moved
+    individually.
+  - The only ways to change the background are the Rev editor and *Unpack
+    Rev Media*.
+- **The Rev editor rewrites `RevBackground`** to `backgrounds/<new file>`
+  together with the clip and its `ShaderVidSource`. `RevLook` and
+  `RevLayoutID` stay unchanged. The other inner clips are rewritten too:
+  constant effect parameters move to the long form [obs, `rev2`].
+- **Unpack** removes the group and all its `Rev*` keys; the background keeps
+  `ShaderVidSource` [obs, `rev3-autosave`].
+- **WizRec's "kept as it is" only applies to edits Camtasia doesn't
+  allow.** Recommended [inf]:
+  - treat `groupType` "revMedia" groups as closed (no inner edits);
+  - when the user replaces the background through WizRec's own background
+    command, update `RevBackground`, `ShaderVidSource` and the clip
+    together.
+
+**Q3: are `sourceEffect` keyframe windows listed in `animationTracks.visual`?**
+
+- **Yes**, when they come from an animation, which is the only way the UI
+  makes them [obs, `rev6-shader-anim`]. The steps were: put the playhead at
+  5 s on the unpacked background clip, choose *Modify ▸ Add Animation ▸
+  Custom*, then type Speed 0.50 in Properties. The save had:
+  - `animationTracks.visual` = `[{endTime: 5 s, duration: 1 s}]`;
+  - `sourceEffect.parameters.Speed` = `{type, defaultValue 0.2, interp
+    "linr", uiHints, keyframes: [{endTime 5 s, time 4 s, value 0.5,
+    duration 1 s}]}`.
+- **Shape.** The shader keyframe has the same `time`/`endTime`/`duration`
+  shape as a transform keyframe made inside an animation (`animation.md`),
+  and no `interp` key of its own. The parameter's `interp` stays "linr". No
+  transform keyframes were written, because only Speed changed.
+- **Properties panel.** It has no per-parameter keyframe buttons. Shader
+  parameters are animated through *Add Animation*, like transforms.
+- **WizRec differs.** `SetSourceEffectParameters` leaves `animationTracks`
+  unchanged. When it writes a keyframed shader parameter, it should add (or
+  reuse) the matching `animationTracks.visual` entry `{endTime,
+  duration}`, as Camtasia does for every animation [inf].

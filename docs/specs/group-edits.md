@@ -201,12 +201,114 @@ touched a file.
   - `trackAttributes[].metadata.trackHeight` goes from WizRec's "56" to "78"
     [obs]. This is UI only.
 
+## 8. Copy and paste with groups (session 8, 2026-10-21)
+
+This answers the open [WizRec] items of DECISIONS "Copy/paste inside groups".
+
+Sources:
+
+- **Plain groups.** Base: the 10 s video and the 1600×900 photo, selected
+  together and grouped. The group's scale was set to 50 % and X to 200
+  (`g1-group`). A second group holds one video and has an identity
+  transform.
+- **Rev media.** A copy of the user's demo project. Its group has
+  `groupType` "revMedia".
+
+All saves are under `camtasia_rea_refs/research/groups/`. Clips were
+selected with a single click on the timeline, then copied and pasted with
+*Edit ▸ Copy/Paste*; the paste goes to the playhead.
+
+### 8.1 Opening a group
+
+| Claim | Tag |
+|---|---|
+| A plain group opens with its "+" button (or *View ▸ Open Group*). While it is open, the timeline shows **only that group's inner tracks**, at timeline positions; the top-level tracks are not shown. The close button sits on the bar above the ruler | [obs] |
+| An open group is saved with `metadata.isOpen` = true; closing it writes false | [obs] `g1b-open`, `g5-paste-top` |
+| **Rev media cannot be opened.** *View ▸ Open Group* is disabled for it, and its context menu offers only *Unpack Rev Media*, *Rename Rev Media* and *Modify Rev Media…* | [obs] |
+| *Clip Speed* is **disabled for groups**; it is enabled for clips inside an open group | [obs] |
+
+So a selection always comes from one container: the top-level tracks, or
+the inner tracks of the one open group [obs, a consequence of the UI].
+Nothing can be copied out of, or pasted into, Rev media without unpacking
+it. **WizRec's "one container" rule matches.**
+
+### 8.2 What a copied clip carries
+
+| Claim | Evidence | Tag |
+|---|---|---|
+| A nested clip keeps its own `duration`, `mediaStart`, `mediaDuration` and `scalar`. A 2× inner video (`scalar` 1/2, `mediaStart` 2 s, 4 s long) pasted at top level is identical | `g11-speed-copy-out` | [obs] |
+| Groups cannot have a speed, so there is no group speed to bake in | §8.1 | [obs] |
+| **Transforms are copied in canvas space.** The copied clip's transform is composed with its enclosing group's transform. The photo inside the 50 %/X 200 group (its own transform identity) pasted at top level arrives with `scale0`/`scale1` 0.5 and `translation0` 200 | `g5-paste-top` | [obs] |
+| **On paste into a group, the canvas-space transform is re-expressed relative to that group.** Pasted back into its own group, it is identity again. In the identity group, it keeps scale 0.5 and X 200. A clip copied at top level with X 0, pasted into a group whose `translation0` is 1, gets `translation0` −1 | `g2-paste-open-6s`, `g6-paste-other-group`, `rev5-plain-group` | [obs] |
+| Pasted parameters are written in the long form (`{type, defaultValue, interp}`), as in §3 | g5, g6 | [obs] |
+| `metadata` (including `ShaderVidSource`) is copied as is | `rev4-bg-copy`, `rev5-plain-group` | [obs] |
+
+The group composition maths (scale × child, translation × group scale +
+group translation) is §6's ungroup rule; the paste into a group inverts it
+[inf].
+
+- **Matches WizRec:** the clip keeps its own `duration` and `scalar`.
+- **Differs from WizRec:** the transform *is* baked. WizRec copies the inner
+  clip's local transform unchanged.
+- **Needed change [inf]:**
+  - On copy from inside a group, store the composed (canvas) transform.
+  - On paste into a group, divide it back out through every enclosing
+    group.
+  - A top-level paste of a group-copied clip then lands where the clip was
+    seen on the canvas.
+
+### 8.3 Pasting into an open group
+
+| Claim | Evidence | Tag |
+|---|---|---|
+| **Playhead mapping.** Inner start = playhead − group `start` + group `mediaStart` (scalar 1). Playhead 15 s on a group at 12 s gives inner 3 s; playhead 16 s on a group at 14 s with `mediaStart` 2 s gives inner 4 s | `g8-paste-offset-group`, `g9-paste-trimmed-group` | [obs] |
+| **Playhead before the window.** The paste lands at the window start (inner time = group `mediaStart`). Playhead 5 s, group at 14–22 s, `mediaStart` 2 gives inner 2 s | `g10-paste-outside-window` | [obs] |
+| **Playhead at or after the window end.** The playhead cannot pass the project end. At the group's end (10 s) the clip landed at inner 10 s, entirely **outside** the visible window (hidden), and nothing refused it | `g4-paste-open-past-end` | [obs] |
+| **Track choice.** The clip goes to an existing inner track that is free for its whole span, and the lowest such track was used each time. Inner 6 s went to inner track 1 (track 0 busy). Inner 10 s went to inner track 0 (track 1 busy) | g2, g4 | [obs]; "lowest free" [inf] |
+| **Overlap.** When no inner track is free, a **new inner track** is added on top (index = count). Seen four times | g3, g8, g9, g10 | [obs] |
+| **The group never grows.** `duration`/`mediaDuration` stay as they were, even when the pasted clip runs past the window (inner 6–11 s in a 0–10 s group; inner 10–15 s). The overflow is simply hidden | g2, g4, g9 | [obs] |
+
+WizRec (`PasteClips` group mode, `InsertClipInGroup`):
+
+- **Matches:** the playhead mapping; a new inner track for an overlap.
+- **Differs: the window bound.** WizRec requires the start to be inside the
+  visible window. Camtasia clamps a playhead before the window to its start,
+  and accepts an end-of-window paste that is wholly hidden.
+- **Differs: growth.** WizRec grows the group (and every enclosing group).
+  **Camtasia does not.**
+- **Needed change [inf].** Clamp `time` to `[window start, window end]` and
+  don't grow the group. If WizRec wants to keep growth as a convenience, it
+  must be a separate, explicit command.
+
+### 8.4 Group keys
+
+| Claim | Evidence | Tag |
+|---|---|---|
+| A plain group (made by *Edit ▸ Group*) has no `Rev*` keys and no `groupType`, and pasting a background clip into it adds none | `rev5-plain-group` | [obs] |
+| A copied or pasted clip keeps `ShaderVidSource` (top-level copy, and a paste into a plain group) | `rev4-bg-copy`, `rev5-plain-group` | [obs] |
+| Rev media can't be opened, so nothing is pasted into it and none of its inner clips can be copied. `RevBackground`/`RevLook`/`RevLayoutID` only travel when the whole Rev group is copied | §8.1 | [obs]; whole-group copy [inf from §3] |
+| *Unpack Rev Media* removes the group, and with it every `Rev*` key. The background clip keeps `ShaderVidSource` at top level and gains the usual clip metadata keys, in sorted order (`ShaderVidSource`, `audiateLinkedSession`, `clipSpeedAttribute`, `colorAttribute`, `effectApplied`) | autosave of the unpacked project (`rev3-autosave`) | [obs] |
+
+**WizRec matches:** group keys never travel with a nested clip;
+`ShaderVidSource` does; a pasted background sets no `RevBackground`.
+**Additional rule:** WizRec may treat `groupType` "revMedia" groups as
+closed. Camtasia never lets the user edit inside them [inf, UI parity].
+
+### 8.5 Other observations
+
+- Trim Start to Playhead on a group whose inner track holds a video moves
+  that video's `start` and `mediaStart` (2 s and 2 s) and writes no
+  `trimStartSum` [obs, `g9-paste-trimmed-group`].
+- **Unexplained `translation0` of ±1.** In two saves, a clip that was clicked
+  or pasted got `translation0` 1.0 that nobody asked for (`g2` id6,
+  `rev4` pasted copy). That is probably a one-pixel canvas nudge from the
+  synthetic click. It is not a paste rule [?].
+
 ## Open
 
 - Rotation and crop in the bounding box at group creation, and rotation in
   ungroup composition [?].
-- Whether drops into an open group grow the group. This is DECISIONS
-  2026-10-19's inferred rule, and it needs mouse drags, which were not
-  automated [?].
-- How trim-start behaves on inner videos (`mediaStart` versus a new
-  `trimStartSum`) [inf]; the test used stills.
+- ~~Whether drops into an open group grow the group~~: pastes never grow it
+  (§8.3). Drops from the media bin into an open group were not tried [?].
+- ~~How trim-start behaves on inner videos~~: `mediaStart` moves (§8.5)
+  [obs].
