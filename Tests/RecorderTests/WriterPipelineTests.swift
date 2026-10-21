@@ -71,23 +71,6 @@ func tempDir() -> URL {
     return u
 }
 
-/// Presentation times (seconds) of every sample of the file's first track, and the file duration.
-func readBack(_ url: URL, type: AVMediaType) async throws -> (pts: [Double], duration: Double, size: CGSize) {
-    let asset = AVURLAsset(url: url)
-    let track = try #require(try await asset.loadTracks(withMediaType: type).first)
-    let size = type == .video ? try await track.load(.naturalSize) : .zero
-    let reader = try AVAssetReader(asset: asset)
-    let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-    reader.add(output)
-    reader.startReading()
-    var pts: [Double] = []
-    while let s = output.copyNextSampleBuffer() {
-        if CMSampleBufferGetNumSamples(s) > 0 { pts.append(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(s))) }
-    }
-    let duration = CMTimeGetSeconds(try await asset.load(.duration))
-    return (pts.sorted(), duration, size)
-}
-
 @Suite struct WriterPipelineTests {
     /// 30 fps frames from -0.5 s to 3 s; pause 1 s → 2 s; stop at 3 s ⇒ a 2 s file with no gap.
     @Test(arguments: [VideoCodec.h264, .hevc])

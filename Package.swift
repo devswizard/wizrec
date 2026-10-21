@@ -87,8 +87,9 @@ let package = Package(
         ),
         .testTarget(
             name: "PlayerKitTests",
+            // Exporter: export-queue integration with real ExportSessions (QA11-3).
             dependencies: ["PlayerKit", "RenderEngine", "MediaEngine", "TSCProjKit", "TimelineEngine", "TestGenKit",
-                           "WizRecAssets", "WizRecTestSupport"]
+                           "WizRecAssets", "WizRecTestSupport", "Exporter"]
         ),
         .testTarget(
             name: "GoldenTests",

@@ -20,7 +20,9 @@ public struct DeadlineExceeded: Error, CustomStringConvertible {
 /// that never comes, a progress value that never moves because the job failed, a subprocess that
 /// never exits. A blocked main thread then stalls every `@MainActor` test. Every wait here throws
 /// `DeadlineExceeded` after its bound, so the test fails with a message instead of hanging the
-/// run. Bounds are seconds of wall time, scaled by `WIZREC_WAIT_SCALE` (default 1).
+/// run. Bounds are seconds of awake time (system sleep does not count: a Mac sleeping through a
+/// wait once failed a 14 s test as "timed out after 120 s"), scaled by `WIZREC_WAIT_SCALE`
+/// (default 1).
 public enum Deadline {
     /// Default bound for one wait, in seconds (before `scale`).
     public static let defaultSeconds = 120.0
@@ -32,15 +34,22 @@ public enum Deadline {
 
     static func nanoseconds(_ seconds: Double) -> UInt64 { UInt64(max(seconds, 0) * 1e9) }
 
+    /// Sleeps `seconds` on the suspending clock, which stands still while the Mac sleeps, so a
+    /// bound never runs out during system sleep (elapsed checks use `systemUptime`, likewise).
+    static func timerSleep(_ seconds: Double) async {
+        let d = Duration.nanoseconds(Int64(max(seconds, 0) * 1e9))
+        try? await Task.sleep(until: SuspendingClock.now + d, clock: SuspendingClock())
+    }
+
     /// Polls `condition` every `interval` seconds until it returns true. Throws `DeadlineExceeded`
     /// after `seconds` (scaled). `interval` 0 yields instead of sleeping.
     public static func poll(_ what: String, seconds: Double = defaultSeconds, interval: Double = 0.002,
                             isolation: isolated (any Actor)? = #isolation,
                             until condition: () async throws -> Bool) async throws {
         let bound = seconds * scale
-        let start = Date()
+        let start = ProcessInfo.processInfo.systemUptime
         while try await !condition() {
-            if Date().timeIntervalSince(start) > bound { throw DeadlineExceeded(what: what, seconds: bound) }
+            if ProcessInfo.processInfo.systemUptime - start > bound { throw DeadlineExceeded(what: what, seconds: bound) }
             if interval > 0 { try await Task.sleep(nanoseconds: nanoseconds(interval)) } else { await Task.yield() }
         }
     }
@@ -56,7 +65,7 @@ public enum Deadline {
                 once.arm(c)
                 Task { once.resume(await task.result) }
                 once.setTimer(Task {
-                    try? await Task.sleep(nanoseconds: Deadline.nanoseconds(bound))
+                    await Deadline.timerSleep(bound)
                     if once.resume(.failure(DeadlineExceeded(what: what, seconds: bound))) { task.cancel() }
                 })
             }
@@ -82,7 +91,7 @@ public enum Deadline {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
             once.arm(c)
             once.setTimer(Task {
-                try? await Task.sleep(nanoseconds: Deadline.nanoseconds(bound))
+                await Deadline.timerSleep(bound)
                 once.resume(.failure(DeadlineExceeded(what: what, seconds: bound)))
             })
             start { once.resume(.success(())) }
@@ -109,9 +118,9 @@ public enum Deadline {
     /// therefore times out here; a `@MainActor` test must `await` such work instead.
     public static func wait(_ semaphore: DispatchSemaphore, seconds: Double) -> Bool {
         guard Thread.isMainThread else { return semaphore.wait(timeout: .now() + seconds) == .success }
-        let end = Date().addingTimeInterval(seconds)
+        let end = ProcessInfo.processInfo.systemUptime + seconds
         while semaphore.wait(timeout: .now() + .milliseconds(1)) == .timedOut {
-            if Date() >= end { return false }
+            if ProcessInfo.processInfo.systemUptime >= end { return false }
             _ = CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.002, true)
         }
         return true

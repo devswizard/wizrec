@@ -54,4 +54,21 @@ print("::error title=Failed tests and suites (%d)::%s" % (len(failed), esc("\n".
 PY
 fi
 grep -E "Test run with|Executed [0-9]+ tests" "$log" | sort -u | while IFS= read -r line; do echo "::notice title=tests::${line}"; done
+# The 25 slowest tests in one annotation (CI time work reads it through the public API).
+# Informational only: never changes the exit status, silent when the log has no durations.
+python3 - "$log" <<'PY' || true
+import re, sys
+pat = re.compile(r"^\S+ Test (?!run with )(.+?) (passed|failed) after ([0-9.]+) seconds")
+rows = []
+for line in open(sys.argv[1], errors="replace"):
+    m = pat.search(line)
+    if m:
+        rows.append((float(m.group(3)), m.group(1), m.group(2)))
+rows.sort(reverse=True)
+if rows:
+    total = sum(r[0] for r in rows)
+    body = ["%8.1f s  %s%s" % (s, name, "" if st == "passed" else " (failed)") for s, name, st in rows[:25]]
+    msg = "%d tests, %.0f s summed\n" % (len(rows), total) + "\n".join(body)
+    print("::notice title=Slowest tests::" + msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+PY
 exit $status

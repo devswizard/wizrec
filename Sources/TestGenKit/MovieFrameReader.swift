@@ -60,14 +60,15 @@ public enum MovieFrameReader {
         guard reader.startReading() else {
             throw MovieReadError.readerFailed(reader.error.map { "\($0)" } ?? "startReading")
         }
-        defer { reader.cancelReading() }
         var index = 0
-        while let sample = output.copyNextSampleBuffer() {
-            guard let pb = CMSampleBufferGetImageBuffer(sample) else { continue }
+        // Decoded on a private thread: a stalled decoder fails with `PullStalled` (QA11-1). An early
+        // stop cancels the reader there, once the thread is out of its pull; never cancel it here.
+        try await BlockingPull.samples("frames of \(url.lastPathComponent)", reader: reader, output: output) { sample in
+            guard let pb = CMSampleBufferGetImageBuffer(sample) else { return true }
             let pts = CMSampleBufferGetPresentationTimeStamp(sample)
             let keepGoing = try body(index, pts, pb)
             index += 1
-            if !keepGoing { return }
+            return keepGoing
         }
         if reader.status == .failed {
             throw MovieReadError.readerFailed(reader.error.map { "\($0)" } ?? "read")

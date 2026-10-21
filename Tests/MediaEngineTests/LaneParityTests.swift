@@ -23,6 +23,14 @@ private func bgra(_ pb: CVPixelBuffer) -> [UInt8] {
 /// Pixels that differ and the largest channel difference.
 private func diff(_ a: [UInt8], _ b: [UInt8]) -> (pixels: Int, maxDelta: Int) {
     guard a.count == b.count else { return (Int.max, 255) }
+    // Fast path (QA11-2): identical buffers need no per-pixel loop, which is slow in debug builds.
+    let same = a.withUnsafeBytes { (pa: UnsafeRawBufferPointer) -> Bool in
+        b.withUnsafeBytes { (pb: UnsafeRawBufferPointer) -> Bool in
+            guard let x = pa.baseAddress, let y = pb.baseAddress else { return pa.count == pb.count }
+            return memcmp(x, y, pa.count) == 0
+        }
+    }
+    if same { return (0, 0) }
     var px = 0, m = 0
     for i in stride(from: 0, to: a.count, by: 4) {
         var d = 0

@@ -90,20 +90,22 @@ func decodeAudio(_ url: URL) async throws -> (samples: [Float], rate: Double, st
     #expect(reader.startReading())
     var samples: [Float] = []
     var rate = 0.0, start: Double?
-    while let sb = out.copyNextSampleBuffer() {
+    // Pulled on a private thread: a stuck reader fails with `PullStalled` (QA11-1).
+    try await BlockingPull.samples("decode audio of \(url.lastPathComponent)", reader: reader, output: out) { sb in
         if start == nil { start = CMSampleBufferGetPresentationTimeStamp(sb).seconds }
         guard let fd = CMSampleBufferGetFormatDescription(sb),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd)?.pointee,
-              let block = CMSampleBufferGetDataBuffer(sb) else { continue }
+              let block = CMSampleBufferGetDataBuffer(sb) else { return true }
         rate = asbd.mSampleRate
         let ch = Int(asbd.mChannelsPerFrame)
         var len = 0
         var ptr: UnsafeMutablePointer<CChar>?
         CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &len, dataPointerOut: &ptr)
-        guard let ptr else { continue }
-        ptr.withMemoryRebound(to: Float.self, capacity: len / 4) { f in
+        guard let ptr else { return true }
+        ptr.withMemoryRebound(to: Float.self, capacity: len / 4) { (f: UnsafeMutablePointer<Float>) -> Void in
             for i in stride(from: 0, to: len / 4, by: ch) { samples.append(f[i]) }
         }
+        return true
     }
     return (samples, rate, start ?? 0)
 }
@@ -147,16 +149,21 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject(sampleRate: raw)
         let out = dir.appendingPathComponent("a.wav")
-        try await export(p, ExportSettings(format: .audio(container: "wav")), to: out)
+        // 0.8 s … 2.2 s around both clicks (QA11-2: the whole 3 s cost 2.2× the resampling in debug
+        // builds; `wavIsSampleExact` covers the full length). 1.4 s is a whole number of samples
+        // at every rate tested.
+        var s = ExportSettings(format: .audio(container: "wav"))
+        s.range = (tpf * 24)..<(tpf * 66)
+        try await export(p, s, to: out)
         let file = try AVAudioFile(forReading: out)
         #expect(file.fileFormat.sampleRate == Double(want))
-        #expect(file.length == AVAudioFramePosition(3 * want))
+        #expect(file.length == AVAudioFramePosition(want * 14 / 10))
         let a = try await decodeAudio(out)
         let found = onsets(a.samples, rate: a.rate)
         #expect(found.count == 2)
         // Within 0.1 ms (resampler ringing can cross the onset threshold a few samples early).
         let tol = want / 10_000 + 1
-        for (f, w) in zip(found, [want, 2 * want]) { #expect(abs(f - w) <= tol, "onset \(f), want \(w)") }
+        for (f, w) in zip(found, [want * 2 / 10, want * 12 / 10]) { #expect(abs(f - w) <= tol, "onset \(f), want \(w)") }
     }
 
     /// AAC/MP3 take 8–48 kHz table rates only: others map to the next higher one (48 kHz above).
@@ -167,12 +174,15 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject(sampleRate: rate.0)
         let out = dir.appendingPathComponent("a.\(container)")
-        try await export(p, ExportSettings(format: .audio(container: container)), to: out)
+        // 0.8 s … 2.2 s around both clicks (QA11-2: see `wavUsesProjectSampleRate`).
+        var s = ExportSettings(format: .audio(container: container))
+        s.range = (tpf * 24)..<(tpf * 66)
+        try await export(p, s, to: out)
         let a = try await decodeAudio(out)
         #expect(a.rate == rate.1)
         let found = onsets(a.samples, rate: a.rate).map { a.start + Double($0) / a.rate }
         #expect(found.count == 2)
-        for (f, want) in zip(found, [1.0, 2.0]) { #expect(abs(f - want) < 1.0 / 30, "click at \(f), want \(want)") }
+        for (f, want) in zip(found, [0.2, 1.2]) { #expect(abs(f - want) < 1.0 / 30, "click at \(f), want \(want)") }
     }
 
     @Test func m4aKeepsTimingWithinOneFrame() async throws {
@@ -210,7 +220,8 @@ let mp3Available = avcodec_find_encoder_by_name("libmp3lame") != nil
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let p = try await avProject(sampleRate: rate)
         var s = ExportSettings(format: format)
-        s.range = (tpf * 10 + 12_345)..<(tpf * 75)  // off-grid start
+        // Off-grid start; 0.67 … 1.5 s still holds frame 30 and the 1.0 s click (QA11-2: was … 2.5 s).
+        s.range = (tpf * 20 + 12_345)..<(tpf * 45)
         let out = dir.appendingPathComponent("av.\(format.fileExtension)")
         try await export(p, s, to: out)
         var flashTime: Double?

@@ -187,7 +187,7 @@ private func bytes(_ pb: CVPixelBuffer) -> [UInt8] {
         let a = try await MovieFrameReader.frames(outs[0], indices: Array(0..<n))
         let b = try await MovieFrameReader.frames(outs[1], indices: Array(0..<n))
         #expect(a.count == n && b.count == n)
-        let differing = (0..<n).filter { a[$0]?.pixels != b[$0]?.pixels }
+        let differing = (0..<n).filter { a[$0] != b[$0] }
         #expect(differing.isEmpty, "exports differ at frames \(differing)")
     }
 }
