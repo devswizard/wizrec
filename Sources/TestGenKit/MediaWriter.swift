@@ -145,9 +145,33 @@ public enum MediaWriter {
         }
     }
 
+    /// Most encodes per write (a file that comes out short of frames is encoded again).
+    static let encodeAttempts = 3
+
+    /// `encode`, then checks the sample count in the written file's box tree: an encode that
+    /// reported success but wrote fewer samples than it was given (the frames a golden self-test
+    /// once missed at load ~400, QA12-3) is repeated, up to `encodeAttempts` times; then it throws.
     private static func writeMovie(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,
                                    height: Int, fps: Int, frameCount: Int,
                                    draw: (Int, CGContext) -> Void) throws -> MovieInfo {
+        var written: [Int]?
+        for attempt in 1...encodeAttempts {
+            let info = try encode(to: url, fileType: fileType, settings: settings, width: width, height: height,
+                                  fps: fps, frameCount: frameCount, draw: draw)
+            written = MP4SampleCount.videoTracks(url)
+            if written == [frameCount] { return info }
+            let found: String = written.map { "\($0)" } ?? "no readable"
+            print("media writer: \(url.lastPathComponent) holds \(found) samples of \(frameCount) frames "
+                  + "(attempt \(attempt) of \(encodeAttempts))")
+        }
+        let found: String = written.map { "\($0)" } ?? "no readable"
+        throw MediaWriterError.writeFailed("\(url.lastPathComponent): the encoder wrote \(found) samples of "
+                                           + "\(frameCount) frames in \(encodeAttempts) attempts")
+    }
+
+    private static func encode(to url: URL, fileType: AVFileType, settings: [String: Any], width: Int,
+                               height: Int, fps: Int, frameCount: Int,
+                               draw: (Int, CGContext) -> Void) throws -> MovieInfo {
         guard wait(lockTimeout, until: { encodeLock.try() }) else {
             throw MediaWriterError.writeFailed("another encode held the media writer for \(Int(lockTimeout)) s")
         }

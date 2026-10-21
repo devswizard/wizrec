@@ -151,8 +151,11 @@ enum ProjectInvariants {
         }
 
         func visit(_ c: Clip, path: String) {
-            clipIDs[c.id, default: 0] += 1
-            if c.id < 0 || c.id > maxID { problems.append("\(path) id \(c.id) outside 0…maxID \(maxID)") }
+            // `id` first: with -O, Swift 6.3.3 rejects `c` captured by the `||` autoclosure
+            // (SendingRisksDataRace) (QA12-1).
+            let id = c.id
+            clipIDs[id, default: 0] += 1
+            if id < 0 || id > maxID { problems.append("\(path) id \(id) outside 0…maxID \(maxID)") }
             if let s = c.sourceID, !sources.contains(s) {
                 problems.append("\(path) references missing source \(s)")
             }
