@@ -126,7 +126,7 @@ final class AudioDecodeCore {
             let lo = Int64((p0 - k.halfWidth).rounded(.down)) - 1
             let hi = Int64((p0 + Double(n - 1) * step + k.halfWidth).rounded(.up)) + 2
             let input = try fetch(lo, hi)
-            src = input.map { Resampler.resample($0, inputStart: lo, p0: p0, step: step, count: n, kernel: k) }
+            src = Resampler.resample(input, inputStart: lo, p0: p0, step: step, count: n, kernel: k)
         }
         return PCMBuffer(format: out, startTime: start, frameCount: n, channels: Self.mapChannels(src, to: out.channels, count: n))
     }
@@ -327,31 +327,92 @@ enum Resampler {
         Kernel(cutoff: cutoff, halfWidth: Double(zeroCrossings) / cutoff, table: table)
     }
 
-    /// Output sample k = Σ x[i]·h(p0 + k·step − i), normalised by Σ h.
-    static func resample(_ x: [Float], inputStart: Int64, p0: Double, step: Double, count n: Int, kernel k: Kernel) -> [Float] {
-        var out = [Float](repeating: 0, count: n)
+    /// Output sample k = Σ x[i]·h(p0 + k·step − i), normalised by Σ h, for every channel of `x`
+    /// (all `x[c]` the same length). The taps of each output sample are computed once and shared
+    /// by all channels; each channel then sums them in ascending `i`, so the result is bit-identical
+    /// to resampling the channels one by one. Plain pointer loops: no per-sample allocation, no
+    /// generic calls (debug builds run them ~10× faster than `for … in` over ranges).
+    static func resample(_ x: [[Float]], inputStart: Int64, p0: Double, step: Double, count n: Int,
+                         kernel k: Kernel) -> [[Float]] {
+        var out: [[Float]] = Array(repeating: [Float](repeating: 0, count: n), count: x.count)
+        guard n > 0, let len = x.first?.count, len > 0 else { return out }
         let res = Double(tableResolution)
         let maxU = Double(zeroCrossings)
-        x.withUnsafeBufferPointer { xp in
-            k.table.withUnsafeBufferPointer { tp in
-                for j in 0..<n {
-                    let p = p0 + Double(j) * step - Double(inputStart)
-                    let i0 = max(0, Int((p - k.halfWidth).rounded(.up)))
-                    let i1 = min(xp.count - 1, Int((p + k.halfWidth).rounded(.down)))
-                    guard i0 <= i1 else { continue }
-                    var acc: Float = 0, wsum: Float = 0
-                    for i in i0...i1 {
-                        let u = abs(p - Double(i)) * k.cutoff
-                        if u >= maxU { continue }
-                        let fi = u * res
+        let hw = k.halfWidth, cutoff = k.cutoff
+        let start = Double(inputStart)
+        // Scratch for one output sample's taps: input index and weight (≤ 2·halfWidth + 1 taps).
+        let cap = Int(2 * hw) + 3
+        let tapIndex = UnsafeMutablePointer<Int>.allocate(capacity: cap)
+        let tapWeight = UnsafeMutablePointer<Float>.allocate(capacity: cap)
+        defer { tapIndex.deallocate(); tapWeight.deallocate() }
+        // Channel pointers, valid for the whole loop (arrays pinned by `withUnsafe…`).
+        let inputs = UnsafeMutablePointer<UnsafePointer<Float>>.allocate(capacity: x.count)
+        let outputs = UnsafeMutablePointer<UnsafeMutablePointer<Float>>.allocate(capacity: x.count)
+        defer { inputs.deallocate(); outputs.deallocate() }
+        let channels = x.count
+        let flatIn = UnsafeMutablePointer<Float>.allocate(capacity: channels * len)
+        let flatOut = UnsafeMutablePointer<Float>.allocate(capacity: channels * n)
+        defer { flatIn.deallocate(); flatOut.deallocate() }
+        for c in 0..<channels {
+            let dst: UnsafeMutablePointer<Float> = flatIn + c * len
+            x[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                guard let sb = sp.baseAddress else { dst.initialize(repeating: 0, count: len); return }
+                let m = Swift.min(len, sp.count)
+                dst.initialize(from: sb, count: m)
+                if m < len { (dst + m).initialize(repeating: 0, count: len - m) }
+            }
+            inputs[c] = UnsafePointer(dst)
+            outputs[c] = flatOut + c * n
+            outputs[c].initialize(repeating: 0, count: n)
+        }
+        k.table.withUnsafeBufferPointer { (tb: UnsafeBufferPointer<Float>) -> Void in
+            guard let tp = tb.baseAddress else { return }
+            var j = 0
+            while j < n {
+                let p: Double = p0 + Double(j) * step - start
+                var i: Int = Int((p - hw).rounded(.up))
+                if i < 0 { i = 0 }
+                var i1: Int = Int((p + hw).rounded(.down))
+                if i1 > len - 1 { i1 = len - 1 }
+                // Taps in ascending i; `wsum` accumulates in the same order as before.
+                var m = 0
+                var wsum: Float = 0
+                while i <= i1 {
+                    let u: Double = (p - Double(i)).magnitude * cutoff
+                    if u < maxU {
+                        let fi: Double = u * res
                         let ii = Int(fi)
                         let frac = Float(fi - Double(ii))
-                        let w = tp[ii] + (tp[ii + 1] - tp[ii]) * frac
-                        acc += xp[i] * w
+                        let a: Float = tp[ii]
+                        let w: Float = a + (tp[ii + 1] - a) * frac
+                        tapIndex[m] = i
+                        tapWeight[m] = w
                         wsum += w
+                        m += 1
                     }
-                    out[j] = wsum > 1e-6 ? acc / wsum : 0
+                    i += 1
                 }
+                if m > 0 && wsum > 1e-6 {
+                    var c = 0
+                    while c < channels {
+                        let xs = inputs[c]
+                        var acc: Float = 0
+                        var t = 0
+                        while t < m {
+                            acc += xs[tapIndex[t]] * tapWeight[t]
+                            t += 1
+                        }
+                        outputs[c][j] = acc / wsum
+                        c += 1
+                    }
+                }
+                j += 1
+            }
+        }
+        for c in 0..<channels {
+            out[c].withUnsafeMutableBufferPointer { (dp: inout UnsafeMutableBufferPointer<Float>) -> Void in
+                guard let db = dp.baseAddress else { return }
+                db.update(from: outputs[c], count: n)
             }
         }
         return out
