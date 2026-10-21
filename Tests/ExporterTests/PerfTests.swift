@@ -57,9 +57,9 @@ let perfEnabled = ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"
         s.frameRate = Rational(30)
         let out = dir.appendingPathComponent("demo.\(format.fileExtension)")
         let session = ExportSession(scene: scene, audio: audio, pool: MediaPool(), settings: s, output: out)
-        let t0 = Date()
+        let t0 = ProcessInfo.processInfo.systemUptime  // awake time: system sleep does not count
         try await session.run()
-        let elapsed = Date().timeIntervalSince(t0)
+        let elapsed = ProcessInfo.processInfo.systemUptime - t0
         let length = scene.timebase.seconds(scene.duration)
         let speed = length / elapsed
         let bytes = (try? FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
