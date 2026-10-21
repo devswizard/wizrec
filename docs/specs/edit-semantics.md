@@ -182,8 +182,48 @@ project became 6;20 long (`ed2-speed`).
 `scalar = 1/speed`, keeps the media range, floors `duration` to a frame,
 and sets the same two metadata keys without adding an effect. Here
 10 / 1.5 is a whole number of frames, so the flooring and the
-`mediaDuration` recompute were not exercised. When `duration` is not
-frame-exact, whether Camtasia floors it or rounds it is [?].
+`mediaDuration` recompute were not exercised. The non-frame-exact case is
+answered in the next subsection.
+
+### ED2b: a speed whose duration is not a whole number of frames (session 9, RT-024)
+
+Base: a fresh copy of `format/video-photo-base` (30 fps; the 10 s video is
+300 frames). The speed was typed into the Clip Speed *Speed* field, one
+value after another on the same clip, with a Save As after each. Saves
+are in `camtasia_rea_refs/research/timeline/ed12/`.
+
+| Typed | Exact `mediaDuration / speed` | Saved `duration` | Saved `scalar` | Field shows afterwards | Save | Tag |
+|---|---|---|---|---|---|---|
+| 1.3 | 230.77 frames | **230 frames** (7;20) | `"23/30"` (= 230/300) | 1.30x | `sp-1_3` | [obs] |
+| 0.7 | 428.57 frames | **428 frames** (14;08) | `"107/75"` (= 428/300) | 0.70x | `sp-0_7` | [obs] |
+| 1.9 | 157.89 frames | **157 frames** (5;07) | `"157/300"` | **1.91x** | `sp-1_9` | [obs] |
+| *Duration* field set to 5;11 | — | 161 frames | `"161/300"` | 1.86x | `sp-dur-5s11f` | [obs] |
+| 1.9 on a clip trimmed to `mediaStart` 3 s, `mediaDuration` 7 s | 110.53 frames | **110 frames** (3;20) | `"11/21"` (= 110/210) | 1.91x | `sp-trim3-1_9` | [obs] |
+
+The rule, from these five saves:
+
+- **`duration` is floored to a whole frame**, never rounded: 0.7 and 1.9
+  would round up, and both went down [obs].
+- **`mediaStart` and `mediaDuration` never change** [obs, all five saves,
+  including the trimmed clip].
+- **`scalar` is recomputed from the floored duration**:
+  `scalar = duration / mediaDuration`, written as a reduced rational
+  string. So `mediaDuration × scalar = duration` holds exactly, and the
+  effective speed is slightly above the typed one when the floor bites
+  [obs]. The *Speed* field then shows that effective speed, rounded to two
+  decimals (1.9 is shown as 1.91x) [obs].
+- **Typing a duration** works the same way: the frame count you type
+  becomes `duration`, and `scalar` = `duration / mediaDuration` [obs].
+- Each save changed only `duration`, `scalar`, the project's
+  `commandCount` and `projectDuration` [obs].
+
+**WizRec differs [inf].** `SetSpeed` floors the duration as Camtasia does,
+but then keeps `scalar = 1/speed` and recomputes `mediaDuration` as
+`duration / scalar`. That shortens the media range by up to one frame's
+worth of media. Camtasia keeps the media range and adjusts `scalar`
+instead. To match, WizRec should keep `mediaDuration` and write
+`scalar = duration / mediaDuration` after flooring. When the duration is
+frame-exact (ED2), both give the same result.
 
 ### ED3: magnetic track drops
 
