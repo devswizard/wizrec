@@ -386,44 +386,91 @@ struct Compressor: AudioProcessor {
         let h = history
         var out = Signal.zeros(channels: input.channelCount, count: count)
         guard count > 0, L >= h + count else { return out }
-        // Linked detector.
-        var want = [Double](repeating: 0, count: L)
-        for i in 0..<L {
-            var p: Float = 0
-            for c in 0..<input.channelCount { p = max(p, abs(input.channels[c][i])) }
-            want[i] = self.want(p)
+        // Pointer loops throughout (AUD12-2): same arithmetic, in the same order, as the textbook
+        // version, without per-element bounds checks and generic `min`/`max` calls.
+        let C = input.channelCount
+        let want = UnsafeMutablePointer<Double>.allocate(capacity: L)
+        let gr = UnsafeMutablePointer<Double>.allocate(capacity: L)
+        let dq = UnsafeMutablePointer<Int>.allocate(capacity: L)
+        defer { want.deallocate(); gr.deallocate(); dq.deallocate() }
+        gr.initialize(repeating: 0, count: L)
+        // Linked detector: the channels' largest magnitude.
+        let peak = UnsafeMutablePointer<Float>.allocate(capacity: L)
+        defer { peak.deallocate() }
+        peak.initialize(repeating: 0, count: L)
+        for c in 0..<C {
+            input.channels[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                guard let x = sp.baseAddress else { return }
+                var i = 0
+                while i < L {
+                    let a = x[i].magnitude
+                    if a >= peak[i] { peak[i] = a }   // `max(p, a)`
+                    i += 1
+                }
+            }
+        }
+        let k = 1 - 1 / ratio, lMax = Self.maxLevelDB, th = thresholdDB
+        var i = 0
+        while i < L {
+            let p = peak[i]
+            if p > 0 {
+                let db = 20 * log10(Double(p))
+                let l = lMax < db ? lMax : db           // `min(db, maxLevelDB)`
+                let v = (l - th) * k
+                want[i] = v >= 0 ? v : 0                // `max(0, v)`
+            } else {
+                want[i] = 0
+            }
+            i += 1
         }
         // Reduction with linear release: monotonic deque of candidates (index), dominated ones dropped.
         let first = h - max(0, attack - 1)   // first index whose reduction is needed (= window)
-        var gr = [Double](repeating: 0, count: L)
-        var dq = [Int](), head = 0
-        dq.reserveCapacity(1024)
-        let w = window
-        for i in 0..<L {
-            if want[i] > 0 {
-                while dq.count > head, let b = dq.last,
-                      want[i] >= want[b] - slope * Double(i - b) { dq.removeLast() }
-                dq.append(i)
+        let w = window, finite = slope.isFinite, sl = slope
+        var head = 0, tail = 0
+        i = 0
+        while i < L {
+            let wi = want[i]
+            if wi > 0 {
+                while tail > head {
+                    let b = dq[tail - 1]
+                    guard wi >= want[b] - sl * Double(i - b) else { break }
+                    tail -= 1
+                }
+                dq[tail] = i
+                tail += 1
             }
-            while dq.count > head, dq[head] < i - w { head += 1 }
-            if head > 4096 { dq.removeFirst(head); head = 0 }
-            guard i >= first else { continue }
-            if dq.count > head {
+            while tail > head, dq[head] < i - w { head += 1 }
+            if i >= first, tail > head {
                 let j = dq[head]
-                gr[i] = max(0, want[j] - (slope.isFinite ? slope * Double(i - j) : (i == j ? 0 : .infinity)))
+                let v = want[j] - (finite ? sl * Double(i - j) : (i == j ? 0 : .infinity))
+                gr[i] = v >= 0 ? v : 0
             }
+            i += 1
         }
         // Optional attack averaging, then gain.
-        for k in 0..<count {
-            let i = h + k
+        let gains = UnsafeMutablePointer<Float>.allocate(capacity: count)
+        defer { gains.deallocate() }
+        var kk = 0
+        while kk < count {
+            let i = h + kk
             var r = gr[i]
             if attack > 1 {
                 var s = 0.0
-                for j in (i - attack + 1)...i { s += gr[j] }
+                var j = i - attack + 1
+                while j <= i { s += gr[j]; j += 1 }
                 r = s / Double(attack)
             }
-            let g = Float(pow(10, (makeupDB - r) / 20))
-            for c in 0..<input.channelCount { out.channels[c][k] = input.channels[c][i] * g }
+            gains[kk] = Float(pow(10, (makeupDB - r) / 20))
+            kk += 1
+        }
+        for c in 0..<C {
+            input.channels[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                out.channels[c].withUnsafeMutableBufferPointer { (dp: inout UnsafeMutableBufferPointer<Float>) -> Void in
+                    guard let x = sp.baseAddress, let d = dp.baseAddress else { return }
+                    var k = 0
+                    while k < count { d[k] = x[h + k] * gains[k]; k += 1 }
+                }
+            }
         }
         return out
     }

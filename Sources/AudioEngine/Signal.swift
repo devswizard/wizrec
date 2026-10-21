@@ -144,7 +144,15 @@ struct Signal: Sendable {
 
     /// Samples (over all channels) whose magnitude exceeds `limit`.
     func countAbove(_ limit: Float) -> Int {
-        channels.reduce(0) { n, ch in n + ch.reduce(0) { $0 + (abs($1) > limit ? 1 : 0) } }
+        var total = 0
+        for ch in channels {
+            ch.withUnsafeBufferPointer { (p: UnsafeBufferPointer<Float>) -> Void in
+                guard let b = p.baseAddress else { return }
+                var i = 0
+                while i < p.count { if b[i].magnitude > limit { total += 1 }; i += 1 }
+            }
+        }
+        return total
     }
 
     var isAllZero: Bool { channels.allSatisfy { $0.allSatisfy { $0 == 0 } } }
@@ -190,14 +198,23 @@ struct SampleGrid: Sendable, Equatable {
 // wherever it sits in a buffer (vDSP's vector body and scalar tail can differ in the last bit,
 // which would break sample-exact chunk seams).
 
+// `while` loops rather than `for … in 0..<n`: debug builds call the generic range iterator per
+// element, which cost more than the arithmetic (AUD12-2).
+
 /// `d[i] += s[i] · g[i]`.
 @inline(__always) func mulAdd(_ s: UnsafePointer<Float>, _ g: UnsafePointer<Float>, _ d: UnsafeMutablePointer<Float>, _ n: Int) {
-    for i in 0..<n { d[i] = d[i] + s[i] * g[i] }
+    var i = 0
+    while i < n { d[i] = d[i] + s[i] * g[i]; i += 1 }
 }
 
 /// `d[i] += s[i] · k`.
 @inline(__always) func scaleAdd(_ s: UnsafePointer<Float>, _ k: Float, _ d: UnsafeMutablePointer<Float>, _ n: Int) {
-    if k == 1 { for i in 0..<n { d[i] = d[i] + s[i] } } else { for i in 0..<n { d[i] = d[i] + s[i] * k } }
+    var i = 0
+    if k == 1 {
+        while i < n { d[i] = d[i] + s[i]; i += 1 }
+    } else {
+        while i < n { d[i] = d[i] + s[i] * k; i += 1 }
+    }
 }
 
 @inline(__always) func floorDiv(_ a: Int64, _ b: Int64) -> Int64 {
