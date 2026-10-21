@@ -104,14 +104,13 @@ struct GoldenHarnessSelfTests {
         #expect(failed.isEmpty, "\(failed)")
 
         try await writeReference(offset: 1)
-        var lateFailures: [Int] = []
-        await withKnownIssue("reference one frame late on purpose") {
-            let late = try #require(try await runGoldenCase(golden))
-            #expect(late.contains { !$0.passed })
-            lateFailures = late.filter { !$0.passed }.map(\.frame)
-        }
-        // Outside the known-issue scope: every moving frame fails, the still one passes.
-        #expect(lateFailures == [20, 30, 75])
+        // Reference one frame late on purpose: every moving frame fails, the still one passes,
+        // and each failure is reported (collected here instead of failing the test).
+        let failures = GoldenFailures()
+        let late = try #require(try await runGoldenCase(golden, failures: failures))
+        #expect(late.filter { !$0.passed }.map(\.frame) == [20, 30, 75])
+        #expect(failures.messages.count == 3, "\(failures.messages)")
+        for (msg, n) in zip(failures.messages, [20, 30, 75]) { #expect(msg.contains("frame \(n): SSIM"), "\(msg)") }
     }
 }
 
