@@ -206,12 +206,16 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         let audio = AudioScene(project: reopened.project, resolve: reopened.resolve)
         #expect(audio.sampleRate == (expected == 48_000 ? nil : expected))
 
+        // 0.8 … 1.4 s around the click (QA11-2: the whole 2 s timeline cost 3× the resampling).
+        let rangeStart = 0.8
         for (name, format) in [("out.wav", ExportFormat.audio(container: "wav")),
                                ("out.m4a", ExportFormat.audio(container: "m4a")),
                                ("out.mp4", ExportFormat.mp4(codec: "h264", bitrate: nil))] {
             let out = dir.appendingPathComponent(name)
+            var settings = ExportSettings(format: format)
+            settings.range = frames(24)..<frames(42)
             let session = ExportSession(scene: scene, audio: audio, pool: MediaPool(diskCacheDirectory: nil),
-                                        settings: ExportSettings(format: format), output: out)
+                                        settings: settings, output: out)
             do {
                 try await session.run()
             } catch {
@@ -228,7 +232,7 @@ private func onset(_ x: [Float], threshold: Float = 0.2) -> Int? { x.firstIndex 
         let pcm = try await src.audio(stream: s.index, range: CMTimeRange(start: .zero, duration: s.duration),
                                       format: PCMFormat(sampleRate: expected, channels: 1))
         let at = try #require(onset(pcm.channels[0]), "click not found")
-        #expect(abs(Double(at) / expected + pcm.startTime.seconds - f.clickAt) <= 1.0 / 30)
+        #expect(abs(rangeStart + Double(at) / expected + pcm.startTime.seconds - f.clickAt) <= 1.0 / 30)
     }
 
     /// Confirm-before-cancel hook on a real project export: no work to lose before `run()`

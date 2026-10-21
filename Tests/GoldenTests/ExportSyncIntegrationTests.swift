@@ -126,14 +126,21 @@ private func onsets(_ x: [Float], start: Double, threshold: Float = 0.2) -> [Dou
         let a0 = try await decodeAudio(outs[0]), a1 = try await decodeAudio(outs[1])
         #expect(a0.start == a1.start)
         #expect(a0.samples.count == a1.samples.count)
-        let firstDiff = zip(a0.samples, a1.samples).enumerated().first { $0.element.0 != $0.element.1 }?.offset
-        #expect(firstDiff == nil, "audio differs from sample \(firstDiff ?? -1)")
+        // Bitwise compare first (QA11-2: element loops are slow in debug builds); locate only on a mismatch.
+        let same = a0.samples.withUnsafeBytes { (p: UnsafeRawBufferPointer) -> Bool in
+            a1.samples.withUnsafeBytes { (q: UnsafeRawBufferPointer) -> Bool in
+                guard p.count == q.count, let x = p.baseAddress, let y = q.baseAddress else { return p.count == q.count }
+                return memcmp(x, y, p.count) == 0
+            }
+        }
+        let firstDiff = same ? nil : zip(a0.samples, a1.samples).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+        #expect(same, "audio differs from sample \(firstDiff ?? -1)")
 
         let n = seconds * 30
         let v0 = try await MovieFrameReader.frames(outs[0], indices: Array(0..<n))
         let v1 = try await MovieFrameReader.frames(outs[1], indices: Array(0..<n))
         #expect(v0.count == n && v1.count == n)
-        let differing = (0..<n).filter { v0[$0]?.pixels != v1[$0]?.pixels }
+        let differing = (0..<n).filter { v0[$0] != v1[$0] }
         #expect(differing.isEmpty, "video differs at frames \(differing)")
     }
 }

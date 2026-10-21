@@ -16,6 +16,18 @@ public struct RGBAImage: Sendable, Equatable {
         self.width = width; self.height = height; self.pixels = pixels
     }
 
+    /// Same size and bytes. `memcmp` instead of the synthesized element loop, which is slow on
+    /// megapixel arrays in debug test builds (QA11-2).
+    public static func == (a: RGBAImage, b: RGBAImage) -> Bool {
+        guard a.width == b.width, a.height == b.height, a.pixels.count == b.pixels.count else { return false }
+        return a.pixels.withUnsafeBytes { (p: UnsafeRawBufferPointer) -> Bool in
+            b.pixels.withUnsafeBytes { (q: UnsafeRawBufferPointer) -> Bool in
+                guard let x = p.baseAddress, let y = q.baseAddress else { return p.count == q.count }
+                return memcmp(x, y, p.count) == 0
+            }
+        }
+    }
+
     /// Solid colour image.
     public init(width: Int, height: Int, fill: (UInt8, UInt8, UInt8)) {
         var p = [UInt8](repeating: 255, count: width * height * 4)
