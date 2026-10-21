@@ -96,7 +96,7 @@ public struct SourceLoudness: Sendable, Equatable {
                                                                  duration: CMTime(value: len, timescale: scale)),
                                               format: PCMFormat(sampleRate: rate, channels: ch))
                 meter.feed(pcm.channels, count: pcm.frameCount)
-                for c in pcm.channels { for x in c { peak = max(peak, abs(x)) } }
+                for c in pcm.channels { peak = Self.peak(c, from: peak) }
                 t += len
             }
             return SourceLoudness(integratedLUFS: meter.integrated, peakLevel: Double(peak))
@@ -106,5 +106,16 @@ public struct SourceLoudness: Sendable, Equatable {
             default: throw AudioError.decodeFailed("\(url.lastPathComponent): \(e)")
             }
         }
+    }
+
+    /// `max(peak, |x|)` over `x` (a plain loop: debug builds call generic `max`/`abs` per sample).
+    static func peak(_ x: [Float], from peak: Float) -> Float {
+        var pk = peak
+        x.withUnsafeBufferPointer { (p: UnsafeBufferPointer<Float>) -> Void in
+            guard let b = p.baseAddress else { return }
+            var i = 0
+            while i < p.count { let a = b[i].magnitude; if a >= pk { pk = a }; i += 1 }
+        }
+        return pk
     }
 }

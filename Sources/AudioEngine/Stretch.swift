@@ -100,41 +100,56 @@ enum Resampler {
         let table = Self.table(ratio: p)
         var out = Signal.zeros(channels: input.channelCount, count: count)
         guard count > 0 else { return out }
-        // Per output sample: normalised taps and the input index of the first tap.
+        // Per output sample: normalised taps and the input index of the first tap. `while` loops
+        // and raw pointers (AUD12-2): debug builds spent most of the time in range iterators.
         let taps = UnsafeMutablePointer<Float>.allocate(capacity: count * T)
-        defer { taps.deallocate() }
-        var bases = [Int](repeating: 0, count: count)
-        table.withUnsafeBufferPointer { tp in
+        let bases = UnsafeMutablePointer<Int>.allocate(capacity: count)
+        defer { taps.deallocate(); bases.deallocate() }
+        let P = phases, lastRow = phases - 1, shift = Int64(w - 1) + inputStart
+        table.withUnsafeBufferPointer { (tp: UnsafeBufferPointer<Float>) -> Void in
             guard let tab = tp.baseAddress else { return }
-            for k in 0..<count {
+            var k = 0
+            while k < count {
                 let x = Double(from + Int64(k)) * p
                 let i0 = Int64(x.rounded(.down))
                 // Taps at fraction (x − i0): linear between the two nearest tabulated rows.
-                let f = (x - Double(i0)) * Double(phases)
-                let r = min(phases - 1, Int(f)), u = Float(f - Double(r))
+                let f = (x - Double(i0)) * Double(P)
+                let fr = Int(f)
+                let r = fr < lastRow ? fr : lastRow
+                let u = Float(f - Double(r))
                 let r0 = tab + r * T, r1 = r0 + T, d = taps + k * T
                 var sum: Float = 0
-                for t in 0..<T { let v = r0[t] + (r1[t] - r0[t]) * u; d[t] = v; sum += v }
+                var t = 0
+                while t < T { let v = r0[t] + (r1[t] - r0[t]) * u; d[t] = v; sum += v; t += 1 }
                 let norm: Float = sum != 0 ? 1 / sum : 1
-                for t in 0..<T { d[t] *= norm }
-                bases[k] = Int(i0 - Int64(w - 1) - inputStart)
+                t = 0
+                while t < T { d[t] *= norm; t += 1 }
+                bases[k] = Int(i0 - shift)
+                k += 1
             }
         }
         for c in 0..<input.channelCount {
-            input.channels[c].withUnsafeBufferPointer { src in
-                out.channels[c].withUnsafeMutableBufferPointer { dst in
+            input.channels[c].withUnsafeBufferPointer { (src: UnsafeBufferPointer<Float>) -> Void in
+                out.channels[c].withUnsafeMutableBufferPointer { (dst: inout UnsafeMutableBufferPointer<Float>) -> Void in
                     guard let sb = src.baseAddress, let db = dst.baseAddress else { return }
                     let n = src.count
-                    for k in 0..<count {
+                    var k = 0
+                    while k < count {
                         let base = bases[k], tk = taps + k * T
                         var y: Float = 0
+                        var t = 0
                         if base >= 0 && base + T <= n {
                             let s = sb + base
-                            for t in 0..<T { y += tk[t] * s[t] }
+                            while t < T { y += tk[t] * s[t]; t += 1 }
                         } else {
-                            for t in 0..<T where base + t >= 0 && base + t < n { y += tk[t] * sb[base + t] }
+                            while t < T {
+                                let i = base + t
+                                if i >= 0 && i < n { y += tk[t] * sb[i] }
+                                t += 1
+                            }
                         }
                         db[k] = y
+                        k += 1
                     }
                 }
             }

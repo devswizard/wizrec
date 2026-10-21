@@ -51,14 +51,22 @@ final class RealFFT {
 
     /// Spectrum of `x` (n samples) into `re`/`im` (n/2 each, packed).
     func forward(_ x: UnsafePointer<Float>, _ re: UnsafeMutablePointer<Float>, _ im: UnsafeMutablePointer<Float>) {
-        for j in 0..<(n / 2) { even[j] = x[2 * j]; odd[j] = x[2 * j + 1] }
+        // De-interleave even/odd samples (a plain copy).
+        var split = DSPSplitComplex(realp: even, imagp: odd)
+        x.withMemoryRebound(to: DSPComplex.self, capacity: n / 2) { (c: UnsafePointer<DSPComplex>) -> Void in
+            vDSP_ctoz(c, 2, &split, 1, vDSP_Length(n / 2))
+        }
         vDSP_DFT_Execute(fwd, even, odd, re, im)
     }
 
     /// Time signal (n samples, × `roundTripScale`) of a packed spectrum.
     func inverse(_ re: UnsafePointer<Float>, _ im: UnsafePointer<Float>, _ out: UnsafeMutablePointer<Float>) {
         vDSP_DFT_Execute(inv, re, im, even, odd)
-        for j in 0..<(n / 2) { out[2 * j] = even[j]; out[2 * j + 1] = odd[j] }
+        // Re-interleave (a plain copy).
+        var split = DSPSplitComplex(realp: even, imagp: odd)
+        out.withMemoryRebound(to: DSPComplex.self, capacity: n / 2) { (c: UnsafeMutablePointer<DSPComplex>) -> Void in
+            vDSP_ztoc(&split, 1, c, 2, vDSP_Length(n / 2))
+        }
     }
 
     func forward(_ x: [Float], _ re: inout [Float], _ im: inout [Float]) {
@@ -199,7 +207,7 @@ struct NoiseReducer: AudioProcessor {
             let used = ((i - s0)...i).filter { !silent[$0] }
             guard let first = used.first else { continue }
             let d = smooth[i]
-            for k in 0..<B { d[k] = power[first][k] }
+            d.update(from: power[first], count: B)
             for j in used.dropFirst() { vDSP_vadd(d, 1, power[j], 1, d, 1, vB) }
             var inv = 1 / Float(used.count)
             vDSP_vsmul(d, 1, &inv, d, 1, vB)
@@ -208,18 +216,21 @@ struct NoiseReducer: AudioProcessor {
         // 3. Noise = sliding per-bin minimum of `smooth` over M rows (van Herk / Gil–Werman; exact).
         let pre = Rows(L, width: B), suf = Rows(L, width: B)
         for t in 0..<L {
-            if t % M == 0 { for k in 0..<B { pre[t][k] = smooth[a0 + t][k] } }
+            if t % M == 0 { pre[t].update(from: smooth[a0 + t], count: B) }
             else { vDSP_vmin(pre[t - 1], 1, smooth[a0 + t], 1, pre[t], 1, vB) }
         }
         for t in Swift.stride(from: L - 1, through: 0, by: -1) {
-            if t == L - 1 || (t + 1) % M == 0 { for k in 0..<B { suf[t][k] = smooth[a0 + t][k] } }
+            if t == L - 1 || (t + 1) % M == 0 { suf[t].update(from: smooth[a0 + t], count: B) }
             else { vDSP_vmin(suf[t + 1], 1, smooth[a0 + t], 1, suf[t], 1, vB) }
         }
 
-        // 3×3 box sum along frequency of `src` into `dst` (edge bins sum 2).
+        // 3×3 box sum along frequency of `src` into `dst` (edge bins sum 2):
+        // dst[k] = (src[k − 1] + src[k]) + src[k + 1], two element-wise adds.
+        let inner = vDSP_Length(B - 2)
         func freqSum(_ src: UnsafeMutablePointer<Float>, _ dst: UnsafeMutablePointer<Float>) {
             dst[0] = src[0] + src[1]
-            for k in 1..<(B - 1) { dst[k] = src[k - 1] + src[k] + src[k + 1] }
+            vDSP_vadd(src, 1, src + 1, 1, dst + 1, 1, inner)
+            vDSP_vadd(dst + 1, 1, src + 2, 1, dst + 1, 1, inner)
             dst[B - 1] = src[B - 2] + src[B - 1]
         }
         // 1 / (3 · bins summed) per bin.
@@ -238,11 +249,14 @@ struct NoiseReducer: AudioProcessor {
             vDSP_vadd(local[0], 1, fp[i + 1], 1, local[0], 1, vB)
             vDSP_vmul(local[0], 1, boxNorm[0], 1, local[0], 1, vB)
             let lo = suf[t], hi = pre[t + M - 1], out = gain[g], p = local[0]
-            for k in 0..<B {
-                let noise = min(lo[k], hi[k])
+            var k = 0
+            while k < B {
+                defer { k += 1 }
+                let noise = hi[k] < lo[k] ? hi[k] : lo[k]           // `min(lo, hi)`
                 guard noise.isFinite else { continue }
-                let v = p[k] > 1e-30 ? 1 - k2 * noise / p[k] : 0
-                out[k] = max(floorGain, min(1, v))
+                let v: Float = p[k] > 1e-30 ? 1 - k2 * noise / p[k] : 0
+                let m: Float = v < 1 ? v : 1                         // `min(1, v)`
+                out[k] = m >= floorGain ? m : floorGain              // `max(floorGain, m)`
             }
         }
 
@@ -386,44 +400,91 @@ struct Compressor: AudioProcessor {
         let h = history
         var out = Signal.zeros(channels: input.channelCount, count: count)
         guard count > 0, L >= h + count else { return out }
-        // Linked detector.
-        var want = [Double](repeating: 0, count: L)
-        for i in 0..<L {
-            var p: Float = 0
-            for c in 0..<input.channelCount { p = max(p, abs(input.channels[c][i])) }
-            want[i] = self.want(p)
+        // Pointer loops throughout (AUD12-2): same arithmetic, in the same order, as the textbook
+        // version, without per-element bounds checks and generic `min`/`max` calls.
+        let C = input.channelCount
+        let want = UnsafeMutablePointer<Double>.allocate(capacity: L)
+        let gr = UnsafeMutablePointer<Double>.allocate(capacity: L)
+        let dq = UnsafeMutablePointer<Int>.allocate(capacity: L)
+        defer { want.deallocate(); gr.deallocate(); dq.deallocate() }
+        gr.initialize(repeating: 0, count: L)
+        // Linked detector: the channels' largest magnitude.
+        let peak = UnsafeMutablePointer<Float>.allocate(capacity: L)
+        defer { peak.deallocate() }
+        peak.initialize(repeating: 0, count: L)
+        for c in 0..<C {
+            input.channels[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                guard let x = sp.baseAddress else { return }
+                var i = 0
+                while i < L {
+                    let a = x[i].magnitude
+                    if a >= peak[i] { peak[i] = a }   // `max(p, a)`
+                    i += 1
+                }
+            }
+        }
+        let k = 1 - 1 / ratio, lMax = Self.maxLevelDB, th = thresholdDB
+        var i = 0
+        while i < L {
+            let p = peak[i]
+            if p > 0 {
+                let db = 20 * log10(Double(p))
+                let l = lMax < db ? lMax : db           // `min(db, maxLevelDB)`
+                let v = (l - th) * k
+                want[i] = v >= 0 ? v : 0                // `max(0, v)`
+            } else {
+                want[i] = 0
+            }
+            i += 1
         }
         // Reduction with linear release: monotonic deque of candidates (index), dominated ones dropped.
         let first = h - max(0, attack - 1)   // first index whose reduction is needed (= window)
-        var gr = [Double](repeating: 0, count: L)
-        var dq = [Int](), head = 0
-        dq.reserveCapacity(1024)
-        let w = window
-        for i in 0..<L {
-            if want[i] > 0 {
-                while dq.count > head, let b = dq.last,
-                      want[i] >= want[b] - slope * Double(i - b) { dq.removeLast() }
-                dq.append(i)
+        let w = window, finite = slope.isFinite, sl = slope
+        var head = 0, tail = 0
+        i = 0
+        while i < L {
+            let wi = want[i]
+            if wi > 0 {
+                while tail > head {
+                    let b = dq[tail - 1]
+                    guard wi >= want[b] - sl * Double(i - b) else { break }
+                    tail -= 1
+                }
+                dq[tail] = i
+                tail += 1
             }
-            while dq.count > head, dq[head] < i - w { head += 1 }
-            if head > 4096 { dq.removeFirst(head); head = 0 }
-            guard i >= first else { continue }
-            if dq.count > head {
+            while tail > head, dq[head] < i - w { head += 1 }
+            if i >= first, tail > head {
                 let j = dq[head]
-                gr[i] = max(0, want[j] - (slope.isFinite ? slope * Double(i - j) : (i == j ? 0 : .infinity)))
+                let v = want[j] - (finite ? sl * Double(i - j) : (i == j ? 0 : .infinity))
+                gr[i] = v >= 0 ? v : 0
             }
+            i += 1
         }
         // Optional attack averaging, then gain.
-        for k in 0..<count {
-            let i = h + k
+        let gains = UnsafeMutablePointer<Float>.allocate(capacity: count)
+        defer { gains.deallocate() }
+        var kk = 0
+        while kk < count {
+            let i = h + kk
             var r = gr[i]
             if attack > 1 {
                 var s = 0.0
-                for j in (i - attack + 1)...i { s += gr[j] }
+                var j = i - attack + 1
+                while j <= i { s += gr[j]; j += 1 }
                 r = s / Double(attack)
             }
-            let g = Float(pow(10, (makeupDB - r) / 20))
-            for c in 0..<input.channelCount { out.channels[c][k] = input.channels[c][i] * g }
+            gains[kk] = Float(pow(10, (makeupDB - r) / 20))
+            kk += 1
+        }
+        for c in 0..<C {
+            input.channels[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                out.channels[c].withUnsafeMutableBufferPointer { (dp: inout UnsafeMutableBufferPointer<Float>) -> Void in
+                    guard let x = sp.baseAddress, let d = dp.baseAddress else { return }
+                    var k = 0
+                    while k < count { d[k] = x[h + k] * gains[k]; k += 1 }
+                }
+            }
         }
         return out
     }

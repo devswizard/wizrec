@@ -126,7 +126,7 @@ final class AudioDecodeCore {
             let lo = Int64((p0 - k.halfWidth).rounded(.down)) - 1
             let hi = Int64((p0 + Double(n - 1) * step + k.halfWidth).rounded(.up)) + 2
             let input = try fetch(lo, hi)
-            src = input.map { Resampler.resample($0, inputStart: lo, p0: p0, step: step, count: n, kernel: k) }
+            src = Resampler.resample(input, inputStart: lo, p0: p0, step: step, count: n, kernel: k)
         }
         return PCMBuffer(format: out, startTime: start, frameCount: n, channels: Self.mapChannels(src, to: out.channels, count: n))
     }
@@ -271,30 +271,44 @@ final class AudioDecodeCore {
                 buf[ch].append(contentsOf: repeatElement(0, count: n)); continue
             }
             let off = planar ? 0 : ch
-            buf[ch].reserveCapacity(buf[ch].count + n)
+            let old = buf[ch].count
+            buf[ch].append(contentsOf: repeatElement(0, count: n))
             let raw = UnsafeRawPointer(plane)
-            switch packed {
-            case AV_SAMPLE_FMT_FLT:
-                let p = raw.assumingMemoryBound(to: Float.self)
-                for i in 0..<n { buf[ch].append(p[i * stride + off]) }
-            case AV_SAMPLE_FMT_S16:
-                let p = raw.assumingMemoryBound(to: Int16.self)
-                for i in 0..<n { buf[ch].append(Float(p[i * stride + off]) / 32768) }
-            case AV_SAMPLE_FMT_S32:
-                let p = raw.assumingMemoryBound(to: Int32.self)
-                for i in 0..<n { buf[ch].append(Float(Double(p[i * stride + off]) / 2147483648)) }
-            case AV_SAMPLE_FMT_DBL:
-                let p = raw.assumingMemoryBound(to: Double.self)
-                for i in 0..<n { buf[ch].append(Float(p[i * stride + off])) }
-            case AV_SAMPLE_FMT_U8:
-                let p = raw.assumingMemoryBound(to: UInt8.self)
-                for i in 0..<n { buf[ch].append((Float(p[i * stride + off]) - 128) / 128) }
-            case AV_SAMPLE_FMT_S64:
-                let p = raw.assumingMemoryBound(to: Int64.self)
-                for i in 0..<n { buf[ch].append(Float(Double(p[i * stride + off]) / 9223372036854775808)) }
-            default:
-                buf[ch].append(contentsOf: repeatElement(0, count: n))
+            // Per-sample conversion into the grown buffer through a pointer (`while`, not
+            // `append` per sample: debug builds paid an array call per sample; AUD12-2).
+            buf[ch].withUnsafeMutableBufferPointer { (bp: inout UnsafeMutableBufferPointer<Float>) -> Void in
+                guard let base = bp.baseAddress else { return }
+                Self.convert(raw, packed, n, stride, off, into: base + old)
             }
+        }
+    }
+
+    /// Converts sample `off`, `off + stride`, … (n of them) of `raw` in format `fmt` to Float into `d`
+    /// (zeros for unknown formats).
+    private static func convert(_ raw: UnsafeRawPointer, _ fmt: AVSampleFormat, _ n: Int, _ stride: Int, _ off: Int,
+                                into d: UnsafeMutablePointer<Float>) {
+        var i = 0
+        switch fmt {
+        case AV_SAMPLE_FMT_FLT:
+            let p = raw.assumingMemoryBound(to: Float.self)
+            while i < n { d[i] = p[i * stride + off]; i += 1 }
+        case AV_SAMPLE_FMT_S16:
+            let p = raw.assumingMemoryBound(to: Int16.self)
+            while i < n { d[i] = Float(p[i * stride + off]) / 32768; i += 1 }
+        case AV_SAMPLE_FMT_S32:
+            let p = raw.assumingMemoryBound(to: Int32.self)
+            while i < n { d[i] = Float(Double(p[i * stride + off]) / 2147483648); i += 1 }
+        case AV_SAMPLE_FMT_DBL:
+            let p = raw.assumingMemoryBound(to: Double.self)
+            while i < n { d[i] = Float(p[i * stride + off]); i += 1 }
+        case AV_SAMPLE_FMT_U8:
+            let p = raw.assumingMemoryBound(to: UInt8.self)
+            while i < n { d[i] = (Float(p[i * stride + off]) - 128) / 128; i += 1 }
+        case AV_SAMPLE_FMT_S64:
+            let p = raw.assumingMemoryBound(to: Int64.self)
+            while i < n { d[i] = Float(Double(p[i * stride + off]) / 9223372036854775808); i += 1 }
+        default:
+            break
         }
     }
 }
@@ -327,33 +341,161 @@ enum Resampler {
         Kernel(cutoff: cutoff, halfWidth: Double(zeroCrossings) / cutoff, table: table)
     }
 
-    /// Output sample k = Σ x[i]·h(p0 + k·step − i), normalised by Σ h.
-    static func resample(_ x: [Float], inputStart: Int64, p0: Double, step: Double, count n: Int, kernel k: Kernel) -> [Float] {
-        var out = [Float](repeating: 0, count: n)
-        let res = Double(tableResolution)
-        let maxU = Double(zeroCrossings)
-        x.withUnsafeBufferPointer { xp in
-            k.table.withUnsafeBufferPointer { tp in
-                for j in 0..<n {
-                    let p = p0 + Double(j) * step - Double(inputStart)
-                    let i0 = max(0, Int((p - k.halfWidth).rounded(.up)))
-                    let i1 = min(xp.count - 1, Int((p + k.halfWidth).rounded(.down)))
-                    guard i0 <= i1 else { continue }
-                    var acc: Float = 0, wsum: Float = 0
-                    for i in i0...i1 {
-                        let u = abs(p - Double(i)) * k.cutoff
-                        if u >= maxU { continue }
-                        let fi = u * res
-                        let ii = Int(fi)
-                        let frac = Float(fi - Double(ii))
-                        let w = tp[ii] + (tp[ii + 1] - tp[ii]) * frac
-                        acc += xp[i] * w
-                        wsum += w
-                    }
-                    out[j] = wsum > 1e-6 ? acc / wsum : 0
-                }
+    /// Output sample k = Σ x[i]·h(p0 + k·step − i), normalised by Σ h, for every channel of `x`
+    /// (all `x[c]` the same length). The taps of each output sample are computed once and shared
+    /// by all channels, in the same pass that sums them (ascending `i`, as resampling the channels
+    /// one by one would), so the result is bit-identical to the per-channel textbook loop. Plain
+    /// pointer `while` loops: no per-sample allocation and no generic calls, which debug builds
+    /// would otherwise pay per tap (AUD12-1/2).
+    static func resample(_ x: [[Float]], inputStart: Int64, p0: Double, step: Double, count n: Int,
+                         kernel k: Kernel) -> [[Float]] {
+        let channels = x.count
+        guard n > 0, let len = x.first?.count, len > 0 else {
+            return Array(repeating: [Float](repeating: 0, count: max(0, n)), count: channels)
+        }
+        // Contiguous channel-major copies of the input (zero-padded to `len`) and the output.
+        let flatIn = UnsafeMutablePointer<Float>.allocate(capacity: channels * len)
+        let flatOut = UnsafeMutablePointer<Float>.allocate(capacity: channels * n)
+        defer { flatIn.deallocate(); flatOut.deallocate() }
+        flatOut.initialize(repeating: 0, count: channels * n)
+        for c in 0..<channels {
+            let dst: UnsafeMutablePointer<Float> = flatIn + c * len
+            x[c].withUnsafeBufferPointer { (sp: UnsafeBufferPointer<Float>) -> Void in
+                let m = Swift.min(len, sp.count)
+                if let sb = sp.baseAddress, m > 0 { dst.initialize(from: sb, count: m) } else { dst.initialize(repeating: 0, count: len); return }
+                if m < len { (dst + m).initialize(repeating: 0, count: len - m) }
             }
         }
-        return out
+        k.table.withUnsafeBufferPointer { (tb: UnsafeBufferPointer<Float>) -> Void in
+            guard let tp = tb.baseAddress else { return }
+            let pass = ResamplePass(table: tp, halfWidth: k.halfWidth, cutoff: k.cutoff, p0: p0, step: step,
+                                    start: Double(inputStart), length: len)
+            switch channels {
+            case 1: pass.mono(flatIn, flatOut, n)
+            case 2: pass.stereo(flatIn, flatIn + len, flatOut, flatOut + n, n)
+            default: pass.any(flatIn, flatOut, channels, n)
+            }
+        }
+        return (0..<channels).map { (c: Int) -> [Float] in Array(UnsafeBufferPointer(start: flatOut + c * n, count: n)) }
+    }
+}
+
+/// One resampling pass over raw buffers (`Resampler.resample`). For output j the read position is
+/// p = p0 + j·step − start; the taps are the inputs i in [⌈p − hw⌉, ⌊p + hw⌋] ∩ [0, length) with
+/// u = |p − i|·cutoff < zeroCrossings, weight = table lerp at u·resolution. Every variant sums
+/// in ascending i and divides by the weight sum, so all variants agree bit for bit.
+private struct ResamplePass {
+    let table: UnsafePointer<Float>
+    let halfWidth: Double
+    let cutoff: Double
+    let p0: Double
+    let step: Double
+    let start: Double
+    let length: Int
+    let res = Double(Resampler.tableResolution)
+    let maxU = Double(Resampler.zeroCrossings)
+
+    /// Read position and tap range [lo, hi] of output j (empty when lo > hi).
+    @inline(__always) func taps(_ j: Int) -> (p: Double, lo: Int, hi: Int) {
+        let p: Double = p0 + Double(j) * step - start
+        var lo = Int((p - halfWidth).rounded(.up))
+        if lo < 0 { lo = 0 }
+        var hi = Int((p + halfWidth).rounded(.down))
+        if hi > length - 1 { hi = length - 1 }
+        return (p, lo, hi)
+    }
+
+    /// Weight of input i for read position p, or nil outside the kernel's support.
+    @inline(__always) func weight(_ p: Double, _ i: Int) -> Float? {
+        let d: Double = p - Double(i)
+        let u: Double = (d < 0 ? -d : d) * cutoff
+        guard u < maxU else { return nil }
+        let fi: Double = u * res
+        let ii = Int(fi)
+        let frac = Float(fi - Double(ii))
+        let a: Float = table[ii]
+        return a + (table[ii + 1] - a) * frac
+    }
+
+    func mono(_ x: UnsafePointer<Float>, _ out: UnsafeMutablePointer<Float>, _ n: Int) {
+        var j = 0
+        while j < n {
+            let (p, lo, hi) = taps(j)
+            var acc: Float = 0, wsum: Float = 0
+            var i = lo
+            while i <= hi {
+                // `weight(p, i)`, written out: debug builds do not inline it.
+                let d: Double = p - Double(i)
+                let u: Double = (d < 0 ? -d : d) * cutoff
+                if u < maxU {
+                    let fi: Double = u * res
+                    let ii = Int(fi)
+                    let frac = Float(fi - Double(ii))
+                    let a: Float = table[ii]
+                    let w: Float = a + (table[ii + 1] - a) * frac
+                    wsum += w; acc += x[i] * w
+                }
+                i += 1
+            }
+            if wsum > 1e-6 { out[j] = acc / wsum }
+            j += 1
+        }
+    }
+
+    func stereo(_ x0: UnsafePointer<Float>, _ x1: UnsafePointer<Float>,
+                _ o0: UnsafeMutablePointer<Float>, _ o1: UnsafeMutablePointer<Float>, _ n: Int) {
+        var j = 0
+        while j < n {
+            let (p, lo, hi) = taps(j)
+            var a0: Float = 0, a1: Float = 0, wsum: Float = 0
+            var i = lo
+            while i <= hi {
+                // `weight(p, i)`, written out: debug builds do not inline it.
+                let d: Double = p - Double(i)
+                let u: Double = (d < 0 ? -d : d) * cutoff
+                if u < maxU {
+                    let fi: Double = u * res
+                    let ii = Int(fi)
+                    let frac = Float(fi - Double(ii))
+                    let a: Float = table[ii]
+                    let w: Float = a + (table[ii + 1] - a) * frac
+                    wsum += w; a0 += x0[i] * w; a1 += x1[i] * w
+                }
+                i += 1
+            }
+            if wsum > 1e-6 { o0[j] = a0 / wsum; o1[j] = a1 / wsum }
+            j += 1
+        }
+    }
+
+    /// Any channel count: weights of output j into scratch, then each channel's sum.
+    func any(_ x: UnsafePointer<Float>, _ out: UnsafeMutablePointer<Float>, _ channels: Int, _ n: Int) {
+        let cap = Int(2 * halfWidth) + 3
+        let index = UnsafeMutablePointer<Int>.allocate(capacity: cap)
+        let weights = UnsafeMutablePointer<Float>.allocate(capacity: cap)
+        defer { index.deallocate(); weights.deallocate() }
+        var j = 0
+        while j < n {
+            let (p, lo, hi) = taps(j)
+            var m = 0
+            var wsum: Float = 0
+            var i = lo
+            while i <= hi {
+                if let w = weight(p, i) { index[m] = i; weights[m] = w; wsum += w; m += 1 }
+                i += 1
+            }
+            if wsum > 1e-6 {
+                var c = 0
+                while c < channels {
+                    let xs = x + c * length
+                    var acc: Float = 0
+                    var t = 0
+                    while t < m { acc += xs[index[t]] * weights[t]; t += 1 }
+                    out[c * n + j] = acc / wsum
+                    c += 1
+                }
+            }
+            j += 1
+        }
     }
 }
