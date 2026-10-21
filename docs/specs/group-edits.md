@@ -304,11 +304,85 @@ closed. Camtasia never lets the user edit inside them [inf, UI parity].
   `rev4` pasted copy). That is probably a one-pixel canvas nudge from the
   synthetic click. It is not a paste rule [?].
 
+### 8.6 Media-bin drops into an open group (session 9, 2026-10-21, RT-025)
+
+Base: fresh copies of `g1-group` (the 10 s video and the 5 s photo grouped,
+group scale 50 % and X 200). The group was opened with *View ▸ Open
+Group*, and the photo or video tile was dragged from the media bin onto the
+open group's timeline with synthetic mouse events (timeline pane enlarged
+first). Saves are in `camtasia_rea_refs/research/groups/mb12/`.
+
+Other routes were tried first:
+
+- **No menu command** adds a media-bin item at the playhead. The Edit and
+  Modify menus have none, and the media-bin tiles open no context menu for
+  a synthetic right-click or for the accessibility "show menu" action
+  [obs].
+- So drags are the only route. With the enlarged pane, every drop onto
+  free space landed [obs].
+
+| Drop | Group | Result | Save | Tag |
+|---|---|---|---|---|
+| Photo on inner track 1 at ≈ 8 s (free from 5 s) | 0–10 s, `mediaStart` 0 | Added to inner track 1 at inner 7.667 s, running to 12.667 s, past the window end | `mb1-photo-inner1-8s` | [obs] |
+| Video on the empty space above the inner tracks at ≈ 12 s | same | **New inner track 2** (on top); the clip sits at inner 11.567–21.567 s, **wholly outside** the window | `mb2-video-above-12s` | [obs] |
+| Photo onto the video in the middle of inner track 0 (≈ 3 s) | same | Nothing added | `mb3-photo-on-busy-inner0` | [obs]; refusal reason [inf] |
+| Photo above the inner tracks at timeline ≈ 7.7 s | at 4.7 s, `mediaStart` 2 s, 8 s long (window inner 2–10 s) | New inner track 2, inner start **5.0 s** = timeline 7.7 − group `start` 4.7 + `mediaStart` 2 | `mb4-offset-drop` (state before: `mb4a-offset-group`) | [obs] |
+| Photo on inner track 2 at timeline ≈ 1.7 s, **before** the window | same | Inner start **−1.0 s** (timeline 1.7 − 4.7 + 2). Not clamped to the window start; the clip is hidden. A negative `start` is saved as is (−705600000) | `mb5-drop-before-window` | [obs] |
+
+What this shows:
+
+- **The group never grows.** In all five saves the group's `start`,
+  `duration`, `mediaStart` and `mediaDuration` are unchanged, and so is the
+  project length [obs]. Anything outside the window is simply hidden, as
+  with pastes (§8.3).
+- **Drops are not clamped.** This is unlike paste. The clip lands where it
+  was dropped, mapped through the group with inner time = timeline time −
+  group `start` + `mediaStart`. It can land before the window (negative
+  inner `start` included) or after it [obs].
+- **Track choice.** A drop onto an inner track uses that track. A drop on
+  the empty area above the inner tracks adds a new inner track on top. A
+  drop onto an occupied spot of a non-magnetic inner track adds nothing
+  [obs].
+- **Timing.** Inner starts were whole frames in every case. Each start sat
+  about 0.3–0.4 s before the cursor, which is the grab offset within the
+  tile [inf]. The drop point therefore isn't a precise rule source; the
+  mapping above is.
+- **The transform is set in canvas space.** The dropped clip gets the
+  inverse of the group's transform, so on the canvas it appears at the
+  default placement (centred, scale 1): `translation0` −400 and
+  `scale0`/`scale1` 2.0 inside the 50 %/X 200 group. Parameters are
+  written in the long form `{type, defaultValue, interp "eioe"}`,
+  including the four `geometryCrop` keys. This is the same re-expression
+  as a paste of a canvas-space clip (§8.2) [obs, `mb1`, `mb4`].
+- **Clip keys.** The clip's metadata is the usual insert set
+  (`audiateLinkedSession`, `clipSpeedAttribute`, `colorAttribute`,
+  `default-scale` "1", `effectApplied`). No group keys are added. The
+  inner tracks get `metadata` `{IsLocked "False", trackHeight "78"}`, and
+  the group keeps `isOpen` true [obs].
+
+WizRec (`InsertClipInGroup`, DECISIONS 2026-10-21):
+
+- **Differs: growth.** WizRec grows the group (and enclosing groups).
+  Camtasia never does [obs].
+- **Differs: window bound.** WizRec requires the drop to be inside the
+  window. Camtasia accepts any position and keeps the mapped inner time,
+  even when it is negative or past the end [obs].
+- **Needed change [inf].** Don't grow the group. Map the drop time through
+  the group without clamping. Write the canvas-default transform
+  re-expressed relative to the enclosing groups (the inverse of their
+  constant position/scale), in long form.
+- **Matches:** a drop above the inner tracks makes a new top inner track;
+  no group keys travel.
+
 ## Open
 
 - Rotation and crop in the bounding box at group creation, and rotation in
   ungroup composition [?].
-- ~~Whether drops into an open group grow the group~~: pastes never grow it
-  (§8.3). Drops from the media bin into an open group were not tried [?].
+- ~~Whether drops into an open group grow the group~~: neither pastes
+  (§8.3) nor media-bin drops (§8.6) grow it [obs].
+- Why a drop onto an occupied spot of a non-magnetic inner track adds
+  nothing (a refusal, or a missed drop) [?]. Session 8 saw the same for
+  drops inside a clip on a magnetic top-level track (`edit-semantics.md`
+  ED3 step 5).
 - ~~How trim-start behaves on inner videos~~: `mediaStart` moves (§8.5)
   [obs].
