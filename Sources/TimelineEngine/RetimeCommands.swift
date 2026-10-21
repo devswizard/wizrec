@@ -114,20 +114,23 @@ public final class RippleMove: EditCommand {
     public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
-/// Changes a clip's speed. `scalar = 1 / speed` and
-/// `mediaDuration × scalar = duration` (time-mapping.md §3): the media range
-/// stays, `duration` becomes `mediaDuration / speed` rounded down to a frame
-/// (at least one), and `mediaDuration` is then recomputed exactly as
-/// `duration / scalar` (so it may become a rational string, as in Camtasia's
-/// files [obs]). `UnifiedMedia` halves get the same fields. Keyframes stay
-/// on the media axis (time-mapping.md §6, X4 open).
+/// Changes a clip's speed (edit-semantics.md ED2, ED2b [obs]).
 ///
-/// `metadata.clipSpeedAttribute.value` = speed ≠ 1 and `effectApplied` =
-/// `"Clip Speed"` [obs, vlog]; back to speed 1 sets `"none"` when it said
+/// The media range (`mediaStart`, `mediaDuration`) never changes. `duration`
+/// becomes `mediaDuration / speed` **floored** to a whole frame (at least one),
+/// and `scalar` is then recomputed as `duration / mediaDuration`, written as a
+/// reduced rational string, so `mediaDuration × scalar = duration` holds exactly.
+/// When the floor bites, the effective speed (`1 / scalar`) is slightly above
+/// `speed` (1.9 on 300 frames → 157 frames, `"157/300"`). When the duration is
+/// frame-exact, `scalar = 1 / speed`. `UnifiedMedia` halves get the same
+/// `duration`/`scalar`. Keyframes stay on the media axis (time-mapping.md §6).
+///
+/// `metadata.clipSpeedAttribute.value` = effective speed ≠ 1 and `effectApplied`
+/// = `"Clip Speed"` [obs, vlog, ED2]; back to speed 1 sets `"none"` when it said
 /// "Clip Speed" [inf]. If the clip grows into its right neighbour, `apply`
-/// throws unless `ripple` (later clips then shift by the length change;
-/// with `ripple` a shrinking clip also pulls them left). Images and callouts
-/// have no media time and throw.
+/// throws unless `ripple` (later clips then shift by the length change; with
+/// `ripple` a shrinking clip also pulls them left). Images and callouts have no
+/// media time and throw.
 @MainActor
 public final class SetClipSpeed: EditCommand {
     public let clipID: Int64
@@ -143,16 +146,59 @@ public final class SetClipSpeed: EditCommand {
 
     public func apply(to project: Project) throws {
         guard speed.num > 0, speed.den > 0 else { throw EditError.invalid("speed must be > 0") }
+        let speed = self.speed
+        try Respeed.apply(clipID, ripple: ripple, swap: &swap, project) { (t: Timing) throws -> Rational in
+            try Exact.div(t.mediaDuration, speed)
+        }
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
+}
+
+/// Sets a clip's duration through Clip Speed's *Duration* field
+/// (edit-semantics.md ED2b [obs]): `duration` (ticks) is floored to a whole
+/// frame (at least one), the media range is kept, and `scalar` becomes
+/// `duration / mediaDuration` (reduced rational string). Metadata, neighbours,
+/// `ripple` and refused clip types as for `SetClipSpeed`.
+@MainActor
+public final class SetClipDuration: EditCommand {
+    public let clipID: Int64
+    /// New duration, ticks (must be > 0; floored to a frame).
+    public let duration: Int64
+    public let ripple: Bool
+    public var name: String { "Clip Speed" }
+    private var swap = TrackSwap()
+
+    public init(clipID: Int64, duration: Int64, ripple: Bool = false) {
+        self.clipID = clipID; self.duration = duration; self.ripple = ripple
+    }
+
+    public func apply(to project: Project) throws {
+        guard duration > 0 else { throw EditError.invalid("duration must be > 0") }
+        let d = Rational(duration)
+        try Respeed.apply(clipID, ripple: ripple, swap: &swap, project) { (_: Timing) throws -> Rational in d }
+    }
+
+    public func revert(on project: Project) throws { try swap.restore(in: project) }
+}
+
+/// Shared body of `SetClipSpeed` / `SetClipDuration`.
+@MainActor
+enum Respeed {
+    /// Retimes clip `clipID` to `target(timing)` ticks, floored to a frame (≥ 1 frame), keeping
+    /// the media range and writing `scalar = duration / mediaDuration`.
+    static func apply(_ clipID: Int64, ripple: Bool, swap: inout TrackSwap, _ project: Project,
+                      target: (Timing) throws -> Rational) throws {
         let loc = try Locator.locate(clipID, in: project)
         guard !["IMFile", "Callout"].contains(loc.clip.clipType) else {
             throw EditError.invalid("clip \(clipID) has no media time to speed up")
         }
         let grid = FrameGrid(project)
         let t = try Timing(loc.clip)
-        let scalar = try Exact.div(Rational(1), speed)
-        let newDuration = max(grid.floor(Exact.floor(try Exact.mul(t.mediaDuration, scalar))),
-                              grid.ceil(1))
-        let mediaDuration = try Exact.div(Rational(newDuration), scalar)
+        guard t.mediaDuration.num > 0 else { throw EditError.invalid("clip \(clipID) has no media duration") }
+        let floored: Int64 = grid.floor(Exact.floor(try target(t)))
+        let newDuration: Int64 = max(floored, grid.ceil(1))
+        let scalar: Rational = try Exact.div(Rational(newDuration), t.mediaDuration)
         let delta = newDuration - t.duration
 
         let magnetic = Magnetic.isMagnetic(project, path: loc.trackPath)
@@ -170,10 +216,9 @@ public final class SetClipSpeed: EditCommand {
         for p in TrimClip.timedParts(clip) {
             TimeWriter.set(scalar, "scalar", in: p)
             TimeWriter.set(newDuration, "duration", in: p)
-            TimeWriter.set(mediaDuration, "mediaDuration", in: p)
         }
         if let md = clip["metadata"]?.object {
-            let changed = speed != Rational(1)
+            let changed = scalar != Rational(1)
             if let attr = md["clipSpeedAttribute"]?.object { attr["value"] = .bool(changed) }
             if changed { md["effectApplied"] = .string("Clip Speed") }
             else if md["effectApplied"]?.string == "Clip Speed" { md["effectApplied"] = .string("none") }
@@ -182,8 +227,6 @@ public final class SetClipSpeed: EditCommand {
         try edits.packMagnetic()
         try edits.commit(&swap)
     }
-
-    public func revert(on project: Project) throws { try swap.restore(in: project) }
 }
 
 /// Extend frame: holds a clip's last frame for `duration` ticks after it.

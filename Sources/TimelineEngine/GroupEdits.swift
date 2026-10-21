@@ -164,28 +164,32 @@ public final class RemoveGroupTrack: EditCommand {
 
 // MARK: - Dropping media into a group
 
-/// Places a source on inner track `track` of group `groupID`, as the clip
-/// type `InsertClip` would make (same ids rule: above `Project.maxID`).
+/// Places a source on inner track `track` of open group `groupID`: Camtasia's
+/// media-bin drop into an open group (group-edits.md §8.6 [obs]). The clip is the
+/// one `InsertClip` would make (same ids rule: above `Project.maxID`).
 ///
-/// - `at` is mapped to the group's inner timeline (`GroupTiming`), floored
-///   to a tick and snapped to the nearest frame.
-/// - The clip must start inside the group's visible window
-///   `[mediaStart, mediaStart + mediaDuration]` [our choice: a clip left of
-///   it would be hidden]. Overlap on a non-magnetic inner track throws; a
-///   magnetic inner track takes the clip at the insertion point and packs.
-/// - When the clip (after packing) ends past the visible window, the group's
-///   `mediaDuration` grows to the clip end and `duration` follows
-///   (`duration = ceil(mediaDuration × scalar)`); enclosing groups grow the
-///   same way. Growing must not overlap the next clip on the group's own
-///   track (throws) unless that track is magnetic (packed) [inf: Camtasia
-///   groups end at their latest child, demo]. `attributes.maxDurationAttr`
-///   is left as is (meaning unknown).
+/// - `at` is mapped to the group's inner timeline (`GroupTiming`: inner = timeline −
+///   group `start` + `mediaStart` at speed 1), floored to a tick and snapped to the
+///   nearest frame. It is **not clamped**: the clip may land before the window
+///   (negative inner `start` included) or past its end, where it is hidden [obs].
+/// - `track` == the inner track count adds a new top inner track (a drop on the empty
+///   area above the inner tracks) [obs]. Larger indices throw `trackNotFound`.
+/// - Overlap on a non-magnetic inner track throws (Camtasia adds nothing [obs]); a
+///   magnetic inner track takes the clip at the insertion point and packs [WizRec].
+/// - The group and its enclosing groups **never grow**: their timing and the project
+///   length are unchanged [obs].
+/// - Transform: the clip gets the canvas-default placement (centred, its default
+///   scale) re-expressed through every enclosing group, the inverse of their constant
+///   position/scale (`translation0` −400, `scale0/1` 2 inside a 50 %/X 200 group),
+///   changed keys in the long form next to `geometryCrop0…3` [obs]. Group rotation
+///   and animated group geometry are not composed [WizRec, as for paste]. A group
+///   with a zero scale throws. No group keys are added [obs].
 @MainActor
 public final class InsertClipInGroup: EditCommand {
     public let name = "Add to Timeline"
     public let sourceID: Int64
     public let groupID: Int64
-    /// Inner track index (0 = bottom).
+    /// Inner track index (0 = bottom; the inner track count = a new top track).
     public let track: Int
     public let time: GroupTime
     /// Id of the new clip, set by `apply`.
@@ -198,8 +202,9 @@ public final class InsertClipInGroup: EditCommand {
 
     public func apply(to project: Project) throws {
         let loc = try GroupChain.locateGroup(groupID, in: project)
+        let innerCount: Int = loc.clip["tracks"]?.array?.count ?? 0
+        guard track >= 0, track <= innerCount else { throw EditError.trackNotFound(track) }
         let innerTrackPath = loc.clipPath.appending(.key("tracks"), .index(track))
-        guard innerTrackPath.resolve(in: project.root)?.object != nil else { throw EditError.trackNotFound(track) }
 
         let raw: Int64
         switch time {
@@ -207,18 +212,20 @@ public final class InsertClipInGroup: EditCommand {
         case .timeline(let t): raw = Exact.floor(try GroupTiming.innerTime(group: groupID, timeline: t, in: project))
         }
         let start = FrameGrid(project).nearest(raw)
-        let gt = try Timing(loc.clip)
-        let visibleEnd = try Exact.add(gt.mediaStart, gt.mediaDuration)
-        guard start >= 0, !Exact.less(Rational(start), gt.mediaStart), !Exact.less(visibleEnd, Rational(start)) else {
-            throw EditError.invalid("time is outside the group's visible range")
+        guard let rel = GroupSpace.of(try GroupChain.groups(to: groupID, in: project)).relative(from: .identity) else {
+            throw EditError.invalid("group \(groupID) has a zero scale")
         }
 
         let clip = try M2.newClip(sourceID: sourceID, start: start, project)
+        GroupGeometry.reexpress(clip, x: rel.x, y: rel.y)
         let duration = clip["duration"]?.int ?? 0
 
-        // Editable copies: the inner track, then the group's own track and
-        // every enclosing track (deepest first, as TrackEdits requires).
         var edits = TrackEdits(project)
+        if track == innerCount {
+            let g = try GroupEdit.group(loc, &edits)
+            if g["tracks"]?.array == nil { g["tracks"] = J.emptyArray }
+            g["tracks"]?.array?.items.append(.object(ProjectTemplate.groupTrack(index: track)))
+        }
         let inner = try edits.track(at: innerTrackPath)
         if Magnetic.isMagnetic(project, path: innerTrackPath) {
             Magnetic.insert(clip, into: inner, start: start)
@@ -231,7 +238,6 @@ public final class InsertClipInGroup: EditCommand {
             }
             try M2.insertSorted(clip, into: inner)
         }
-        try GroupEdit.grow(loc, toFit: inner, &edits, project)
         try edits.packMagnetic()
         try edits.commit(&swap)
         clipID = clip.clipID
@@ -249,46 +255,5 @@ enum GroupEdit {
             throw EditError.invalid("group not found")
         }
         return g
-    }
-
-    /// Grows the group at `loc` (and its enclosing groups) so `track`'s
-    /// latest clip end is visible. `track` is an edited inner track of it.
-    static func grow(_ loc: ClipLocation, toFit track: JSONObject, _ edits: inout TrackEdits,
-                     _ project: Project) throws {
-        var contentEnd: Int64 = trackClips(track).map { (c) -> Int64 in
-            let start: Int64 = c["start"]?.int ?? 0, duration: Int64 = c["duration"]?.int ?? 0
-            return start + duration
-        }.max() ?? 0
-        // Group clip paths, innermost first; each with the track path holding it.
-        let chain = (GroupChain.enclosingClipPaths(loc.trackPath) + [loc.clipPath]).reversed()
-        for clipPath in chain {
-            guard case .index(let mi)? = clipPath.steps.last else { throw EditError.invalid("bad group path") }
-            let holder = JSONPath(steps: Array(clipPath.steps.dropLast(2)))
-            let parent = try edits.track(at: holder)
-            guard let g = parent["medias"]?.array?[mi].object else { throw EditError.invalid("group not found") }
-            let tm = try Timing(g)
-            let visibleEnd = try Exact.add(tm.mediaStart, tm.mediaDuration)
-            guard Exact.less(visibleEnd, Rational(contentEnd)) else { return }
-            let md = try Exact.sub(Rational(contentEnd), tm.mediaStart)
-            let scaled = try Exact.mul(md, tm.scalar)
-            let newDuration = Exact.floor(scaled) + (scaled.den == 1 ? 0 : 1)
-            let newMD = scaled.den == 1 ? md : try Exact.div(Rational(newDuration), tm.scalar)
-            let newEnd = tm.start + newDuration
-            if !Magnetic.isMagnetic(project, path: holder) {
-                for o in trackClips(parent) where o !== g {
-                    let s = o["start"]?.int ?? 0, e = s + (o["duration"]?.int ?? 0)
-                    if s < newEnd && tm.start < e {
-                        throw EditError.invalid("group \(g.clipID ?? -1) would grow into clip \(o.clipID ?? -1)")
-                    }
-                }
-            }
-            TimeWriter.set(newMD, "mediaDuration", in: g)
-            TimeWriter.set(newDuration, "duration", in: g)
-            contentEnd = trackClips(parent).map { ($0["start"]?.int ?? 0) + ($0["duration"]?.int ?? 0) }.max() ?? 0
-            if Magnetic.isMagnetic(project, path: holder) {
-                // Packing happens at commit; after it the track ends at the sum of durations.
-                contentEnd = trackClips(parent).reduce(0) { $0 + ($1["duration"]?.int ?? 0) }
-            }
-        }
     }
 }

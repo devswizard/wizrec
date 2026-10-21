@@ -56,8 +56,9 @@ import TimelineEngine
 
     /// The UI check's scenario on a Camtasia-authored group (demo fixture, group 4 with three full
     /// inner tracks): a file dropped on inner track 0 after its last clip is imported, nested in
-    /// the group (which grows to show it), saved and reopened; top-level clips are unchanged.
-    @Test func dropAfterLastClipOfCamtasiaGroupGrowsItAndSurvivesSave() async throws {
+    /// the group (which never grows, group-edits §8.6), saved and reopened; top-level clips are
+    /// unchanged.
+    @Test func dropAfterLastClipOfCamtasiaGroupKeepsItAndSurvivesSave() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-groupdrop-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -80,7 +81,7 @@ import TimelineEngine
         let g2 = try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == group.id })
         let placed = try #require(g2.tracks.first?.clips.first { $0.id == id })
         #expect(placed.start == innerEnd)
-        #expect(g2.duration > group.duration)
+        #expect(g2.duration == group.duration && g2.mediaDuration == group.mediaDuration)
         #expect(doc.project.tracks.map { $0.clips.map(\.id) } == topLevel)
         #expect(doc.project.sourceBin.count == 3)
 
