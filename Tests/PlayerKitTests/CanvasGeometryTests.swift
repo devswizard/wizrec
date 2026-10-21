@@ -39,6 +39,9 @@ import Testing
         let knob = CanvasGeometry.rotateKnob(frame, viewSize: view, canvasSize: canvas)
         #expect(knob == CGPoint(x: 530, y: 320 + CanvasGeometry.rotateKnobOffset))
         #expect(CanvasGeometry.handle(at: knob, frame: frame, cropMode: false, viewSize: view, canvasSize: canvas) == .rotate)
+        // A clip filling the canvas in a view of the canvas's aspect: the knob moves inside.
+        let full = CanvasFrame(clipID: 1, size: canvas, transform: .identity, crop: .zero)
+        #expect(CanvasGeometry.rotateKnob(full, viewSize: view, canvasSize: canvas) == CGPoint(x: 480, y: 540 - CanvasGeometry.rotateKnobOffset))
         // Crop mode: edge handles instead of corners and knob.
         #expect(at(CGPoint(x: 0, y: 50), crop: true) == .crop(.left))
         #expect(at(CGPoint(x: 100, y: 100), crop: true) == .crop(.top))

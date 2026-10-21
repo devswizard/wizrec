@@ -124,7 +124,10 @@ public enum CanvasGeometry {
         var dx = top.x - bottom.x, dy = top.y - bottom.y
         let len = hypot(dx, dy)
         if len < 1e-6 { (dx, dy) = (0, 1) } else { dx /= len; dy /= len }
-        return CGPoint(x: top.x + dx * rotateKnobOffset, y: top.y + dy * rotateKnobOffset)
+        let outside = CGPoint(x: top.x + dx * rotateKnobOffset, y: top.y + dy * rotateKnobOffset)
+        let inView = outside.x >= 0 && outside.x <= viewSize.width && outside.y >= 0 && outside.y <= viewSize.height
+        // A clip filling the view would put the knob off it: then it sits just inside the top edge.
+        return inView ? outside : CGPoint(x: top.x - dx * rotateKnobOffset, y: top.y - dy * rotateKnobOffset)
     }
 
     /// The handle under view point `v` (+y up) for frame `f`: crop edges in crop mode, else the

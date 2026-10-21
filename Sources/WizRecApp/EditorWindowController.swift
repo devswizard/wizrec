@@ -141,6 +141,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             return d
         }
         updateMediaProvider()
+        startUILog()
         model.onChange = { [weak self] in self?.projectDidChange() }
         // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
         // into a Rev group are written (UI checks keep them out of Application Support).
@@ -325,6 +326,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             lastSelection = timelineModel.selection
             refreshInspector()
             selectionOverlay.needsDisplay = true
+            logSelection()
         }
         if timelineModel.lastError != lastTimelineError {
             lastTimelineError = timelineModel.lastError
@@ -403,6 +405,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     private func projectDidChange() {
         engine.replaceScene(model.scene, audioScene: model.audioScene)
+        if !model.isPreviewing, Self.logsUI {
+            logEdit()
+            // After the next frames, so the logged handle positions show the edit.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                self?.logSelection()
+            }
+        }
         updateMediaProvider()
         projectDocument?.refreshEditedState()
         let kept = timelineModel.selection.filter { ClipInspection.make(project: model.project, clipID: $0, playhead: 0) != nil }
@@ -432,6 +442,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         selectionOverlay.needsDisplay = true
         print("WizRec: crop mode \(ui.cropMode ? "on" : "off")")   // UI checks read this line
         fflush(stdout)
+        logSelection()
     }
 
     func inspection(of clipID: Int64) -> ClipInspection? {
