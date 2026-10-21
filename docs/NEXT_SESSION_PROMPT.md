@@ -9,11 +9,12 @@ workflow if useful. I want automated solutions: do everything yourself, decide
 sensible defaults, and only ask me what truly needs me.
 
 WHERE SESSION 9 ENDED (2026-10-21)
-- main is green on GitHub (CI runs 33–34) and locally: 1148 tests,
+- main is green on GitHub (CI runs 39–40) and locally: 1165 tests,
   17 known issues (15 golden-harness + 2 LoadGate). CI builds tests with
   `-Xswiftc -O` (serial media step ~91 s).
-- v0.1.0 and v0.1.1 are PUBLIC (publish.yml with the workflow's
-  GITHUB_TOKEN). v0.1.1 = tag on `0ccf292`, rpath-clean DMG.
+- v0.1.0, v0.1.1 and v0.1.2 are PUBLIC (publish.yml with the workflow's
+  GITHUB_TOKEN). v0.1.2 = tag on `90b017a` (start screen, toolbar, Open fix);
+  installed in /Applications on my Mac.
 - Sparkle feed prepared (release/appcast.xml via raw.githubusercontent.com,
   release/sparkle.conf) but OFF: no key yet.
 - No open agent branches or worktrees; the old `worktree-agent-*` branches
@@ -30,9 +31,9 @@ GOAL (session 10), in priority order:
    per CI machine: a new variant shows in "Known issues" — pin it there.
 2. If I put a Sparkle public key into release/sparkle.conf: ship builds and
    checks the updater is on (`scripts/release/check-sparkle.sh`,
-   `WIZREC_EXPECT_UPDATER=on`), then v0.1.2 (notes in
+   `WIZREC_EXPECT_UPDATER=on`), then v0.1.3 (notes in
    docs/release-notes-template.md; tag → Release draft → `release/publish`
-   line `v0.1.2` → public) and `scripts/release/update-appcast.sh v0.1.2` only
+   line `v0.1.3` → public) and `scripts/release/update-appcast.sh v0.1.3` only
    if sign_update can reach the key. Without a key, ship a release only for
    user-visible changes worth it.
 3. Pending work below (no user input needed), with agents.
@@ -79,7 +80,7 @@ STEP 0 (you alone): CHECK, don't ask, wherever you can.
   no AI co-author lines; `.git/hooks/pre-push` must exist (it refuses them).
 - `swift --version` must be Xcode's 6.4 (`swiftly use` → `xcode (default)`).
 - `scripts/golden.sh --status`; latest CI run (HTML page); `git tag`;
-  `releases/tags/v0.1.1` is public; `release/sparkle.conf` public key set?;
+  `releases/tags/v0.1.2` is public; `release/sparkle.conf` public key set?;
   `git worktree list`; screen unlocked
   (`ioreg -n Root -d1 | grep CGSSessionScreenIsLocked`).
 - Already decided (never ask): SwiftPM + scripts; bundle ID

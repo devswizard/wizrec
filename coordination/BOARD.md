@@ -406,6 +406,8 @@ Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
 - app12 (end): UI checks updated, `run-all.sh` 8/8 on a fresh build.
 - CI: run 32 failed (mix digest variant per runner machine), runs 33–34 green; v0.1.1 tagged on `0ccf292`, public 2026-10-21T10:05Z (verified from the public URL).
 
+- app13: start screen (recent projects, New/Record/Open/Import, drops), editor toolbar; Open by extension + media as new project (lead); v0.1.2 public 2026-10-21T11:29Z.
+
 ## Session 9 result
 
 All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER in

@@ -8,7 +8,7 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ## 0. Session 9 snapshot (2026-10-21) — read this first
 
-- **`main` is green: 1148 tests** (17 known issues = 15 golden-harness + 2 LoadGate
+- **`main` is green: 1165 tests** (17 known issues = 15 golden-harness + 2 LoadGate
   self-tests; CI shows up to 2 more in the parallel step: LoadGate-gated timing and an
   unrecorded audio digest variant). CI runs 33–34 green; tests now build with `-Xswiftc -O`.
 - **User at start:** no Sparkle key, no licensed exports; OK to delete the 56 old
@@ -17,6 +17,14 @@ This is for the **lead session** that continues the WizRec build. Read
   `release/publish` = `v0.1.1` (no `allow-build-rpaths`). **Public 2026-10-21T10:05:51Z**,
   checked from the public URL: `WizRec-0.1.1.dmg` 21.0 MB, SHA-256 `b7f4b2cc…8598`,
   `verify-dmg.sh` OK (ad-hoc, updates off, 22 Mach-O paths clean, launch/quit 7 s).
+- **User testing after v0.1.1** found: Open panel greyed out `.cmproj`/`.mp4` (Camtasia's
+  installed UTIs win; fixed by extension-based filtering, media opens as a new project), no
+  start screen, Export only in the menu. app13 built the start screen (recent projects with
+  thumbnails, New Project/Recording, Open, Import Media, drops; shown at launch and after the
+  last project closes) and an editor toolbar (Import, Record, Undo, Redo, Export).
+  **v0.1.2** tagged on `90b017a` (CI run 39 green), public 2026-10-21T11:29:55Z, verified
+  from the public URL (SHA-256 `16c12ea3…7732`, verify-dmg OK) and installed in
+  /Applications on the user's Mac (0.1.1 kept in the session scratchpad).
 - **Landed in session 9** (agents audio, qa, app, researcher, ship, render, timeline, captions):
   - audio12: AUD12-1 root cause = sources of projects without `audioFormatSampleRate` were
     measured at 44.1 kHz through a slow per-channel sinc resampler; now measured at the mix
@@ -60,7 +68,10 @@ This is for the **lead session** that continues the WizRec build. Read
     issue); the 2 s drain bound holds on quiet machines;
   - still [?]: why a drop onto an occupied inner spot adds nothing; `default-*` metadata of
     Assets backgrounds; Assets `ident` rule;
-  - `release.yml`/`ci.yml` could run actionlint in CI.
+  - `release.yml`/`ci.yml` could run actionlint in CI;
+  - drag and drop onto the start screen has no automated check (manual test);
+  - closing the last project shows the start screen even with "Show start screen at
+    launch" off (kept; user may prefer it to follow the setting).
 - **NEED_USER:**
   1. One Sparkle `generate_keys` run (back up the private key offline), then the public key
      into `release/sparkle.conf` (RELEASING "Sparkle: turning updates on").

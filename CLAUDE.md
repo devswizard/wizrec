@@ -72,11 +72,11 @@ continue here.
   2026.2.3 AU1/AU2), M9 export (ProRes demo 25.7 s in ~2 s), M10 captions
   (whisper.cpp 1.9.5; VAD timing; Bengali via large-v3-turbo; CA1/CA2
   rules), M11 (Sparkle 2.10.0 wired, feed prepared, off until a key exists;
-  ad-hoc DMG; **v0.1.0 and v0.1.1 public**), M4–M6 rendering (31 blend
+  ad-hoc DMG; **v0.1.0–v0.1.2 public**), M4–M6 rendering (31 blend
   modes, matte modes, Border/Reflection, CO3 callouts, Extend Frame, Metal
   HDR tone map for playback), group/split/trim/ungroup/marker/copy-paste/
   drop/Clip Speed rules from observed Camtasia saves. Automated UI checks of
-  the built app (`scripts/ui-checks/`, 8/8). **1148 tests green** (17 known
+  the built app (`scripts/ui-checks/`, 9/9). **1165 tests green** (17 known
   issues = golden-harness and LoadGate self-tests).
 - Session 9 landed:
   - **v0.1.1** tagged on the CI-green `0ccf292` and published through
@@ -93,6 +93,9 @@ continue here.
     media-bin drop into an open group (§8.6: no growth, no clamp), Assets
     background placement (§11.2). Timeline and app follow them.
   - App: library Tab order over every tile, `--window-size`.
+  - **v0.1.2** (after the user's first test of 0.1.1): start screen with
+    recent projects, editor toolbar (Record, Export), Open works with
+    Camtasia installed (filter by extension), media opens as a new project.
 - **CI / release:** CI green on GitHub (runs 33–34; tests built `-O`). Mix
   digests of `OutputHashTests` vary per CI machine type; each variant is
   pinned, unknown ones show in the "Known issues" annotation.
