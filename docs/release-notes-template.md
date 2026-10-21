@@ -51,6 +51,9 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
 - Drag an **effect**, **audio effect** or **transition** onto a clip on the timeline or
   the canvas; the clip is outlined while you hover. A transition goes on both ends of
   the clip in one step.
+- **Animations.** A new **Animations** tab: drag Scale Up, Scale Down, Scale to Fit,
+  Tilt, Opacity and Custom animations onto a clip, or double-click one to add it to the
+  selected clips at the playhead.
 
 **Right-click menus**
 
@@ -60,7 +63,9 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
   Magnetic.
 - **Canvas:** Cut, Copy, Paste, Duplicate, Delete, Split, Scale (Fit, Fill, 200/100/50/25
   %), Crop Mode, Group, Ungroup, Stitch, Separate.
-- New in the Edit menu: **Duplicate** (⌘D) and **Ripple Cut** (⇧⌘X).
+- New in the Edit menu: **Duplicate** (⌘D), **Ripple Cut** (⇧⌘X) and **Select Clips at
+  Playhead**; **Timeline ▸ Split All Tracks at Playhead**; Move Track Up/Down in the
+  track menu.
 
 **Captions**
 
