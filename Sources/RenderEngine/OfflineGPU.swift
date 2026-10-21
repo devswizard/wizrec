@@ -9,8 +9,9 @@ final class OfflineGPU {
     let device: any MTLDevice
     let queue: any MTLCommandQueue
     let compositor: Compositor
-    /// Wraps caller-owned pixel buffers as render targets (zero-copy).
-    private var targetCache: CVMetalTextureCache?
+    /// Wraps caller-owned pixel buffers as render targets (zero-copy); thread-safe against
+    /// releases on Metal's completion queue.
+    private let targetCache: LockedTextureCache?
     /// BT.709 4:2:0 conversion, built on first use.
     private var yuv: YUVOutput?
     /// Intermediate BGRA canvases for 4:2:0 output.
@@ -23,7 +24,7 @@ final class OfflineGPU {
         device = d; queue = q
         compositor = try Compositor(device: d)
         rgbPool = TexturePool(device: d)
-        CVMetalTextureCacheCreate(nil, nil, d, nil, &targetCache)
+        targetCache = LockedTextureCache(device: d)
     }
 
     /// Encodes `plan` into `pixelBuffer`, commits, and calls `done` from the GPU completion
@@ -37,15 +38,15 @@ final class OfflineGPU {
               CVPixelBufferGetIOSurface(pixelBuffer) != nil, let cache = targetCache else {
             throw RenderError.notImplemented
         }
-        CVMetalTextureCacheFlush(cache, 0)  // drop wrappers of buffers already released
-        func wrap(_ plane: Int, _ f: MTLPixelFormat) throws -> (CVMetalTexture, any MTLTexture) {
+        cache.flush()  // drop wrappers of buffers already released
+        func wrap(_ plane: Int, _ f: MTLPixelFormat) throws -> (CacheTexture, any MTLTexture) {
             let planar = CVPixelBufferIsPlanar(pixelBuffer)
             let w = planar ? CVPixelBufferGetWidthOfPlane(pixelBuffer, plane) : CVPixelBufferGetWidth(pixelBuffer)
             let h = planar ? CVPixelBufferGetHeightOfPlane(pixelBuffer, plane) : CVPixelBufferGetHeight(pixelBuffer)
-            var cv: CVMetalTexture?
-            CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixelBuffer, nil, f, w, h, plane, &cv)
-            guard let cv, let t = CVMetalTextureGetTexture(cv) else { throw RenderError.noMetalDevice }
-            return (cv, t)
+            guard let cv = cache.texture(pixelBuffer, format: f, width: w, height: h, plane: plane) else {
+                throw RenderError.noMetalDevice
+            }
+            return (cv, cv.texture)
         }
         guard let cb = queue.makeCommandBuffer() else { throw RenderError.noMetalDevice }
         var keep: [AnyObject] = [pixelBuffer]

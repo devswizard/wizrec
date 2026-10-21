@@ -6,9 +6,10 @@ import MediaEngine
 import Metal
 import simd
 
-/// Keeps CoreVideo textures alive until the GPU has finished with them.
+/// Keeps GPU resources (and `CacheTexture`s) alive until the GPU has finished with them.
 // @unchecked: the box is written once before it is handed to the completion
 // handler and only released there; nothing reads or mutates it concurrently.
+// Cache-backed textures in it release through their cache's lock (`LockedTextureCache`).
 final class GPURetainer: @unchecked Sendable {
     let objects: [AnyObject]
     init(_ objects: [AnyObject]) { self.objects = objects }
@@ -26,7 +27,8 @@ final class CompositorCore {
     private let library: any MTLLibrary
     private var pipelines: [String: any MTLRenderPipelineState] = [:]
     private let sampler: any MTLSamplerState
-    private var textureCache: CVMetalTextureCache?
+    /// Wraps source frames; thread-safe against releases on Metal's completion queue.
+    private let textureCache: LockedTextureCache?
     private var images: [URL: any MTLTexture] = [:]
     private var failedImages: Set<URL> = []
     let fx: EffectGPU
@@ -45,9 +47,7 @@ final class CompositorCore {
         sd.sAddressMode = .clampToEdge; sd.tAddressMode = .clampToEdge
         guard let s = device.makeSamplerState(descriptor: sd) else { throw RenderError.noMetalDevice }
         sampler = s
-        var cache: CVMetalTextureCache?
-        CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
-        textureCache = cache
+        textureCache = LockedTextureCache(device: device)
         fx = try EffectGPU(device: device, core: library, sampler: s)
         shaders = ShaderBackgrounds(device: device)
         _ = try pipeline("texture_fs", format: .bgra8Unorm)
@@ -598,12 +598,10 @@ final class CompositorCore {
 
     private func texture(for pb: CVPixelBuffer, pass: Pass) -> (any MTLTexture)? {
         guard let cache = textureCache else { return nil }
-        var cvTex: CVMetalTexture?
         let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
-        let status = CVMetalTextureCacheCreateTextureFromImage(nil, cache, pb, nil, .bgra8Unorm, w, h, 0, &cvTex)
-        guard status == kCVReturnSuccess, let cvTex, let tex = CVMetalTextureGetTexture(cvTex) else { return nil }
-        pass.retained.append(cvTex)
-        return tex
+        guard let wrapped = cache.texture(pb, format: .bgra8Unorm, width: w, height: h) else { return nil }
+        pass.retained.append(wrapped)
+        return wrapped.texture
     }
 
     /// Loads (once) a still image as a premultiplied BGRA texture.
