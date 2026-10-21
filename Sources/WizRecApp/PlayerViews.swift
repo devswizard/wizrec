@@ -83,7 +83,7 @@ struct CanvasOverlay: View {
 
     var body: some View {
         ZStack {
-            if timelineIsEmpty && !ui.isImporting { emptyState }
+            if timelineIsEmpty && !ui.isImporting && !ui.canvasDropTargeted { emptyState }
             if ui.canvasDropTargeted {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))

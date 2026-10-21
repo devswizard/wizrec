@@ -45,6 +45,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var recorderHUD: RecorderHUDController?
     /// Tab / Shift-Tab between the panes: library sidebar → canvas → inspector → timeline.
     let keyLoop = EditorKeyLoop()
+    /// Enabled state of the timeline toolbar's buttons, and what it was last computed from.
+    let timelineTools = TimelineToolbarState()
+    private var timelineToolsKey: [Int64] = []
     /// The toolbar's delegate (NSToolbar holds it weakly).
     private let toolbarItems = EditorToolbar()
     /// The last media drop into an open group while it imports and places (`placeInGroup`).
@@ -204,17 +207,33 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let root = EditorSplitView()
         root.isVertical = false
         root.dividerStyle = .thick
-        timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
-        for v in [top, timelineView] as [NSView] { root.addArrangedSubview(v) }
+        let tools = NSHostingView(rootView: TimelineToolbar(state: timelineTools, actions: timelineToolbarActions()))
+        let timelinePane = NSView()
+        for v in [tools, timelineView] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            timelinePane.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            tools.leadingAnchor.constraint(equalTo: timelinePane.leadingAnchor),
+            tools.trailingAnchor.constraint(equalTo: timelinePane.trailingAnchor),
+            tools.topAnchor.constraint(equalTo: timelinePane.topAnchor),
+            tools.heightAnchor.constraint(equalToConstant: TimelineToolbar.height),
+            timelineView.leadingAnchor.constraint(equalTo: timelinePane.leadingAnchor),
+            timelineView.trailingAnchor.constraint(equalTo: timelinePane.trailingAnchor),
+            timelineView.topAnchor.constraint(equalTo: tools.bottomAnchor),
+            timelineView.bottomAnchor.constraint(equalTo: timelinePane.bottomAnchor),
+            timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
+        ])
+        for v in [top, timelinePane] as [NSView] { root.addArrangedSubview(v) }
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
         keyLoop.panes = [
             EditorKeyLoop.Pane(view: bin, ownsTabOrder: true),
             EditorKeyLoop.Pane(view: center, extraStops: [canvas]),
             EditorKeyLoop.Pane(view: props),
-            EditorKeyLoop.Pane(view: timelineView, singleStop: timelineView),
+            EditorKeyLoop.Pane(view: timelinePane, singleStop: timelineView),
         ]
-        root.defaultSizes = { size in [max(360, size.height - 230)] }
+        root.defaultSizes = { size in [max(360, size.height - 230 - TimelineToolbar.height)] }
         if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
     }
@@ -283,12 +302,60 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             lastTimelineError = timelineModel.lastError
             if let e = lastTimelineError { ui.show(e) }
         }
+        refreshTimelineTools()
         let t = engine.currentTicks
         if t != lastPlayheadSync {
             lastPlayheadSync = t
             timelineModel.playhead = t
             if !engine.isPlaying { refreshInspector() }
         }
+    }
+
+    // MARK: Timeline toolbar
+
+    private func timelineToolbarActions() -> TimelineToolbarActions {
+        TimelineToolbarActions(
+            undo: { [weak self] in self?.undoEdit() },
+            redo: { [weak self] in self?.redoEdit() },
+            cut: { [weak self] in self?.cut(nil) },
+            copy: { [weak self] in self?.copy(nil) },
+            paste: { [weak self] in self?.paste(nil) },
+            split: { [weak self] in self?.timelineView.splitAtPlayhead(nil) },
+            delete: { [weak self] in self?.timelineView.delete(nil) },
+            rippleDelete: { [weak self] in self?.timelineView.rippleDelete(nil) },
+            addTrack: { [weak self] in self?.timelineView.addTrack(nil) },
+            toggleSnapping: { [weak self] in self?.timelineView.toggleSnapping(nil) },
+            zoomOut: { [weak self] in self?.timelineView.zoomOut(nil) },
+            zoomToFit: { [weak self] in self?.timelineView.zoomToFit(nil) },
+            zoomIn: { [weak self] in self?.timelineView.zoomIn(nil) })
+    }
+
+    /// Re-validates the timeline toolbar when something it depends on changed (cheap otherwise).
+    private func refreshTimelineTools() {
+        let undo = model.undo
+        let key: [Int64] = [Int64(model.revision), engine.currentTicks, Int64(NSPasteboard.general.changeCount),
+                            Int64(timelineModel.selection.count), timelineModel.selection.min() ?? -1,
+                            Int64(undo.canUndo ? 1 : 0) + Int64(undo.canRedo ? 2 : 0),
+                            Int64(timelineModel.pointsPerSecond * 1000), timelineModel.snappingEnabled ? 1 : 0]
+        guard key != timelineToolsKey else { return }
+        timelineToolsKey = key
+        func valid(_ action: Selector) -> Bool { validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: "")) }
+        let s = timelineTools
+        func set<T: Equatable>(_ path: ReferenceWritableKeyPath<TimelineToolbarState, T>, _ v: T) {
+            if s[keyPath: path] != v { s[keyPath: path] = v }
+        }
+        set(\.canUndo, undo.canUndo)
+        set(\.canRedo, undo.canRedo)
+        set(\.undoName, undo.undoName)
+        set(\.redoName, undo.redoName)
+        set(\.canCut, valid(#selector(cut(_:))))
+        set(\.canCopy, valid(#selector(copy(_:))))
+        set(\.canPaste, valid(#selector(paste(_:))))
+        set(\.canSplit, timelineView.validateMenuItem(NSMenuItem(title: "", action: #selector(TimelineUI.TimelineView.splitAtPlayhead(_:)), keyEquivalent: "")))
+        set(\.canDelete, timelineView.validateMenuItem(NSMenuItem(title: "", action: #selector(TimelineUI.TimelineView.delete(_:)), keyEquivalent: "")))
+        set(\.canZoomIn, timelineView.validateMenuItem(NSMenuItem(title: "", action: #selector(TimelineUI.TimelineView.zoomIn(_:)), keyEquivalent: "")))
+        set(\.canZoomOut, timelineView.validateMenuItem(NSMenuItem(title: "", action: #selector(TimelineUI.TimelineView.zoomOut(_:)), keyEquivalent: "")))
+        set(\.snapping, timelineModel.snappingEnabled)
     }
 
     // MARK: Project changes

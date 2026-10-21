@@ -642,6 +642,9 @@
     "Redo" : {
 
     },
+    "Redo %arg (⇧⌘Z)" : {
+
+    },
     "Redo (⇧⌘Z)" : {
 
     },
@@ -786,6 +789,9 @@
     "Snapping" : {
 
     },
+    "Snapping: clips snap to edges, the playhead and markers" : {
+
+    },
     "Speech Engine" : {
 
     },
@@ -831,6 +837,9 @@
     "Timeline" : {
 
     },
+    "Timeline tools" : {
+
+    },
     "Transcribe" : {
 
     },
@@ -870,6 +879,9 @@
 
     },
     "Undo" : {
+
+    },
+    "Undo %arg (⌘Z)" : {
 
     },
     "Undo (⌘Z)" : {

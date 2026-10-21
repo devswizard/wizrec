@@ -60,9 +60,19 @@ struct InspectorView: View {
             if let i = state.inspection {
                 ScrollView { content(i).padding(12) }
             } else {
-                Text(state.selectionCount > 1 ? "\(state.selectionCount) clips selected" : "Select a clip on the canvas or timeline")
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
+                VStack(spacing: 6) {
+                    Text(state.selectionCount > 1 ? "\(state.selectionCount) clips selected" : "No clip selected")
+                        .font(.headline).foregroundStyle(.secondary)
+                    Text(state.selectionCount > 1
+                         ? "Select one clip to see and change its properties."
+                         : "Click a clip on the timeline or the canvas to see and change its position, size, crop, opacity, speed and volume.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("inspector.empty")
+                .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
             }
             if let e = state.error {
                 Text(e).font(.caption).foregroundStyle(.red).padding(8).frame(maxWidth: .infinity, alignment: .leading)

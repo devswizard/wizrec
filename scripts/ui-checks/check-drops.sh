@@ -1,5 +1,6 @@
 #!/bin/bash
-# UI check: drag and drop from "Finder" (APP14-1, ui-workflow.md §4) and the empty states (§5).
+# UI check: drag and drop from "Finder" (APP14-1, ui-workflow.md §4), the empty states (§5)
+# and the timeline toolbar's enabled states (§9).
 #
 # Real drags: drag.swift starts an NSDraggingSession with file URLs in a helper window and
 # moves it with HID mouse events, as a drag from Finder does. The app logs each import
@@ -37,6 +38,13 @@ center() {
     read -r x y w h <<< "$f"
     [ -n "${h:-}" ] || return 1
     echo "$((x + w / 2)) $((y + h / 2))"
+}
+
+# expect_enabled <ax key> <true|false>: the control's AXEnabled.
+expect_enabled() {
+    local got
+    got=$(ax enabled "$1" 2>/dev/null)
+    if [ "$got" = "$2" ]; then pass "$1 enabled=$2"; else fail "$1 enabled=${got:-missing}, want $2"; fi
 }
 
 imports() { grep -c '^WizRec: imported ' "$WORK/app.log" 2>/dev/null; }
@@ -85,6 +93,12 @@ case_start_screen() {
     for k in canvas.emptyState canvas.record canvas.importMedia bin.importMedia; do
         has_el "$k" && pass "empty project shows $k" || fail "empty project lacks $k"
     done
+    # Timeline toolbar (ui-workflow.md §9): nothing to undo, cut or split yet; zoom works.
+    expect_enabled timeline.undo false
+    expect_enabled timeline.split false
+    expect_enabled timeline.copy false
+    expect_enabled timeline.addTrack true
+    expect_enabled timeline.zoomToFit true
     snap
     local before
     before=$(imports)
@@ -93,6 +107,8 @@ case_start_screen() {
     sleep 1
     has_el canvas.emptyState && fail "canvas first steps still shown with a clip" || pass "canvas first steps gone after the drop"
     has_el bin.importMedia && fail "bin empty state still shown with media" || pass "bin empty state gone after the drop"
+    expect_enabled timeline.undo true
+    expect_enabled timeline.copy true     # the dropped clip is selected
     ax keys w cmd >/dev/null
     sleep 1
     ax keys d cmd >/dev/null   # Don't Save (the untitled project)
