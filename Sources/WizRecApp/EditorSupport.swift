@@ -97,6 +97,12 @@ final class EditorSplitView: NSSplitView {
         autosaveName = name
     }
 
+    /// Uses the default layout without restoring or saving one (`--window-size` runs).
+    func useDefaultLayout() {
+        needsDefaults = true
+        autosaveName = nil
+    }
+
     /// Applies `defaultSizes` once, when no layout was saved. Call after the window is laid out.
     func applyDefaultsIfNeeded() {
         guard needsDefaults, bounds.width > 0, bounds.height > 0 else { return }

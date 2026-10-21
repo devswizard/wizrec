@@ -1,4 +1,6 @@
+import AudioEngine
 import Foundation
+import MediaEngine
 import PlayerKit
 import Testing
 import TestGenKit
@@ -52,5 +54,35 @@ import TSCProjKit
         #expect(doc.project.source(id: sb) == nil && doc.project.tracks.flatMap(\.clips).isEmpty)
         try doc.undoLast()
         #expect(doc.project.serialized() == original)
+    }
+
+    /// APP12-3: a project without `audioFormatSampleRate` stores import loudness measured at the
+    /// rate it is mixed at (48 kHz, like `AudioMixer`'s on-the-fly measurement then), not at
+    /// 44.1 kHz; a project with the key keeps measuring at its own rate.
+    @Test func keylessProjectMeasuresAtTheMixRate() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("app12-import-rate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (a, _, _) = try wav(in: dir, lufs: -30)
+        let pool = MediaPool(diskCacheDirectory: nil)
+        let at48 = try #require(try await SourceLoudness.measure(pool: pool, url: a, stream: 0, mixRate: 48_000))
+        let at44 = try #require(try await SourceLoudness.measure(pool: pool, url: a, stream: 0, mixRate: 44_100))
+        #expect(abs(at48.integratedLUFS - at44.integratedLUFS) > 0.01, "the test signal must tell the two measurement rates apart")
+
+        let url = dir.appendingPathComponent("keyless.cmproj", isDirectory: true)
+        let bundle = try ProjectBundle.create(at: url, width: 640, height: 360, fps: 30)
+        bundle.project.root["audioFormatSampleRate"] = nil
+        try bundle.save()
+        let keyless = try EditorDocumentModel(url: url)
+        #expect(keyless.audioScene.sampleRate == nil)
+        let s = try await keyless.importMedia(a)
+        let t = try #require(keyless.project.source(id: s)?.tracks.first)
+        #expect(abs((t.integratedLUFS ?? 0) - at48.integratedLUFS) < 1e-9, "stored at 15 significant digits")
+        #expect(abs((t.object["peakLevel"]?.double ?? -1) - at48.peakLevel) < 1e-9)
+
+        let keyed = try EditorDocumentModel.untitled(width: 640, height: 360, in: dir)
+        #expect(keyed.audioScene.sampleRate == 44_100)
+        let k = try await keyed.importMedia(a)
+        #expect(abs((keyed.project.source(id: k)?.tracks.first?.integratedLUFS ?? 0) - at44.integratedLUFS) < 1e-9)
     }
 }

@@ -27,6 +27,9 @@ import Foundation
 ///   handler (scripted UI check of media drops into open groups).
 /// - `--open-group`: open the first top-level group for editing after opening, as a double-click
 ///   on it does (UI checks of placements into an open group; not a scripted step).
+/// - `--window-size <w>x<h>`: open editor windows with this content size (points), centered, with
+///   the default pane layout; the saved window frame and pane layout are neither restored nor
+///   overwritten (UI checks of small layouts).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -63,6 +66,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var groupDropPaths: [String] = []
     /// Open the first top-level group for editing (`--open-group`).
     public var openGroup = false
+    /// Editor window content size in points (`--window-size`); nil = the saved or default frame.
+    public var windowSize: CGSize?
 
     public init() {}
 
@@ -87,7 +92,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.select == b.select && a.save == b.save && a.framePolicy == b.framePolicy
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
-            && a.groupDropPaths == b.groupDropPaths && a.openGroup == b.openGroup
+            && a.groupDropPaths == b.groupDropPaths && a.openGroup == b.openGroup && a.windowSize == b.windowSize
     }
 
     /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
@@ -128,6 +133,7 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--export-preset": if let v = value() { exportPresets.append(v) }
             case "--group-drop": if let v = value() { groupDropPaths.append(v) }
             case "--open-group": openGroup = true
+            case "--window-size": windowSize = Self.size(value())
             default:
                 if a.hasPrefix("-psn_") { break }
                 // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,
@@ -138,5 +144,12 @@ public struct LaunchOptions: Sendable, Equatable {
             }
             i += 1
         }
+    }
+
+    /// `<w>x<h>` (points, both > 0) as a size; nil otherwise.
+    static func size(_ text: String?) -> CGSize? {
+        let parts: [Double] = (text ?? "").lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
     }
 }

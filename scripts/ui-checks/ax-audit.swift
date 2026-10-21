@@ -15,6 +15,9 @@
 //   - action: exposes AXPress;
 //   - focus: AXFocused is settable, and setting it makes the tile the app's focused element;
 //   - keyboard: Tab from a focused tile moves keyboard focus to another tile (key view loop);
+//   - keyboard walk: Tab from the search field enters the grid, Tab visits every tile of the
+//     tab once (tiles the lazy grid has not realized scroll into view), Tab from the last
+//     tile leaves the grid, Shift-Tab from the first tile returns to the search field;
 //
 // and that every expected tile of the tab was found. Prints PASS/FAIL lines; exit status is
 // the number of failures (capped at 125).
@@ -35,6 +38,8 @@ let expected: [(tab: String, id: String)] = ((try? String(contentsOfFile: args[3
 let tabs: [String] = expected.reduce(into: [String]()) { if !$0.contains($1.tab) { $0.append($1.tab) } }
 
 var failures = 0
+/// Tiles Tab reached that the lazy grid had not realized when the walk started (all tabs).
+var unrealizedReached = 0
 func pass(_ s: String) { print("PASS \(s)") }
 func fail(_ s: String) { print("FAIL \(s)"); failures += 1 }
 
@@ -113,6 +118,29 @@ func focusedIdentifier() -> String {
     return string(f as! AXUIElement, kAXIdentifierAttribute)
 }
 
+/// A tile's accessibility problems (role, title, description, press, focus) and its label.
+func inspect(_ t: AXUIElement) -> (problems: [String], label: String) {
+    let role = string(t, kAXRoleAttribute), title = string(t, kAXTitleAttribute)
+    let desc = string(t, kAXDescriptionAttribute)
+    var problems: [String] = []
+    if role != kAXButtonRole { problems.append("role \(role.isEmpty ? "none" : role)") }
+    if title.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXTitle") }
+    if desc.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXDescription") }
+    if !actions(t).contains(kAXPressAction) { problems.append("no AXPress (actions \(actions(t)))") }
+    if !settable(t, kAXFocusedAttribute) { problems.append("AXFocused not settable") }
+    return (problems, title.isEmpty ? desc : title)
+}
+
+/// The focused element for a log line: its identifier, or its role and title/description.
+func focusedDescription() -> String {
+    guard let f = attr(app, kAXFocusedUIElementAttribute) else { return "nothing" }
+    let e = f as! AXUIElement   // swiftlint:disable:this force_cast
+    let id = string(e, kAXIdentifierAttribute)
+    if !id.isEmpty { return id }
+    let label = [string(e, kAXTitleAttribute), string(e, kAXDescriptionAttribute)].first { !$0.isEmpty } ?? ""
+    return label.isEmpty ? string(e, kAXRoleAttribute) : "\(string(e, kAXRoleAttribute)) \"\(label)\""
+}
+
 /// The scroll area holding `tile` (its nearest AXScrollArea ancestor).
 func scrollArea(of tile: AXUIElement) -> AXUIElement? {
     var e: AXUIElement? = tile
@@ -132,17 +160,19 @@ for tab in tabs {
     wait(1)
 
     // Collect every tile, scrolling the list from top to bottom (the grid is lazy).
-    var seen: [String: AXUIElement] = [:]
+    // Each tile is inspected while it is on screen: once the lazy grid scrolls it away, its
+    // element is gone and reads as empty.
+    var seen: [String: (problems: [String], label: String)] = [:]
     var order: [String] = []
     func collect() {
         for t in tiles(in: window) {
             let id = string(t, kAXIdentifierAttribute)
             if seen[id] == nil { order.append(id) }
-            seen[id] = t
+            if seen[id] == nil || !string(t, kAXRoleAttribute).isEmpty { seen[id] = inspect(t) }
         }
     }
     collect()
-    if let any = seen.values.first, let area = scrollArea(of: any),
+    if let any = tiles(in: window).first, let area = scrollArea(of: any),
        let bar = attr(area, kAXVerticalScrollBarAttribute).map({ $0 as! AXUIElement }) {   // swiftlint:disable:this force_cast
         for step in 0...20 {
             AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, NSNumber(value: Double(step) / 20))
@@ -161,17 +191,9 @@ for tab in tabs {
     var labels: [String: [String]] = [:]
     var bad: [String] = []
     for id in order {
-        guard let t = seen[id] else { continue }
-        let role = string(t, kAXRoleAttribute), title = string(t, kAXTitleAttribute)
-        let desc = string(t, kAXDescriptionAttribute)
-        var problems: [String] = []
-        if role != kAXButtonRole { problems.append("role \(role.isEmpty ? "none" : role)") }
-        if title.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXTitle") }
-        if desc.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("no AXDescription") }
-        if !actions(t).contains(kAXPressAction) { problems.append("no AXPress (actions \(actions(t)))") }
-        if !settable(t, kAXFocusedAttribute) { problems.append("AXFocused not settable") }
-        if !problems.isEmpty { bad.append("\(id): \(problems.joined(separator: ", "))") }
-        labels[title.isEmpty ? desc : title, default: []].append(id)
+        guard let f = seen[id] else { continue }
+        if !f.problems.isEmpty { bad.append("\(id): \(f.problems.joined(separator: ", "))") }
+        labels[f.label, default: []].append(id)
     }
     if bad.isEmpty { pass("\(tab): \(order.count) tiles: AXButton, title + description, AXPress, focusable") }
     else { fail("\(tab): \(bad.count) tile(s) incomplete: \(bad.prefix(6).joined(separator: "; "))") }
@@ -198,7 +220,74 @@ for tab in tabs {
         if focusedIdentifier() == firstID { pass("\(tab): Shift-Tab returns to \(firstID)") }
         else { fail("\(tab): Shift-Tab went to \"\(focusedIdentifier())\"") }
     }
+
+    // Keyboard walk (APP12-1): Tab from the search field enters the grid; Tab then visits
+    // every tile of the tab once, including those the lazy grid had not realized (they scroll
+    // into view); Tab from the last tile leaves the grid; Shift-Tab from the first tile
+    // returns to the search field.
+    guard let search = first(window, where: { string($0, kAXIdentifierAttribute) == "librarySearch" }) else {
+        fail("\(tab): no search field (librarySearch)"); continue
+    }
+    let realizedAtTop = Set(tiles(in: window).map { string($0, kAXIdentifierAttribute) })
+    func focusSearch() {
+        AXUIElementSetAttributeValue(search, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        wait(0.3)
+    }
+    focusSearch()
+    if focusedIdentifier() != "librarySearch" {
+        fail("\(tab): focusing the search field left focus on \"\(focusedIdentifier())\""); continue
+    }
+    key(48)
+    wait(0.4)
+    let entry = focusedIdentifier()
+    guard entry.hasPrefix("library.") else {
+        fail("\(tab): Tab from the search field went to \"\(entry)\", not to a tile"); continue
+    }
+    pass("\(tab): Tab from the search field enters the grid at \(entry)")
+    var visited: [String] = [entry]
+    var leftTo = ""
+    for _ in 0..<(want.count + 2) {
+        key(48)
+        wait(0.4)
+        let f = focusedIdentifier()
+        if !f.hasPrefix("library.") || visited.contains(f) { leftTo = f; break }
+        visited.append(f)
+    }
+    let visitedSet = Set(visited)
+    let notReached = want.filter { !visitedSet.contains($0) }
+    if notReached.isEmpty, visited.count == want.count {
+        let offscreen = visited.filter { !realizedAtTop.contains($0) }.count
+        unrealizedReached += offscreen
+        pass("\(tab): Tab visits all \(want.count) tiles once (\(offscreen) not realized at the start)")
+    } else {
+        fail("\(tab): Tab visited \(visited.count) of \(want.count) tiles; not reached \(notReached.prefix(6)); stopped at \"\(leftTo)\"")
+    }
+    let lastTile = visited.last ?? entry
+    if leftTo == lastTile {
+        fail("\(tab): Tab from the last tile \(lastTile) left focus there")
+    } else if leftTo.hasPrefix("library.") {
+        fail("\(tab): Tab from the last tile \(lastTile) went back to tile \(leftTo)")
+    } else {
+        pass("\(tab): Tab from the last tile \(lastTile) leaves the grid (to \(focusedDescription()))")
+    }
+    // Back at the top: Shift-Tab from the first tile goes to the search field.
+    focusSearch()
+    key(48)
+    wait(0.4)
+    if focusedIdentifier() == entry {
+        key(48, shift: true)
+        wait(0.4)
+        let back = focusedIdentifier()
+        if back == "librarySearch" { pass("\(tab): Shift-Tab from the first tile \(entry) returns to the search field") }
+        else { fail("\(tab): Shift-Tab from the first tile \(entry) went to \"\(back)\", not to the search field") }
+    } else {
+        fail("\(tab): Tab from the search field went to \"\(focusedIdentifier())\" the second time, not \(entry)")
+    }
 }
+
+// The walk must have crossed the lazy grid's edge somewhere (the check runs a small window).
+if unrealizedReached > 0 { pass("Tab reached \(unrealizedReached) tile(s) the lazy grid had not realized") }
+else { fail("every tile was realized from the start: the walk never crossed the lazy grid's edge (window too tall?)") }
 
 print(failures == 0 ? "ax-audit: all checks passed" : "ax-audit: \(failures) failure(s)")
 exit(Int32(min(failures, 125)))

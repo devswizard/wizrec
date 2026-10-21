@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TSCProjKit
 @testable import PlayerKit
@@ -122,6 +123,18 @@ private let tb = Timebase.camtasia
         #expect(o.openGroup && o.paths == ["p.cmproj"])
         #expect(!o.runsScript && !o.isScripted)
         #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+    }
+
+    @Test func windowSizeParsesWidthByHeight() {
+        let o = LaunchOptions(arguments: ["p.cmproj", "--window-size", "1000x560"])
+        #expect(o.windowSize == CGSize(width: 1000, height: 560) && o.paths == ["p.cmproj"])
+        #expect(!o.runsScript && !o.isScripted)
+        #expect(o != LaunchOptions(arguments: ["p.cmproj"]))
+        #expect(LaunchOptions(arguments: ["--window-size", "1000X560.5"]).windowSize == CGSize(width: 1000, height: 560.5))
+        for bad in ["1000", "0x560", "axb", "1000x560x2", "-5x10"] {
+            #expect(LaunchOptions(arguments: ["--window-size", bad]).windowSize == nil, "\(bad)")
+        }
+        #expect(LaunchOptions(arguments: ["--window-size"]).windowSize == nil)
     }
 
     @Test func groupDropIsAScriptedStep() {

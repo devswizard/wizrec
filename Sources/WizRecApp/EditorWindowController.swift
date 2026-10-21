@@ -90,7 +90,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if renderer == nil { ui.compositorError = "Metal is not available on this Mac." }
         buildLayout(in: window)
         shouldCascadeWindows = false
-        windowFrameAutosaveName = "WizRec.EditorWindow"
+        // `--window-size` runs leave the saved frame alone (no autosave name, no restore).
+        if options.windowSize == nil { windowFrameAutosaveName = "WizRec.EditorWindow" }
 
         timelineModel.onSeek = { [weak self] t in self?.engine.seek(toTicks: t) }
         timelineModel.onDrop = { [weak self] payload, track, ticks in
@@ -187,7 +188,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         top.setHoldingPriority(.defaultLow - 10, forSubviewAt: 1)
         top.setHoldingPriority(.defaultLow + 10, forSubviewAt: 2)
         top.defaultSizes = { size in [250, max(360, size.width - 250 - 290 - 2)] }
-        top.persist(as: "WizRec.EditorSplit.Panes")
+        if options.windowSize == nil { top.persist(as: "WizRec.EditorSplit.Panes") } else { top.useDefaultLayout() }
 
         let root = EditorSplitView()
         root.isVertical = false
@@ -197,7 +198,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
         root.defaultSizes = { size in [max(360, size.height - 230)] }
-        root.persist(as: "WizRec.EditorSplit.Timeline")
+        if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
     }
 
@@ -205,7 +206,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         super.showWindow(sender)
         guard !didAnnounce, let window else { return }
         didAnnounce = true
-        if !window.setFrameUsingName("WizRec.EditorWindow") { window.center() }
+        if let size = options.windowSize {
+            window.setContentSize(size)
+            window.center()
+        } else if !window.setFrameUsingName("WizRec.EditorWindow") {
+            window.center()
+        }
         window.layoutIfNeeded()
         if let root = window.contentView as? EditorSplitView {
             root.applyDefaultsIfNeeded()

@@ -331,7 +331,7 @@ public final class EditorDocumentModel {
     /// keep `AddSource`'s placeholders (100 / -1), which mean "not measured".
     func measureLoudness(info: MediaInfo, src: String) async -> [(track: Int, loudness: SourceLoudness)] {
         let url = bundle.directory.appendingPathComponent(src).standardizedFileURL
-        let rate = audioScene.sampleRate ?? SourceLoudness.defaultMixRate
+        let rate = Self.loudnessRate(projectRate: audioScene.sampleRate)
         var out: [(track: Int, loudness: SourceLoudness)] = []
         for s in info.streams where s.kind == .audio {
             if let m = try? await SourceLoudness.measure(pool: thumbnailPool, url: url, stream: s.index, mixRate: rate) {
@@ -339,6 +339,14 @@ public final class EditorDocumentModel {
             }
         }
         return out
+    }
+
+    /// Rate (Hz) import measures loudness at: the project's `audioFormatSampleRate`, or, when the
+    /// project has no usable rate, the rate such a project is mixed at (`MixFormat`'s 48 kHz, the
+    /// export fallback), which is the rate `AudioMixer` measures unmeasured sources at then
+    /// [WizRec, audio.md §2.1]. Stored and on-the-fly values thus match.
+    static func loudnessRate(projectRate: Double?) -> Double {
+        projectRate ?? MixFormat().sampleRate
     }
 
     /// `SetSourceLoudness` steps for the source added by step `addIndex` of the same compound.
