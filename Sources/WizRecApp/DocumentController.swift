@@ -60,14 +60,68 @@ final class WizRecDocumentController: NSDocumentController {
             return
         }
         do {
-            let doc = try openUntitledDocumentAndDisplay(true)
-            if doc.windowControllers.isEmpty { doc.makeWindowControllers() }
-            let editor = doc.windowControllers.lazy.compactMap { $0 as? EditorWindowController }.first
-            editor?.importFiles([url], place: true, at: 0)
-            completionHandler(doc, false, nil)
+            let editor = try MainActor.assumeIsolated { try newProjectEditor() }
+            MainActor.assumeIsolated { editor?.importFiles([url], place: true, at: 0) }
+            completionHandler(editor?.document as? NSDocument, false, nil)
         } catch {
             completionHandler(nil, false, error)
         }
+    }
+
+    /// A new untitled project, displayed; its editor (nil only if the window did not load).
+    @MainActor
+    func newProjectEditor() throws -> EditorWindowController? {
+        let doc = try openUntitledDocumentAndDisplay(true)
+        if doc.windowControllers.isEmpty { doc.makeWindowControllers() }
+        return doc.windowControllers.lazy.compactMap { $0 as? EditorWindowController }.first
+    }
+
+    /// Opens dropped or chosen files (start screen): each project in its window; all media files
+    /// together in one new project, placed one after another from 0. Other files are reported.
+    @MainActor
+    func openFiles(_ urls: [URL]) {
+        let projects = urls.filter { OpenableFile($0) == .project }
+        let media = urls.filter { OpenableFile($0) == .media }
+        let other = urls.filter { OpenableFile($0) == nil }
+        for url in projects {
+            openDocument(withContentsOf: url, display: true) { _, _, error in
+                if let error { NSApp.presentError(error) }
+            }
+        }
+        if !media.isEmpty {
+            do {
+                try newProjectEditor()?.importFiles(media, place: true, at: 0)
+            } catch {
+                NSApp.presentError(error)
+            }
+        }
+        if !other.isEmpty {
+            let names = other.prefix(5).map(\.lastPathComponent).joined(separator: ", ")
+            let alert = NSAlert()
+            alert.messageText = String(localized: "WizRec can’t open \(names)")
+            alert.informativeText = String(localized: "Drop a .cmproj or .tscproj project, or a video, audio or image file.")
+            alert.runModal()
+        }
+    }
+
+    /// Scripted and timed runs never add to the recent list (`StartScreenPolicy`); opening a
+    /// project again brings it back to the start screen after a Remove from List.
+    override func noteNewRecentDocumentURL(_ url: URL) {
+        MainActor.assumeIsolated {
+            guard StartScreenPolicy.notesRecentDocuments(options: AppEnvironment.options) else { return }
+            let path = url.standardizedFileURL.path
+            var hidden = StartScreenModel.hidden()
+            if hidden.remove(path) != nil {
+                UserDefaults.standard.set(Array(hidden).sorted(), forKey: RecentProjects.hiddenKey)
+            }
+            super.noteNewRecentDocumentURL(url)
+        }
+    }
+
+    override func clearRecentDocuments(_ sender: Any?) {
+        UserDefaults.standard.removeObject(forKey: RecentProjects.hiddenKey)
+        super.clearRecentDocuments(sender)
+        MainActor.assumeIsolated { StartWindowController.reloadIfShown() }
     }
 }
 

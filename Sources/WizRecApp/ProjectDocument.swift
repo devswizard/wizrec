@@ -151,6 +151,7 @@ final class ProjectDocument: NSDocument {
     override func makeWindowControllers() {
         guard let model else { return }
         addWindowController(EditorWindowController(document: self, model: model, options: AppEnvironment.options))
+        StartWindowController.dismissIfShown()
     }
 
     /// Window close (and closing during quit): ask before cancelling running exports, then
@@ -194,6 +195,7 @@ final class ProjectDocument: NSDocument {
         for wc in windowControllers { (wc as? EditorWindowController)?.shutdown() }
         model?.discardUntitled()
         super.close()
+        AppDelegate.documentDidClose()
     }
 
     // MARK: Helpers

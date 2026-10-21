@@ -30,6 +30,8 @@ import Foundation
 /// - `--window-size <w>x<h>`: open editor windows with this content size (points), centered, with
 ///   the default pane layout; the saved window frame and pane layout are neither restored nor
 ///   overwritten (UI checks of small layouts).
+/// - `--start-screen`: show the start screen even in a timed run, and leave the recent-documents
+///   list alone (UI checks of the start screen; `StartScreenPolicy`).
 public struct LaunchOptions: Sendable, Equatable {
     public var paths: [String] = []
     public var autoplay = false
@@ -68,6 +70,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var openGroup = false
     /// Editor window content size in points (`--window-size`); nil = the saved or default frame.
     public var windowSize: CGSize?
+    /// Show the start screen although the run is timed (`--start-screen`, UI checks).
+    public var startScreen = false
 
     public init() {}
 
@@ -93,6 +97,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
             && a.groupDropPaths == b.groupDropPaths && a.openGroup == b.openGroup && a.windowSize == b.windowSize
+            && a.startScreen == b.startScreen
     }
 
     /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
@@ -134,6 +139,7 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--group-drop": if let v = value() { groupDropPaths.append(v) }
             case "--open-group": openGroup = true
             case "--window-size": windowSize = Self.size(value())
+            case "--start-screen": startScreen = true
             default:
                 if a.hasPrefix("-psn_") { break }
                 // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,

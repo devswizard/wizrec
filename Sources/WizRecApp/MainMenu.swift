@@ -152,6 +152,9 @@ enum MainMenu {
         let window = NSMenu(title: String(localized: "Window"))
         window.addItem(withTitle: String(localized: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: String(localized: "Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        window.addItem(.separator())
+        window.addItem(withTitle: String(localized: "Start Screen"), action: #selector(AppDelegate.showStartScreen(_:)),
+                       keyEquivalent: "1").keyEquivalentModifierMask = [.command, .shift]
         add(window, to: main)
         NSApplication.shared.windowsMenu = window
 

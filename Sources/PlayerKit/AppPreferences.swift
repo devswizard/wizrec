@@ -17,6 +17,7 @@ public struct AppPreferences: Sendable, Equatable {
     public enum Key {
         public static let onboardingCompleted = "WizRec.OnboardingCompleted"
         public static let showWelcomeAtLaunch = "WizRec.ShowWelcomeAtLaunch"
+        public static let showStartScreenAtLaunch = "WizRec.ShowStartScreenAtLaunch"
         public static let crashLogsEnabled = "WizRec.CrashLogsEnabled"
         public static let playAudio = "WizRec.PlayAudio"
         public static let framePolicy = "WizRec.FramePolicy"
@@ -29,6 +30,9 @@ public struct AppPreferences: Sendable, Equatable {
     /// The welcome window was finished once (it then shows only if `showWelcomeAtLaunch`).
     public var onboardingCompleted = false
     public var showWelcomeAtLaunch = false
+    /// Show the start screen (recent projects, New Project, New Recording…) when a launch opens
+    /// no project; off shows the open panel instead (`launchWindow(for:)`).
+    public var showStartScreenAtLaunch = true
     /// Opt-in: write crash reports to `~/Library/Logs/WizRec` (local only, never sent).
     public var crashLogsEnabled = false
     public var playAudio = true
@@ -47,6 +51,7 @@ public struct AppPreferences: Sendable, Equatable {
         func bool(_ k: String, _ v: inout Bool) { if defaults.object(forKey: k) != nil { v = defaults.bool(forKey: k) } }
         bool(Key.onboardingCompleted, &p.onboardingCompleted)
         bool(Key.showWelcomeAtLaunch, &p.showWelcomeAtLaunch)
+        bool(Key.showStartScreenAtLaunch, &p.showStartScreenAtLaunch)
         bool(Key.crashLogsEnabled, &p.crashLogsEnabled)
         bool(Key.playAudio, &p.playAudio)
         bool(Key.showPerformanceOverlay, &p.showPerformanceOverlay)
@@ -59,6 +64,7 @@ public struct AppPreferences: Sendable, Equatable {
     public func save(to defaults: UserDefaults) {
         defaults.set(onboardingCompleted, forKey: Key.onboardingCompleted)
         defaults.set(showWelcomeAtLaunch, forKey: Key.showWelcomeAtLaunch)
+        defaults.set(showStartScreenAtLaunch, forKey: Key.showStartScreenAtLaunch)
         defaults.set(crashLogsEnabled, forKey: Key.crashLogsEnabled)
         defaults.set(playAudio, forKey: Key.playAudio)
         defaults.set(framePolicy.rawValue, forKey: Key.framePolicy)

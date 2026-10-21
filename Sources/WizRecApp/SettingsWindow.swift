@@ -42,12 +42,18 @@ struct SettingsView: View {
 }
 
 private struct GeneralSettings: View {
+    @AppStorage(AppPreferences.Key.showStartScreenAtLaunch) private var showStartScreen = true
     @AppStorage(AppPreferences.Key.showWelcomeAtLaunch) private var showWelcome = false
     @AppStorage(AppPreferences.Key.warnUnsignedBackgrounds) private var warnBackgrounds = true
 
     var body: some View {
         Form {
-            Toggle("Show the welcome window at launch", isOn: $showWelcome)
+            Toggle("Show start screen at launch", isOn: $showStartScreen)
+                .accessibilityIdentifier("settings.general.startScreen")
+            Text("Recent projects, New Project, New Recording and Open. When off, launching shows the Open panel.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("Show Start Screen") { StartWindowController.shared.present() }
+            Toggle("Show the introduction at launch", isOn: $showWelcome)
             Button("Show Welcome Window") { WelcomeWindowController.shared.present() }
             Toggle("When saving, say that Camtasia won't show WizRec backgrounds", isOn: $warnBackgrounds)
                 .accessibilityIdentifier("settings.general.warnBackgrounds")

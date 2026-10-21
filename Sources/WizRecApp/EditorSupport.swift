@@ -50,7 +50,7 @@ enum MediaDrop: Equatable {
 
 /// Editor window: routes Undo/Redo to the project's undo history unless a text field
 /// is being edited (then the field editor's own undo applies).
-final class EditorWindow: NSWindow {
+final class EditorWindow: NSWindow, NSToolbarItemValidation {
     weak var editor: EditorWindowController?
     private let fieldUndo = UndoManager()
 
@@ -79,6 +79,13 @@ final class EditorWindow: NSWindow {
             return name != nil
         }
         return super.validateUserInterfaceItem(item)
+    }
+
+    /// Undo/Redo toolbar items: the same rules as the Edit menu (other items reach the
+    /// controller, which `NSToolbarItem` asks itself).
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        if item.action == #selector(undo(_:)) || item.action == #selector(redo(_:)) { return validateUserInterfaceItem(item) }
+        return true
     }
 }
 
