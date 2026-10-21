@@ -9,15 +9,18 @@ through the Mac App Store, whose terms conflict with the GPL.
 ## Status (2026-10-20)
 
 - **Bundle ID** `com.devswizard.WizRec` (decided 2026-10-20; `WIZREC_BUNDLE_ID` overrides).
-- **Sparkle 2** is in the app (approved 2026-10-20). The updater is off unless the build sets
-  a feed URL and public key (see "Sparkle").
-- **Signing.** No Developer ID exists yet. Local releases are ad-hoc or signed with the
-  self-signed "WizRec Dev" identity (no hardened runtime, no notarization); they run on this
-  Mac, and elsewhere only after the user overrides Gatekeeper.
-- **Still waiting on the user:** the GitHub remote, a Developer ID Application certificate
-  and a notary profile, and the update host (feed + download URLs) and Sparkle key pair. The
-  scripts and workflows already work without them and pick them up from the environment (or
-  repository secrets/variables) once they exist; nothing needs editing.
+- **Sparkle 2** is in the app (approved 2026-10-20). The feed is prepared
+  (`release/sparkle.conf`, appcast `release/appcast.xml` on `main`), but the updater stays off
+  until the public key is filled in (see "Sparkle: turning updates on").
+- **Signing.** No Apple Developer account (DECISIONS 2026-10-20): releases are ad-hoc signed
+  and never notarized; users confirm the first launch (README). The Developer ID paths below
+  stay for a future account.
+- **Publishing** is automated: `release/publish` on `main` → `publish.yml` (see "Publishing
+  a release"). **v0.1.0 is public** since 2026-10-20 23:03 UTC (Publish run 39512345012).
+  Checked afterwards without a token: `shasum -a 256 -c` OK, `verify-dmg.sh` OK (with
+  `WIZREC_ALLOW_BUILD_RPATHS=1`: one Xcode 26.6 back-deploy run path in the executable),
+  launch from the mounted DMG on a temp copy of the demo project with `--quit-after 5`: exit 0.
+- **Still waiting on the user:** the Sparkle key pair (one command, below).
 
 ## Prerequisites
 
@@ -34,7 +37,12 @@ scripts/release/verify-dmg.sh build/WizRec-0.1.0.dmg            # smoke-test an 
 ```
 
 `verify-dmg.sh` mounts the image read-only (hidden from Finder), checks the bundle ID, the
-strict signature, the embedded `Sparkle.framework` and that nothing links into Homebrew, then
+strict signature, the embedded `Sparkle.framework`, and the load paths (`otool -L`) and run
+paths (`LC_RPATH`, `otool -l`) of **every Mach-O in the bundle**: each must be
+`@rpath`/`@loader_path`/`@executable_path` or under `/usr/lib` or `/System`, so nothing points
+into Homebrew, `/usr/local`, Xcode or the Command Line Tools. (`WIZREC_ALLOW_BUILD_RPATHS=1`
+reports run paths as warnings instead, for DMGs built before bundle-dylibs.sh stripped them:
+v0.1.0 carries Xcode's back-deploy run path, which is harmless but untidy.) It then
 launches the app from the image with `--quit-after 5` and expects a clean exit. Measured
 2026-10-20: 21 MB DMG, launch-and-quit in 6–7 s, both ad-hoc and "WizRec Dev". On macOS 27
 with `diskutil image` (APFS, ULFO): 20.9 MB (UDZO via hdiutil: 22.1 MB), launch-and-quit
@@ -61,8 +69,10 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | `WIZREC_BUNDLE_ID` | `make-app.sh`, `verify-dmg.sh` | `CFBundleIdentifier`; default `com.devswizard.WizRec` |
 | `WIZREC_SIGN_IDENTITY` | `sign.sh` | Codesign identity in the keychain; unset → ad-hoc (`-`). `Developer ID Application: …` → hardened runtime, timestamp, entitlements. Any other identity (self-signed "WizRec Dev") → plain signature, because library validation needs a Team ID |
 | `WIZREC_HARDENED=1` | `sign.sh` | Force hardened runtime for a non-Developer-ID identity |
-| `WIZREC_SPARKLE_FEED` | `make-app.sh` (`sparkle-info.sh`) | Appcast URL (`https://` only) → `SUFeedURL`. Set both Sparkle values or neither; one alone or an invalid value fails the build |
-| `WIZREC_SPARKLE_PUBKEY` | `make-app.sh` (`sparkle-info.sh`) | EdDSA public key (base64, 32 bytes) → `SUPublicEDKey` |
+| `WIZREC_SPARKLE_FEED` | `make-app.sh` (`sparkle-info.sh`) | Appcast URL (`https://` only) → `SUFeedURL`. Together with `WIZREC_SPARKLE_PUBKEY` it overrides `release/sparkle.conf`; one of the two alone, or an invalid value, fails the build |
+| `WIZREC_SPARKLE_PUBKEY` | `make-app.sh` (`sparkle-info.sh`) | EdDSA public key (base64, 32 bytes) → `SUPublicEDKey`. Neither variable set and no key in `release/sparkle.conf` → updater off |
+| `WIZREC_SPARKLE_CONF` | `sparkle-info.sh`, `update-appcast.sh` | Another config file instead of `release/sparkle.conf` |
+| `WIZREC_ALLOW_BUILD_RPATHS=1` | `verify-dmg.sh` | Run paths outside the bundle are warnings, not errors (DMGs built before 2026-10-20, e.g. v0.1.0) |
 | `NOTARIZE=1` | `release.sh` | Notarize and staple app and DMG. Without `WIZREC_SIGN_IDENTITY` it is skipped with a warning (ad-hoc builds cannot be notarized) |
 | `WIZREC_NOTARY_PROFILE` | `notarize.sh` | `notarytool` keychain profile name; required when notarizing |
 | `SPARKLE=1` | `release.sh` | Write a signed appcast after the DMG (`appcast.sh`) |
@@ -78,7 +88,7 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `scripts/make-app.sh` (`CONFIG=release`) | `swift build -c release`, wraps `build/WizRec.app`, copies SwiftPM resource bundles (fonts) into `Contents/Resources`, embeds `Sparkle.framework` in `Contents/Frameworks` (+ `@executable_path/../Frameworks` run path, Sparkle licence), writes the Sparkle keys into Info.plist when set |
-| 2 | `scripts/release/bundle-dylibs.sh` | Copies Homebrew FFmpeg **and every transitive dylib** (x264, x265, LAME, dav1d, libvpx, opus, SVT-AV1, OpenSSL, …) into `Contents/Frameworks`, rewrites install names to `@rpath/…`, adds `@executable_path/../Frameworks`, copies each library's licence files into `Contents/Resources/Licenses/<formula>/` with `MANIFEST.txt`, fails if anything still points into `/opt/homebrew` |
+| 2 | `scripts/release/bundle-dylibs.sh` | Copies Homebrew FFmpeg **and every transitive dylib** (x264, x265, LAME, dav1d, libvpx, opus, SVT-AV1, OpenSSL, …) into `Contents/Frameworks`, rewrites install names to `@rpath/…`, adds `@executable_path/../Frameworks`, copies each library's licence files into `Contents/Resources/Licenses/<formula>/` with `MANIFEST.txt`, removes run paths into the build machine (`install_name_tool -delete_rpath`: Xcode's Swift back-deploy path `…/XcodeDefault.xctoolchain/usr/lib/swift-6.x/macosx`, Homebrew, `/usr/local`) from the executable and the dylibs before anything is signed, fails if any load or run path still points into Homebrew or a toolchain |
 | 3 | `scripts/release/sign.sh` | Signs the dylibs, then Sparkle inside out (`Installer.xpc`, `Downloader.xpc` keeping its entitlements, `Autoupdate`, `Updater.app`, the framework), then the app. Developer ID: hardened runtime, timestamp, `WizRec.entitlements` (camera, microphone). Self-signed: plain. No identity: ad-hoc |
 | 4 | `scripts/release/notarize.sh` | `notarytool submit --wait` with a keychain profile, then `stapler staple` and `spctl` |
 | 5 | `scripts/release/make-dmg.sh` | Read-only image with the app, an `/Applications` link, `LICENSE.txt` and `THIRD_PARTY_NOTICES.md`: `diskutil image create from` (APFS, lzfse `ULFO`) where available, else `hdiutil create` (HFS+, zlib `UDZO`); checksum-verified with `hdiutil verify` (not deprecated) |
@@ -139,48 +149,88 @@ touches the network, the menu item is disabled, and one line goes to stderr. Scr
 (`--quit-after`) never start it. Sparkle itself asks the user on the second launch whether to
 check automatically, so update checks are opt-in.
 
-**Build-time configuration.** The feed URL and the public key come from the environment:
+**Feed host.** The appcast is `release/appcast.xml` in this repository, served from `main`
+by raw.githubusercontent.com:
+`https://raw.githubusercontent.com/devswizard/wizrec/main/release/appcast.xml`. Chosen
+(2026-10-20) because it needs no web host, no GitHub Pages or other settings change and no
+token: updating the feed is an ordinary commit, reviewed and kept in history. The DMGs stay
+on the public releases
+(`https://github.com/devswizard/wizrec/releases/download/<tag>/WizRec-<version>.dmg`).
+The alternative, an `appcast.xml` release asset behind `releases/latest/download/appcast.xml`,
+was rejected: every release would have to re-attach the whole history, one release without
+the asset breaks the feed, and "latest" moves with each publish. raw.githubusercontent.com
+caches for about 5 minutes, which does not matter for update checks. Sparkle verifies every
+DMG with the EdDSA key, and `update-appcast.sh` also signs the feed file itself, so the host
+is not trusted with integrity.
 
-```sh
-WIZREC_SPARKLE_FEED=https://<host>/wizrec/appcast.xml \
-WIZREC_SPARKLE_PUBKEY=<base64 public key> \
-scripts/release.sh
+**Build-time configuration.** One committed file, `release/sparkle.conf`, holds both public
+values:
+
+```
+feed_url = https://raw.githubusercontent.com/devswizard/wizrec/main/release/appcast.xml
+public_ed_key =
 ```
 
-`scripts/release/sparkle-info.sh` validates them and prints the Info.plist entries; with
-neither set the build has no updater keys. In CI they are repository **variables** (public
-values), not secrets.
+`scripts/release/sparkle-info.sh` (called by `make-app.sh`) reads it and prints the
+Info.plist entries `SUFeedURL` and `SUPublicEDKey`. With `public_ed_key` empty, the committed
+state, it prints nothing and the updater stays off, as in v0.1.0. `WIZREC_SPARKLE_FEED` /
+`WIZREC_SPARKLE_PUBKEY` in the environment (or as repository variables in CI) override the
+file as a pair; one of them alone, a key in the file without a feed, a non-https feed or a
+key that is not 32 bytes of base64 fails the build. `UpdaterConfigurationTests` cover the
+file and the variables (hermetically: they never read the committed file, except one check
+that it always yields nothing or a valid pair).
 
-**Key generation (once, maintainer machine).** Sparkle's tools come with the SwiftPM
-artifact after `swift build`:
+**Sparkle: turning updates on (once, the user, on the maintainer Mac).** The only manual
+step: it creates the private key in the login keychain, which no agent or workflow may do.
+
+1. `swift build` (fetches Sparkle's tools), then:
+
+   ```sh
+   .build/artifacts/sparkle/Sparkle/bin/generate_keys
+   ```
+
+   It creates the key pair in the login keychain (account `ed25519`) and prints the public
+   key; `generate_keys -p` prints it again later.
+2. Back up the private key offline (`generate_keys -x <file>`; keep the file somewhere safe
+   outside the repository, never commit it). Losing it means existing installs can never
+   verify another update.
+3. Put the printed public key into `release/sparkle.conf` (`public_ed_key = <key>`), commit
+   and push to `main`.
+4. Every release built after that commit (tag → `release.yml`) has the updater on.
+
+**Per release, after it is public:**
 
 ```sh
-SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
-$SPARKLE_BIN/generate_keys            # creates the key pair in the login keychain, prints the public key
-$SPARKLE_BIN/generate_keys -p         # prints the public key again
-$SPARKLE_BIN/generate_keys -x sparkle-private.key   # export for CI or a backup; never commit it
+scripts/release/update-appcast.sh v0.2.0
+git add release/appcast.xml && git commit -m "Appcast: v0.2.0"   # then push to main
 ```
 
-Keep an offline backup of the private key: losing it means existing installs can no longer
-verify updates. For CI, store the exported file's content as the secret
-`SPARKLE_ED_PRIVATE_KEY`, then delete the file.
+`update-appcast.sh` downloads the public DMG and `SHA256SUMS.txt` without a token, checks the
+sum, reads `CFBundleVersion`, the short version and `LSMinimumSystemVersion` from the app in
+the DMG, signs the DMG with Sparkle's `sign_update` (which reads the private key from the
+keychain itself; the script never reads, prints or stores it; `SPARKLE_KEY_FILE` passes a key
+file on stdin instead), checks the signature against `public_ed_key` with openssl, and fails
+on a mismatch or when the app inside carries a different `SUPublicEDKey`. It then writes the
+item (download URL, length, `sparkle:edSignature`, release-notes link to the GitHub release),
+replacing an earlier item of the same version, newest first, and signs the feed file
+(`SIGN_FEED=0` skips that). Re-running it for the same tag leaves one item. Sparkle compares
+`CFBundleVersion` (the commit count of `HEAD`), so releases are built from `main`. Checked
+2026-10-20 with a throwaway openssl test key (never the keychain) against a local copy of the
+DMG: one item after two runs, feed and DMG signatures verify with `sign_update --verify`, a
+wrong public key and the committed (empty) key both fail.
 
-**Appcast generation.**
+**Other host (optional).** For a feed elsewhere, set `feed_url` (or the variables) and use
+`scripts/release/appcast.sh`, which runs `generate_appcast` over `build/updates/` (keep
+earlier DMGs there) and refuses to sign when the app's `SUPublicEDKey` does not match:
 
 ```sh
-VERSION=0.2.0 \
-WIZREC_SPARKLE_FEED=https://<host>/wizrec/appcast.xml WIZREC_SPARKLE_PUBKEY=<public key> \
-WIZREC_DOWNLOAD_PREFIX=https://<host>/wizrec/ SPARKLE=1 \
-scripts/release.sh
+VERSION=0.2.0 WIZREC_DOWNLOAD_PREFIX=https://<host>/wizrec/ SPARKLE=1 scripts/release.sh
 ```
 
-`scripts/release/appcast.sh` copies the DMG into `build/updates/` (keep earlier DMGs there
-for the release history) and runs `generate_appcast`, which signs each item with the private
-key from the keychain (or `SPARKLE_KEY_FILE`, read from stdin) and refuses to sign when the
-app's `SUPublicEDKey` does not match the key. Upload `appcast.xml` to the feed URL and the DMG
-under the download prefix. Sparkle compares `CFBundleVersion` (the commit count of `HEAD`),
-so build releases from `main`. Checked 2026-10-20 end to end with a throwaway key:
-self-signed build, appcast item with `sparkle:edSignature`, `sign_update --verify` OK.
+In CI, `release.yml` does this when the secret `SPARKLE_ED_PRIVATE_KEY` (the exported key)
+and the variables `WIZREC_SPARKLE_FEED`, `WIZREC_DOWNLOAD_PREFIX` exist. Checked 2026-10-20
+end to end with a throwaway key: self-signed build, appcast item with `sparkle:edSignature`,
+`sign_update --verify` OK.
 
 **Signing order.** `sign.sh` re-signs Sparkle's helpers inside out before the app (see
 step 3). With a Developer ID the hardened runtime applies to them too, as Sparkle documents
@@ -250,8 +300,14 @@ No Apple Developer account: releases are ad-hoc signed and never notarized.
      (mount, signature, load paths, launch with `--quit-after 5`);
    - only then sets `draft: false` (marked latest) and reads the release back.
 
+   The request line may add `allow-build-rpaths` after the tag (`v0.1.0 allow-build-rpaths`):
+   `verify-dmg.sh` then reports run paths outside the bundle as warnings. Only for DMGs built
+   before 2026-10-20 (v0.1.0 carries Xcode's Swift back-deploy run path); never for a new
+   release.
+
    By hand: *Actions ▸ Publish release ▸ Run workflow*, with an optional tag (default: the
-   one in `release/publish`) and *dry run* (every check, the draft stays a draft).
+   one in `release/publish`), *dry run* (every check, the draft stays a draft) and *allow
+   build run paths*.
    Locally the same script works with any token that has push access:
    `GH_TOKEN=… DRY_RUN=1 scripts/release/publish-release.sh v0.1.0` (curl and python3; no
    `gh`). The token goes to curl through a config on stdin, never on a command line or
