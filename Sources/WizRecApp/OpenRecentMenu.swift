@@ -9,7 +9,8 @@ final class OpenRecentMenu: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let urls = NSDocumentController.shared.recentDocumentURLs
+        // Without the projects removed from the start screen's list.
+        let urls = StartScreenModel.visibleRecents()
         for entry in RecentDocuments.entries(urls) {
             let item = NSMenuItem(title: entry.title, action: #selector(openRecent(_:)), keyEquivalent: "")
             item.target = self

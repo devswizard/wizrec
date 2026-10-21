@@ -4,9 +4,9 @@ import SwiftUI
 
 /// First-launch onboarding (Help ▸ Welcome to WizRec): what WizRec does, the permissions
 /// recording asks for, and the crash-report opt-in. Finishing it sets
-/// `AppPreferences.onboardingCompleted`.
+/// `AppPreferences.onboardingCompleted`. Closing it with no project open shows the start screen.
 @MainActor
-final class WelcomeWindowController: NSWindowController {
+final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     static let shared = WelcomeWindowController()
 
     private init() {
@@ -17,6 +17,7 @@ final class WelcomeWindowController: NSWindowController {
         window.title = String(localized: "Welcome to WizRec")
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
         window.contentViewController = NSHostingController(rootView: WelcomeView(finish: { [weak self] action in
             self?.finish(action)
         }))
@@ -32,6 +33,12 @@ final class WelcomeWindowController: NSWindowController {
     }
 
     enum Action { case close, newProject, open }
+
+    /// Closed (Get Started or the close button) with no project open: the start screen.
+    func windowWillClose(_ notification: Notification) {
+        guard !AppEnvironment.terminating, NSDocumentController.shared.documents.isEmpty else { return }
+        DispatchQueue.main.async { StartWindowController.shared.present() }
+    }
 
     private func finish(_ action: Action) {
         UserDefaults.standard.set(true, forKey: AppPreferences.Key.onboardingCompleted)
@@ -75,8 +82,8 @@ struct WelcomeView: View {
                 if page < pages - 1 {
                     Button("Continue") { page += 1 }.keyboardShortcut(.defaultAction)
                 } else {
-                    Button("Open Project…") { finish(.open) }
-                    Button("New Project") { finish(.newProject) }.keyboardShortcut(.defaultAction)
+                    Button("Get Started") { finish(.close) }.keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("welcome.getStarted")
                 }
             }
             .padding(20)
