@@ -82,18 +82,20 @@ import TSCProjKit
     let fast = SetClipSpeed(clipID: 13, speed: Rational(3, 2))
     try expectReversible(fast, on: p)
     try fast.apply(to: p)
-    // 100 / 1.5 = 66.67 → 66 frames; mediaDuration = 66 / (2/3) = 99.
+    // 100 / 1.5 = 66.67 → 66 frames; mediaDuration stays 100, scalar = 66/100 (ED2b).
     let clip = try #require(p.tracks[0].clips.first)
     for part in [clip, try #require(clip.video), try #require(clip.audio)] {
-        #expect(part.scalar == Rational(2, 3) && part.duration == 66 && part.mediaDuration == Rational(99))
-        #expect(part.object["scalar"] == .string("2/3"))
+        #expect(part.scalar == Rational(33, 50) && part.duration == 66 && part.mediaDuration == Rational(100))
+        #expect(part.object["scalar"] == .string("33/50"))
+        #expect(part.object["mediaDuration"]?.int == 100)
     }
     #expect(clip.metadata?["clipSpeedAttribute"]?.object?["value"]?.bool == true)
     #expect(clip.metadata?["effectApplied"]?.string == "Clip Speed")
 
-    let odd = SetClipSpeed(clipID: 20, speed: Rational(7, 3))  // 10 × 3/7 = 4.28 → 4; md = 4 × 7/3
+    let odd = SetClipSpeed(clipID: 20, speed: Rational(7, 3))  // 10 × 3/7 = 4.28 → 4; md kept, scalar 4/10
     try odd.apply(to: p)
-    #expect(p.tracks[0].clips[1].object["mediaDuration"] == .string("28/3"))
+    #expect(p.tracks[0].clips[1].object["mediaDuration"]?.int == 10)
+    #expect(p.tracks[0].clips[1].object["scalar"] == .string("2/5"))
 
     // Slowing down into the neighbour throws unless rippled.
     try fast.revert(on: p)
