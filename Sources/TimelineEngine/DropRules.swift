@@ -72,12 +72,13 @@ public struct DropPlacement: Sendable, Equatable {
 @MainActor
 public enum DropRules {
     /// How far after a clip's start (seconds) a busy drop still inserts at that
-    /// start, inclusive [WizRec]. Camtasia inserted at 0.3 s, 1 s and ≈ 1.7 s
-    /// after a start, and made a new track at ≈ 2.7 s (group-edits.md §8.7: d5,
-    /// d4, g4, g2; the exact bound is [?]); 2 s covers every observed insert. The
-    /// drop must also lie in the clip's first half, so a drop near a short clip's
-    /// end does not insert before it [WizRec].
-    public static let insertWindowSeconds: Int64 = 2
+    /// start, inclusive [WizRec]. Camtasia's bound is [?] (group-edits.md §8.7):
+    /// it inserted ≈ 0.3 s and ≈ 0.7–1 s after a start (d5, d4), made new tracks
+    /// ≈ 1.7 s and ≈ 2.7 s in (d3, g2), and both inserted (g4) and added nothing
+    /// (g3) ≈ 1.7 s in. 1 s matches all but g4. The drop must also lie in the
+    /// clip's first half, so a drop near a short clip's end does not insert
+    /// before it [WizRec].
+    public static let insertWindowSeconds: Int64 = 1
 
     /// The default insert window in ticks of `project`'s timebase.
     public static func insertWindow(in project: Project) -> Int64 {
