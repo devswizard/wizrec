@@ -44,7 +44,7 @@ import TSCProjKit
         // No handler: refused.
         m.onLibraryDrop = nil
         #expect(c.appLibraryDrop((TimelineView.calloutType, "callout-a"), at: p) == nil)
-        #expect(TimelineView.appLibraryTypes.count == 4)
+        #expect(TimelineView.appLibraryTypes.count == 5)
     }
 
     @Test func transitionOnBothEdgesOfAClipIsOneStep() throws {

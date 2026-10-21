@@ -1,4 +1,5 @@
 import AppKit
+import Captions
 import PlayerKit
 import TimelineEngine
 import TimelineUI
@@ -8,7 +9,7 @@ import WizRecAssets
 /// A library tile being dragged: what kind, from its pasteboard type (ui-workflow.md §4).
 @MainActor
 enum LibraryDragKind: CaseIterable {
-    case effect, transition, callout, background, audio, animation
+    case effect, transition, callout, background, audio, animation, captionStyle
 
     var type: NSPasteboard.PasteboardType {
         switch self {
@@ -18,12 +19,13 @@ enum LibraryDragKind: CaseIterable {
         case .background: TimelineView.backgroundType
         case .audio: TimelineView.audioItemType
         case .animation: TimelineView.animationType
+        case .captionStyle: TimelineView.captionStyleType
         }
     }
 
     /// Effects, transitions, audio effects and animations go onto a clip; annotations and
     /// backgrounds onto the canvas or timeline at a time.
-    var needsClip: Bool { [.effect, .transition, .audio, .animation].contains(self) }
+    var needsClip: Bool { [.effect, .transition, .audio, .animation, .captionStyle].contains(self) }
 
     static var types: [NSPasteboard.PasteboardType] { allCases.map(\.type) }
 
@@ -78,6 +80,15 @@ extension EditorWindowController {
             return applyAudioItem(item)
         case .animation:
             return false   // TimelineEngine `AddAnimation` (TL15-2) not merged yet
+        case .captionStyle:
+            // A dynamic caption style onto a clip with audio: transcribe it if needed, then add the
+            // caption over it (ui-workflow.md §4).
+            guard let clip, let index = DynamicCaptionPreset.all.firstIndex(where: { $0.presetID == name }),
+                  !CaptionTarget.find(in: model.project, selection: [clip]).isEmpty else { return false }
+            guard perform else { return true }
+            select([clip])
+            addDynamicCaptions(presetIndex: index)
+            return true
         }
     }
 

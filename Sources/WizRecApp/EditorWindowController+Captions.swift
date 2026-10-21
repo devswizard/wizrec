@@ -32,7 +32,7 @@ extension EditorWindowController {
     /// Transcribes `targets` one by one (each one undo step); returns how many succeeded.
     /// Problems and cancellation are reported above the canvas.
     @discardableResult
-    private func transcribe(_ targets: [CaptionTarget]) async -> Int {
+    func transcribe(_ targets: [CaptionTarget]) async -> Int {
         defer { transcription = nil; ui.activity = nil }
         let backend = TranscriptionBackends.preferred()
         let language = AppPreferences.load(from: .standard).transcriptionLanguage
@@ -110,8 +110,12 @@ extension EditorWindowController {
     /// Camtasia does. The audio it shows (the selected audio clips, else those under the playhead)
     /// is transcribed first when it has no words yet.
     @objc func addDynamicCaptions(_ sender: Any?) {
+        addDynamicCaptions(presetIndex: ((sender as? NSMenuItem)?.representedObject as? Int) ?? 0)
+    }
+
+    /// `addDynamicCaptions(_:)` with preset `index` into `DynamicCaptionPreset.all` (style tiles).
+    func addDynamicCaptions(presetIndex index: Int) {
         let all = DynamicCaptionPreset.all
-        let index = ((sender as? NSMenuItem)?.representedObject as? Int) ?? 0
         let preset = all.indices.contains(index) ? all[index] : .arial2LineDarkBackground
         let ticks = engine.currentTicks
         let seconds = Double(ticks) / Double(model.project.timebase.editRate)
@@ -143,6 +147,105 @@ extension EditorWindowController {
         }
         for t in targets {
             run(String(localized: "Add Captions")) { try model.perform(AddEmptyCaptions(clipID: t.clipID)) }
+        }
+    }
+
+    /// Captions ▸ Generate Captions from Speech: transcribes the selected clips with audio (once
+    /// per recording) when they have no words yet, then writes classic captions from the words
+    /// (`CaptionDrafting`: short cues on each clip's span), replacing captions they overlap. One
+    /// undo step ("Generate Captions").
+    @objc func generateCaptions(_ sender: Any?) {
+        let clips = CaptionTarget.find(in: model.project, selection: timelineModel.selection, perSourceTrack: false)
+        guard !clips.isEmpty else {
+            ui.show(String(localized: "Select an audio clip, or a clip with audio, on the timeline."))
+            return
+        }
+        let sources = CaptionTarget.find(in: model.project, selection: timelineModel.selection)
+        let untranscribed = sources.filter { Transcript.words(in: model.project, sourceID: $0.sourceID, track: $0.track).isEmpty }
+        guard !untranscribed.isEmpty else { writeDraftedCaptions(clips); return }
+        transcription = Task { [weak self] in
+            guard let self, await self.transcribe(untranscribed) == untranscribed.count else { return }
+            self.writeDraftedCaptions(clips)
+        }
+    }
+
+    private func writeDraftedCaptions(_ targets: [CaptionTarget]) {
+        let rate = model.project.timebase.editRate
+        var steps: [CompoundCommand.Builder] = []
+        var count = 0
+        for t in targets {
+            // The top-level clip maps media time to the timeline (also for UnifiedMedia).
+            guard let span = model.project.tracks.flatMap(\.clips).first(where: { $0.id == t.clipID }) else { continue }
+            let words = Transcript.words(in: model.project, sourceID: t.sourceID, track: t.track)
+                .map { CaptionDrafting.Word(text: $0.text, start: $0.start, end: $0.end) }
+            let cues = CaptionDrafting.cues(words: words, clip: span, editRate: rate)
+                .map { CaptionCue(start: $0.start, end: $0.end, text: $0.text) }
+            guard !cues.isEmpty else { continue }
+            count += cues.count
+            let id = t.clipID
+            steps.append { _, _ in AddCaptions(cues: cues, clipID: id) }
+        }
+        guard !steps.isEmpty else {
+            ui.show(String(localized: "No speech was found in the selected audio."))
+            return
+        }
+        run(String(localized: "Generate Captions")) {
+            try model.perform(CompoundCommand(name: String(localized: "Generate Captions"), steps))
+        }
+        ui.show(String(localized: "Added \(count) captions. Edit them in the Captions tab."))
+    }
+
+    /// Captions panel ▸ Add Caption at Playhead: a 3 s caption (shorter before the next one or
+    /// the clip's end) on the audio clip under the playhead, with placeholder text to edit.
+    func addCaptionAtPlayhead() {
+        let ticks = engine.currentTicks
+        let tb = model.project.timebase
+        let at = tb.seconds(ticks)
+        guard let target = CaptionTarget.under(ticks: ticks, in: model.project).first,
+              let clip = model.project.tracks.flatMap(\.clips).first(where: { $0.id == target.clipID }) else {
+            ui.show(String(localized: "Move the playhead over a clip with audio to add a caption there."))
+            return
+        }
+        let existing = ClassicCaptions.cues(in: model.project).map { CaptionDrafting.Cue(start: $0.start, end: $0.end, text: $0.text) }
+        guard let cue = CaptionDrafting.newCue(at: at, clipStart: tb.seconds(clip.start), clipEnd: tb.seconds(clip.end),
+                                               existing: existing, text: String(localized: "New caption")) else {
+            ui.show(String(localized: "There is already a caption at the playhead."))
+            return
+        }
+        run(String(localized: "Add Caption")) {
+            try model.perform(AddCaptions(cues: [CaptionCue(start: cue.start, end: cue.end, text: cue.text)], clipID: clip.id))
+        }
+    }
+
+    /// Captions panel: the text of caption `cue` changed (one undo step, "Edit Caption").
+    func setCaptionText(_ cue: CaptionCue, _ text: String) {
+        guard text != cue.text else { return }
+        run(String(localized: "Edit Caption")) {
+            try model.perform(CompoundCommand(name: String(localized: "Edit Caption"),
+                                              [{ _, _ in AddCaptions(cues: [CaptionCue(start: cue.start, end: cue.end, text: text)]) }]))
+        }
+    }
+
+    /// The Captions tab's actions.
+    func captionActions() -> CaptionActions {
+        CaptionActions(
+            generate: { [weak self] in self?.generateCaptions(nil) },
+            addAtPlayhead: { [weak self] in self?.addCaptionAtPlayhead() },
+            importFile: { [weak self] in self?.importCaptions(nil) },
+            exportSRT: { [weak self] in self?.exportCaptionsSRT(nil) },
+            setText: { [weak self] cue, text in self?.setCaptionText(cue, text) },
+            delete: { [weak self] cue in self?.deleteCaption(cue) },
+            seek: { [weak self] s in
+                guard let self else { return }
+                self.engine.seek(toTicks: self.model.project.timebase.ticks(seconds: s))
+            })
+    }
+
+    /// Captions panel: removes caption `cue` (one undo step).
+    func deleteCaption(_ cue: CaptionCue) {
+        run(String(localized: "Delete Caption")) {
+            try model.perform(CompoundCommand(name: String(localized: "Delete Caption"),
+                                              [{ _, _ in RemoveCaptions(range: cue.start...cue.end) }]))
         }
     }
 
@@ -243,6 +346,9 @@ extension EditorWindowController {
         case #selector(transcribeSelection(_:)): return transcription == nil && !captionTargets.isEmpty
         case #selector(cancelTranscription(_:)): return transcription != nil
         case #selector(addDynamicCaptions(_:)): return transcription == nil
+        case #selector(generateCaptions(_:)):
+            return transcription == nil
+                && !CaptionTarget.find(in: model.project, selection: timelineModel.selection, perSourceTrack: false).isEmpty
         case #selector(addEmptyCaptions(_:)):
             return !CaptionTarget.find(in: model.project, selection: timelineModel.selection, perSourceTrack: false).isEmpty
         case #selector(editDynamicCaptionStyle(_:)): return selectedDynamicCaption != nil

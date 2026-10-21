@@ -26,8 +26,11 @@ extension TimelineView {
     public static let audioItemType = NSPasteboard.PasteboardType("com.devswizard.wizrec.audio-item")
     /// Library drags: string = animation preset, dropped on a clip.
     public static let animationType = NSPasteboard.PasteboardType("com.devswizard.wizrec.animation")
+    /// Library drags: string = dynamic caption preset id, dropped on a clip with audio.
+    public static let captionStyleType = NSPasteboard.PasteboardType("com.devswizard.wizrec.caption-style")
     /// The library types `TimelineModel.onLibraryDrop` handles.
-    public static let appLibraryTypes: [NSPasteboard.PasteboardType] = [calloutType, backgroundType, audioItemType, animationType]
+    public static let appLibraryTypes: [NSPasteboard.PasteboardType] = [calloutType, backgroundType, audioItemType, animationType,
+                                                                       captionStyleType]
 
     /// Adds library effect `name` to clip `clipID` (shown level), one undo step (a drop on the canvas).
     @discardableResult

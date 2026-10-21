@@ -82,6 +82,8 @@ enum MainMenu {
         add(clip, to: main)
 
         let captions = NSMenu(title: String(localized: "Captions"))
+        captions.addItem(withTitle: String(localized: "Generate Captions from Speech"),
+                         action: #selector(EditorWindowController.generateCaptions(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Transcribe Selected Audio"),
                          action: #selector(EditorWindowController.transcribeSelection(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Cancel Transcription"),

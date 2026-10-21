@@ -28,6 +28,7 @@ extension EditorWindowController {
             out[.clipboard] = clipboardItems()
             out[.edit] = [menuItem(String(localized: "Ripple Cut"), #selector(rippleCut(_:)), id: "menu.rippleCut")]
             out[.arrange] = arrangeItems()
+            out[.content] = captionItems()
         case .track, .background:
             out[.clipboard] = [menuItem(String(localized: "Paste"), #selector(paste(_:)), key: "v", id: "menu.paste")]
         case .header:
@@ -58,6 +59,13 @@ extension EditorWindowController {
             items.append(menuItem(String(localized: "Separate Video and Audio"), #selector(detachAudio(_:)), id: "menu.detachAudio"))
         }
         return items
+    }
+
+    /// Captions on a clip with audio: add empty ones to type into, or generate them from speech.
+    func captionItems() -> [NSMenuItem] {
+        guard validateMenuItem(NSMenuItem(title: "", action: #selector(addEmptyCaptions(_:)), keyEquivalent: "")) else { return [] }
+        return [menuItem(String(localized: "Generate Captions from Speech"), #selector(generateCaptions(_:)), id: "menu.generateCaptions"),
+                menuItem(String(localized: "Add Captions"), #selector(addEmptyCaptions(_:)), id: "menu.addCaptions")]
     }
 
     // MARK: Actions

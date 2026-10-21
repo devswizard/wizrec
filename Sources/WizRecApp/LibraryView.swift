@@ -9,13 +9,15 @@ struct LibraryActions {
     /// Double-click: apply the item to the timeline selection (effect → selected clips,
     /// transition → selected clip edges). Returns false when nothing could take it.
     var apply: (LibraryItem.Kind, String) -> Bool = { _, _ in false }
+    /// The Captions tab's buttons and caption rows.
+    var captions = CaptionActions()
 }
 
 /// Left pane: the media bin plus the effects and transitions library (drag items onto
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, backgrounds, annotations, effects, audio, transitions
+        case media, backgrounds, annotations, effects, audio, transitions, captions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
@@ -25,6 +27,7 @@ struct SidebarView: View {
             case .effects: "Effects"
             case .audio: "Audio"
             case .transitions: "Transitions"
+            case .captions: "Captions"
             }
         }
     }
@@ -60,6 +63,8 @@ struct SidebarView: View {
             case .transitions:
                 LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
                             hint: "Drag a transition onto the cut between two clips or a clip's start or end, or double-click to add it at the playhead cut or to the selected clips.")
+            case .captions:
+                CaptionsPanel(model: model, actions: library.captions, apply: library.apply)
             }
         }
     }
@@ -73,6 +78,7 @@ struct SidebarView: View {
         case .effects: String(localized: "Effects")
         case .audio: String(localized: "Audio")
         case .transitions: String(localized: "Transitions")
+        case .captions: String(localized: "Captions")
         }
     }
 
@@ -210,7 +216,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition, audio, callout, background }
+    enum Kind { case effect, transition, audio, callout, background, captionStyle }
     var name: String
     var title: String
     var symbol: String
@@ -241,6 +247,7 @@ struct LibraryList: View {
         case .audio: TimelineUI.TimelineView.audioItemType.rawValue
         case .callout: TimelineUI.TimelineView.calloutType.rawValue
         case .background: TimelineUI.TimelineView.backgroundType.rawValue
+        case .captionStyle: TimelineUI.TimelineView.captionStyleType.rawValue
         }
     }
 
@@ -342,7 +349,7 @@ struct LibraryList: View {
         switch kind {
         case .transition: String(localized: "Drag onto a cut or clip, or double-click to add at the cut under the playhead or to the selected clips")
         case .callout, .background: String(localized: "Drag onto the canvas or timeline, or double-click to add at the playhead")
-        case .effect, .audio: String(localized: "Drag onto a clip, or double-click to add to the selected clips")
+        case .effect, .audio, .captionStyle: String(localized: "Drag onto a clip, or double-click to add to the selected clips")
         }
     }
 

@@ -207,7 +207,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
             insert: { [weak self] id in self?.insertSource(id) },
             relink: { [weak self] id in self?.locate(id) }),
-            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false })))
+            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false },
+                                    captions: captionActions())))
         let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
@@ -542,6 +543,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if kind == .callout, let preset = AssetCatalog.callout(id: name) { return insertCallout(preset) }
         if kind == .background, let bg = AssetCatalog.background(id: name) { return placeBackground(bg) }
         if kind == .background { return false }
+        if kind == .captionStyle, let i = DynamicCaptionPreset.all.firstIndex(where: { $0.presetID == name }) {
+            addDynamicCaptions(presetIndex: i)
+            return true
+        }
+        if kind == .captionStyle { return false }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
