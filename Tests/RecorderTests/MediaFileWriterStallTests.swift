@@ -58,7 +58,7 @@ private final class StuckWriter: MediaWriterControl {
             let t = CMTime(value: Int64(k), timescale: 30)
             writer.append(Synth.videoFrame(grey: UInt8(k * 40), time: t), at: t)
         }
-        #expect(writer.appendedCount == 5)
+        _ = noDrops(writer, appended: 5)   // the stall below is checked either way
         try await expectStall(writer, cancels: cancels)
     }
 
@@ -71,7 +71,7 @@ private final class StuckWriter: MediaWriterControl {
             let t = CMTime(value: Int64(k) * 960, timescale: 48_000)
             writer.append(Synth.audioBuffer(time: t), at: t)
         }
-        #expect(writer.appendedCount == 10)
+        _ = noDrops(writer, appended: 10)   // the stall below is checked either way
         try await expectStall(writer, cancels: cancels)
     }
 
