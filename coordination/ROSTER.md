@@ -122,6 +122,7 @@ change a rule.
 | ship | ad02da61f248cb773 | `agent/ship12` |
 | render | ac9c68ef985cdc1d5 | `agent/render12` (CompositorCore texture-lifetime crash) |
 | timeline | afb080d624d420b0b | `agent/timeline12` (ED2b, group-edits §8.6) |
+| captions | a2f747bca66532f14 | `agent/captions12` (WhisperCpp stderr race) |
 
-Not spawned: captions (no licensed exports). The 56 old `worktree-agent-*`
+Not spawned: none left (captions came in for a product race qa found). The 56 old `worktree-agent-*`
 branches were deleted with the user's OK.
