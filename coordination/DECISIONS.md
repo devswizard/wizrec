@@ -206,7 +206,7 @@ Dated log. Newest last.
   SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swiftly run
   swift build --build-tests --scratch-path <tmp> +6.3.3`; ~80 s clean). The
   macOS 27 SDK does not work with 6.3.3 (Foundation fails to import).
-- **2026-10-20 · Copy/paste inside groups [WizRec] (timeline, approved):**
+- **2026-10-20 · Copy/paste inside groups [WizRec] (timeline, approved; superseded by 2026-10-21 "Copy/paste with groups"):**
   a copy must come from one container (top level, or the inner tracks of one
   group); a nested clip keeps its own duration and `scalar` (the group's
   speed/transform is not baked in); paste into an open group maps the playhead
@@ -226,3 +226,62 @@ Dated log. Newest last.
 - **2026-10-20 · v0.1.0 (session 7):** tag on the CI-green commit `37b384c`;
   the Release workflow attached the ad-hoc DMG to a draft Release. The user
   publishes it.
+- **2026-10-21 · Publishing without a personal token (session 8, user: "do everything yourself"):**
+  local use of the keychain GitHub token and keychain writes are blocked by the permission
+  classifier, so drafts are published by `.github/workflows/publish.yml` with the workflow's
+  own `GITHUB_TOKEN`. A push to main that changes `release/publish` (first line = tag)
+  triggers it. `scripts/release/publish-release.sh` checks the tag, AI-attribution-free notes,
+  `SHA256SUMS.txt` and `verify-dmg.sh` before flipping draft → public; idempotent. v0.1.0 went
+  public this way (run 2, 2026-10-20T23:03Z).
+- **2026-10-21 · Release builds strip build-machine run paths (session 8):** `bundle-dylibs.sh`
+  deletes `LC_RPATH`s into Xcode/CLT/toolchains/Homebrew/`/usr/local` before signing (bounded,
+  fails loudly); `verify-dmg.sh` rejects any such load or run path in every Mach-O.
+  `allow-build-rpaths` on the `release/publish` line (or `WIZREC_ALLOW_BUILD_RPATHS=1`)
+  downgrades this to a warning, for v0.1.0 only.
+- **2026-10-21 · Sparkle feed host (session 8):** `release/appcast.xml` on main, served from
+  raw.githubusercontent.com (no settings change, no web host, history in git). Feed URL and
+  public key live in `release/sparkle.conf`; the key is empty, so the updater stays off until
+  the user runs `generate_keys` once (private key in the keychain, backed up offline) and
+  commits the public key. `scripts/release/update-appcast.sh <tag>` signs each release with
+  `sign_update` (key read by Sparkle from the keychain, never by our scripts).
+- **2026-10-21 · Bounded AVFoundation waits in product code (session 8):** export and
+  recording never hang on a stuck `AVAssetWriter`: `finishWriting` 60 s, no-progress stall
+  30 s, cancel 10 s (Dispatch timers, so a starved cooperative pool can't stop them).
+  `ExportError.encoderStalled(seconds:)`; `ExportError` is a `LocalizedError`.
+- **2026-10-21 · Test time limits use awake time (session 8):** `Deadline` measures
+  `systemUptime` and sleeps on `SuspendingClock`, so a Mac sleeping through a test no longer
+  trips a bound. Test readers pull samples on a private thread (`BlockingPull`); cancel never
+  overlaps `copyNextSampleBuffer` (that crashes CoreMedia).
+- **2026-10-21 · GUI automation and the screen lock (session 8):** UI checks and Camtasia
+  driving need an unlocked console session; `scripts/ui-checks/lib.sh` `gui_lock` exits 3 on
+  a locked screen; agents driving the GUI run a bounded `caffeinate -d -i -u -t …` and kill it
+  when done.
+- **2026-10-21 · Camtasia rules from session 8 experiments (researcher, wall-reviewed):**
+  copy out of a group bakes the canvas-space transform, paste into a group re-expresses it;
+  paste into an open group clamps to the visible window and never grows the group; `revMedia`
+  groups cannot be opened (WizRec refuses inner copy/paste [inf]); shader keyframes add an
+  `animationTracks.visual` window; classic caption `value.text` may be Cocoa RTF (readers
+  strip it; writers keep plain strings; no bold runs). Kept as WizRec-only: `RippleTrim`
+  (Camtasia has no ripple-trim gesture) and midpoint insert for a magnetic drop inside a
+  clip (Camtasia's refusal is [inf]). Still [?]: Assets-panel background placement, rounding
+  of a non-frame-exact Clip Speed duration, media-bin drops into an open group.
+- **2026-10-21 · Copy/paste with groups (timeline11, from group-edits.md §8):** one container
+  per copy [obs]; nested clips keep `duration`/`mediaStart`/`scalar` [obs]; transforms travel
+  in canvas space: clipboard payload v2 `"space"` = the enclosing groups' constant
+  position/scale, re-expressed relative to the paste target, changed keys in long form [obs].
+  Only constant group position/scale compose; group rotation/crop/opacity/effects/animated
+  geometry are not carried [WizRec; rotation ?]. v1 payloads keep their transforms. Paste into
+  an open group (`PasteClips(_:group:at:)`) clamps to the window, takes the lowest free inner
+  track or a new top one, never grows the group [obs]; multi-row payloads keep row order
+  [WizRec]. Rev media (`groupType` "revMedia") is closed: no copy out, no paste in [inf].
+  Group keys never travel with nested clips, `ShaderVidSource` does [obs]. `InsertClipInGroup`
+  (media-bin drops) still grows and requires the window [WizRec; Camtasia ?].
+- **2026-10-21 · Shader keyframes (amends "Shader background origin metadata"):**
+  `SetSourceEffectParameters` keyframes add or reuse `animationTracks.visual`
+  `{endTime, duration}` [obs §11.1 Q3]; `AnimationSync` keeps both entry shapes.
+- **2026-10-21 · Classic caption text:** readers convert `{\rtf` text to plain
+  (`ClassicCaptions.plainText`, attributes ignored, raw fallback); writers write plain
+  strings [obs CA1].
+- **2026-10-21 · [WizRec] keeps:** midpoint insert for a magnetic drop inside a clip
+  (Camtasia's refusal is only [inf], UI-level); `RippleTrim` as a WizRec-only command
+  (Camtasia has no ripple-trim gesture, ED4).

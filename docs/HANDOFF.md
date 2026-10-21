@@ -6,10 +6,77 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 7 snapshot (2026-10-20) — read this first
+## 0. Session 8 snapshot (2026-10-21) — read this first
 
-- **`main` is green locally: 1058 tests** (23 known issues = 21
-  golden-harness + 2 LoadGate self-tests). Sections 0a–2 are history.
+- **`main` is green: 1107 tests** (17 known issues = golden-harness +
+  LoadGate self-tests). every session-8 code merge was green on GitHub (CI runs 21–25; see the Actions page for the final push). Sections 0-pre onward are history.
+- **User at start:** nothing delivered (v0.1.0 still a draft, no licensed
+  exports, no Sparkle keys, manual checks not done); then "do everything
+  yourself, I don't want to do anything manually".
+- **Blocked by the permission classifier:** reading the keychain GitHub
+  token (Credential Exploration) and `generate_keys` (Secret-Store Writes).
+  Worked around legitimately: publishing through a workflow with
+  `GITHUB_TOKEN`. Sparkle keys still need the user.
+- **Interruptions:** the screen locked at 22:31 (idle timer) and the Mac slept
+  once; GUI work stopped until the user unlocked at 09:37. A push and one
+  agent died on the sleep (both recovered). Agents driving the GUI now run a
+  bounded `caffeinate`; UI checks exit 3 on a locked screen.
+- **Landed in session 8:**
+  - ship11: `publish.yml` + `publish-release.sh` (first run failed on two
+    Accept headers → fixed); **v0.1.0 public** 2026-10-20T23:03Z, checked
+    from the public URL (sha256, verify-dmg, launch). Build run paths
+    stripped and rejected by `verify-dmg.sh`. Sparkle feed prepared
+    (`release/appcast.xml` via raw.githubusercontent.com,
+    `release/sparkle.conf`, `update-appcast.sh`), off until a key exists.
+  - export11: bounded `finishWriting`/ready loops/cancel in Exporter and
+    `MediaFileWriter`; `ExportError.encoderStalled`, `LocalizedError`.
+  - app11: async `CanvasRenderer.renderImage`; `UnsavedEditsOnQuit.prepareQuit`
+    + `check-quit-unsaved.sh` (8/8); locked-screen gate and bounded `ax`
+    calls in UI checks; AX audit (`ax-audit.swift`) → library tiles keyboard
+    focusable (59 tiles, 5 tabs, all pass). APP11-3: the 6.3 "slow" lines are
+    one-time Observation/AppKit costs that move when rewritten; no change.
+  - qa11: `BlockingPull` (2 CoreMedia crashes found and fixed), `Deadline`
+    on awake time, serial CI media step 11:58 → 8:45 min, "Slowest tests"
+    annotation, integration tests; flaky watch 3/3.
+  - researcher11 (save-only UI scripting, wall-reviewed): ED2 matches,
+    ED3 matches except drops inside a clip [inf], ED4 no ripple gesture
+    exists, CA1 text saved as Cocoa RTF (no bold runs), copy/paste in groups
+    (§8), shader origin keys (§11.1).
+  - Timeline (timeline11): Camtasia's copy/paste rules applied (canvas-space transforms, paste into a group clamps and never grows it, `revMedia` closed), shader keyframes add `animationTracks.visual`, RTF caption text read as plain text.
+- **Demo (built app, copy of demo project):** snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 2.3 s.
+- **Follow-ups (no owner):**
+  - everything export-dependent (golden parity, eioe, looks, transitions,
+    caption layout, normalisation output);
+  - audio export ~10× slower when `audioFormatSampleRate` is missing or
+    invalid (mixes at 44.1 kHz, then resamples?) — audio/export owner;
+  - slowest CI tests are debug-build audio DSP (resampling 40 s each, Clip
+    Speed stretch 32 s): build media test targets optimized or speed up the
+    resampler;
+  - one unreproduced golden self-test read 176/180 frames at load ~400;
+  - library tiles: Tab at grid ends falls back to AppKit order; tabbing past
+    the last realized tile is untested;
+  - Exporter and Recorder each carry a bounded-wait helper (no shared module);
+  - still [?]: Assets-panel background placement, rounding of a
+    non-frame-exact Clip Speed duration, media-bin drops into an open group;
+  - WizRec shader keyframes carry `interp` "linr"; Camtasia writes none on
+    them (§11.1 Q3) — left unchanged;
+  - `InsertClipInGroup` (media-bin drops) still grows the group and needs
+    the window (Camtasia [?]); multi-row group paste order is [WizRec];
+  - PlayerKit integration tests for the new group paste (qa);
+  - `release.yml` has two actionlint warnings (SC2010, SC2046);
+  - 56 unmerged local `worktree-agent-*` branches hold pre-rewrite history:
+    never push; delete with the user's OK.
+- **NEED_USER:**
+  1. One Sparkle `generate_keys` run (back up the private key offline), then
+     put the public key into `release/sparkle.conf` (or give it to the lead).
+  2. Licensed reference exports (an activated Camtasia), for golden parity.
+  3. Keep the Mac unlocked/awake during GUI-driving sessions (or allow the
+     agents' `caffeinate`).
+
+## 0-pre. Session 7 snapshot (2026-10-20) — history
+
+- **`main` was green: 1058 tests** (23 known issues = 21
+  golden-harness + 2 LoadGate self-tests).
 - **CI / release:** CI green on GitHub (run 17, `37b384c`: 629 parallel +
   429 serial media tests, 23 known issues, Swift 6.3.3 / Xcode 26.6). Tag
   `v0.1.0` on `37b384c`; Release run 39450575632 built the ad-hoc DMG

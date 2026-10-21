@@ -326,15 +326,15 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| S8-CI | main | claimed | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
+| S8-CI | main | done | CI green on every merge (Xcode 26.6 / Swift 6.3.3) |
 | EXP11-1 | export | done | `MovieExport.finish`, `MediaFileWriter.finishWriting`, `AudioExport` ready loop bounded; a stuck writer ends with an error the UI shows; injected-stuck-writer tests |
 | APP11-1 | app | done | `CanvasRenderer.renderImage` never waits for the GPU on the main thread |
-| APP11-2 | app | claimed | `--quit-after` with several unsaved documents: test + UI check |
+| APP11-2 | app | done | `--quit-after` with several unsaved documents: test + UI check |
 | APP11-3 | app | done | Swift 6.3 slow spots > 50 ms fixed (measured with the 6.3.3 recipe) |
-| APP11-4 | app | todo | automated accessibility audit of library tiles (stands in for the manual VoiceOver pass) |
+| APP11-4 | app | done | automated accessibility audit of library tiles (stands in for the manual VoiceOver pass) |
 | QA11-1 | qa | done | test reader loops (`readBack`, `decodeAudio`/`trackBytes`, `MovieFrameReader`) on a private thread with `Deadline` |
 | QA11-2 | qa | done | serial media CI step faster: slowest tests found, fixtures cut where the test stays as strong |
-| QA11-3 | qa | claimed | integration tests for every session-8 merge; flaky watch (3 runs) |
+| QA11-3 | qa | done | integration tests for every session-8 merge; flaky watch (3 runs) |
 | SHIP11-1 | ship | done | Xcode back-deploy `LC_RPATH` stripped before signing; `verify-dmg.sh` fails on rpaths/load paths into Xcode/Homebrew |
 | SHIP11-2 | ship | done | publish workflow (`GITHUB_TOKEN`) turns the v0.1.0 draft public; public asset verified (sha256, verify-dmg, launch) |
 | SHIP11-3 | ship | done | Sparkle feed prepared (appcast location, signing script reads the key from the keychain); enabled once a key exists |
@@ -355,8 +355,12 @@ classifier, so publishing goes through a workflow with `GITHUB_TOKEN`.
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| TL11-1 | timeline | todo | copy out of a group bakes the canvas transform; paste into a group re-expresses it |
-| TL11-2 | timeline | todo | paste into an open group clamps to the window, never grows the group |
-| TL11-3 | timeline | todo | `SetSourceEffectParameters` keyframes add the `animationTracks.visual` entry |
-| TL11-4 | timeline | todo | ClassicCaptions reader strips RTF `value.text` |
-| TL11-5 | timeline | todo | `revMedia` groups closed to inner copy/paste [inf] |
+| TL11-1 | timeline | done | copy out of a group bakes the canvas transform; paste into a group re-expresses it |
+| TL11-2 | timeline | done | paste into an open group clamps to the window, never grows the group |
+| TL11-3 | timeline | done | `SetSourceEffectParameters` keyframes add the `animationTracks.visual` entry |
+| TL11-4 | timeline | done | ClassicCaptions reader strips RTF `value.text` |
+| TL11-5 | timeline | done | `revMedia` groups closed to inner copy/paste [inf] |
+- app11 final (c130fb5): library tiles keyboard focusable (AX audit 59 tiles green), `check-quit-unsaved.sh` 8/8.
+- timeline11 (2a3fd35 + notes): TL11-1..5. **1107 tests green, 17 known issues.**
+- Demo (built app, copy of demo project): snapshots 0/5/12.5/25 s OK; ProRes 422 export 25.67 s in 2.3 s.
+- **Session 8 complete: all agents DONE, all branches merged.** Follow-ups and NEED_USER in docs/HANDOFF.md §0.
