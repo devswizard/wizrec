@@ -64,40 +64,38 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-21, end of build session 8)
+## Current state (2026-10-21, end of build session 9)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 8 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 9 snapshot, follow-ups,
   user's pending items).
 - Done and merged: M0–M3, M7 recorder, M8 audio (aligned to Camtasia
   2026.2.3 AU1/AU2), M9 export (ProRes demo 25.7 s in ~2 s), M10 captions
   (whisper.cpp 1.9.5; VAD timing; Bengali via large-v3-turbo; CA1/CA2
   rules), M11 (Sparkle 2.10.0 wired, feed prepared, off until a key exists;
-  ad-hoc DMG; **v0.1.0 public**), M4–M6 rendering (31 blend modes, matte
-  modes, Border/Reflection, CO3 callouts, Extend Frame, Metal HDR tone map
-  for playback), group/split/trim/ungroup/marker/copy-paste rules from
-  observed Camtasia saves. Automated UI checks of the built app
-  (`scripts/ui-checks/`). **1107 tests green** (17 known issues =
-  golden-harness and LoadGate self-tests).
-- Session 8 landed:
-  - **v0.1.0 is public** (2026-10-20T23:03Z) through `publish.yml`, which
-    uses the workflow's own `GITHUB_TOKEN` (local token use and keychain
-    writes are blocked by the permission classifier).
-  - **No hangs on stuck AVFoundation writers** in export and recording:
-    bounded `finishWriting`/ready loops/cancel, `ExportError.encoderStalled`.
-  - Release builds strip Xcode/Homebrew run paths; `verify-dmg.sh` rejects
-    them. Sparkle feed: `release/appcast.xml` on main via
-    raw.githubusercontent.com, config in `release/sparkle.conf`.
-  - App: canvas snapshots never block the main thread on the GPU; quit with
-    several unsaved documents (unit + UI check); library tiles keyboard
-    focusable (AX audit of 59 tiles green); UI checks fail fast on a locked
-    screen.
-  - QA: bounded test readers (`BlockingPull`), `Deadline` ignores system
-    sleep, serial CI media step 11:58 → 8:45 min, integration tests.
-  - Researcher (save-only UI scripting, wall-reviewed): ED2–ED4, CA1 caption
-    text (Cocoa RTF), copy/paste in groups, shader origin keys.
-    Timeline (timeline11): Camtasia's copy/paste rules applied (canvas-space transforms, paste into a group clamps and never grows it, `revMedia` closed), shader keyframes add `animationTracks.visual`, RTF caption text read as plain text.
-- **CI / release:** CI green on GitHub (every session-8 code merge was green on GitHub (CI runs 21–25; see the Actions page for the final push)). v0.1.0 public with
-  `WizRec-0.1.0.dmg` + `SHA256SUMS.txt`, verified from the public URL.
+  ad-hoc DMG; **v0.1.0 and v0.1.1 public**), M4–M6 rendering (31 blend
+  modes, matte modes, Border/Reflection, CO3 callouts, Extend Frame, Metal
+  HDR tone map for playback), group/split/trim/ungroup/marker/copy-paste/
+  drop/Clip Speed rules from observed Camtasia saves. Automated UI checks of
+  the built app (`scripts/ui-checks/`, 8/8). **1148 tests green** (17 known
+  issues = golden-harness and LoadGate self-tests).
+- Session 9 landed:
+  - **v0.1.1** tagged on the CI-green `0ccf292` and published through
+    `publish.yml` (rpath-clean DMG, no `allow-build-rpaths`); public
+    2026-10-21T10:05Z, verified from the public URL.
+  - Audio export of projects without `audioFormatSampleRate` no longer ~10×
+    slower (measured at the mix rate [WizRec]); bit-exact faster resampler
+    and DSP; output hash tests.
+  - CI tests build with `-Xswiftc -O`: serial media step 515 s → 91 s.
+    It exposed a real RenderEngine crash (CVMetalTextures released on
+    Metal's completion queue), fixed with a locked texture cache.
+  - Captions: whisper-cli stderr never lost on a fast failure.
+  - Researcher (save-only, wall-reviewed): Clip Speed rounding (ED2b),
+    media-bin drop into an open group (§8.6: no growth, no clamp), Assets
+    background placement (§11.2). Timeline and app follow them.
+  - App: library Tab order over every tile, `--window-size`.
+- **CI / release:** CI green on GitHub (runs 33–34; tests built `-O`). Mix
+  digests of `OutputHashTests` vary per CI machine type; each variant is
+  pinned, unknown ones show in the "Known issues" annotation.
 - Camtasia here is a **trial**: export only offers "with/without watermark",
   so there are still **no reference exports**; golden parity (M1/M4/M5/M6)
   and every look/timing question stay open. The export-only leftovers are
@@ -105,8 +103,8 @@ continue here.
 - Camtasia rejects WizRec `.tscshadervid` backgrounds (signed files only);
   WizRec warns on save.
 - Remote: `https://github.com/devswizard/wizrec` (public). No Apple
-  Developer account: ad-hoc DMGs, never notarized. Never push local
-  `worktree-agent-*` branches (pre-rewrite history).
+  Developer account: ad-hoc DMGs, never notarized. The old local
+  `worktree-agent-*` branches were deleted (user's OK, session 9).
 - Still blocked on the user: licensed reference exports; one Sparkle
   `generate_keys` run (public key into `release/sparkle.conf`).
 

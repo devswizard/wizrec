@@ -6,7 +6,68 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 8 snapshot (2026-10-21) — read this first
+## 0. Session 9 snapshot (2026-10-21) — read this first
+
+- **`main` is green: 1148 tests** (17 known issues = 15 golden-harness + 2 LoadGate
+  self-tests; CI shows up to 2 more in the parallel step: LoadGate-gated timing and an
+  unrecorded audio digest variant). CI runs 33–34 green; tests now build with `-Xswiftc -O`.
+- **User at start:** no Sparkle key, no licensed exports; OK to delete the 56 old
+  `worktree-agent-*` branches (done).
+- **v0.1.1:** tagged on `0ccf292` (CI run 34 green), Release workflow draft, published by
+  `release/publish` = `v0.1.1` (no `allow-build-rpaths`). **Public 2026-10-21T10:05:51Z**,
+  checked from the public URL: `WizRec-0.1.1.dmg` 21.0 MB, SHA-256 `b7f4b2cc…8598`,
+  `verify-dmg.sh` OK (ad-hoc, updates off, 22 Mach-O paths clean, launch/quit 7 s).
+- **Landed in session 9** (agents audio, qa, app, researcher, ship, render, timeline, captions):
+  - audio12: AUD12-1 root cause = sources of projects without `audioFormatSampleRate` were
+    measured at 44.1 kHz through a slow per-channel sinc resampler; now measured at the mix
+    rate [WizRec] (export cost 1.0x). Bit-exact resampler/DSP speed-ups (debug
+    `wavUsesProjectSampleRate` 19–35 s → ~2 s), `OutputHashTests`.
+  - qa12: CI test builds `-Xswiftc -O` (serial media step 515 s → 91 s on CI), PlayerKit
+    group-paste integration tests, `MediaWriter` checks the written sample count (QA12-3
+    hardening; 176/180 not reproduced at load 200–355), opt-in stress tests
+    (`WIZREC_STRESS=1`), stall test bounds only the stuck job, "Known issues" CI annotation.
+  - render12: CVMetalTextures released on Metal's completion queue raced the cache
+    (crash 6/30 under `-O`): `LockedTextureCache`/`CacheTexture` (0/60).
+  - captions12: whisper-cli pipes drained by reader threads; a fast failure never loses its
+    stderr (flaky `reportsProcessFailure` was a real race); unterminated last line kept.
+  - researcher12 (save-only, wall-reviewed): ED2b Clip Speed rounding, group-edits §8.6
+    media-bin drop into an open group, shader-backgrounds §11.2 Assets placement.
+  - timeline12: `SetClipSpeed`/new `SetClipDuration` keep the media range and write
+    `scalar = duration/mediaDuration`; `InsertClipInGroup` never grows or clamps (§8.6).
+  - app12: library Tab order over every tile (unrealized ones scrolled in), `--window-size`,
+    library placement into an open group at the playhead (new top inner track), TimelineUI
+    drop not clamped, keyless import/playback at 48 kHz, `run-all.sh` 8/8 green.
+  - ship12: actionlint clean, v0.1.1 notes, `sparkle-plist-check.sh`, `check-sparkle.sh`.
+- **CI lesson:** run 30/32 failures were `OutputHashTests` mix digests: GitHub's macOS 26
+  runners come in machine variants whose Accelerate/libm last bits differ (not the OS, not
+  the compiler). Each observed variant is accepted; unknown ones are CI known issues with the
+  digest in the "Known issues" annotation (job logs need a login; annotations don't).
+  Run 35 failed once more: `TextureCacheLifetimeTests.wrapperKeepsItsCacheAlive` timed out
+  (10 s, load 34.7) because its release ran on a GCD global worker while the suite's own
+  `concurrentPerform` test held the pool; the release now runs on a dedicated `Thread` and the
+  suite is serialized. Lesson: in tests, hand work to another thread with `Thread`, not
+  `DispatchQueue.global()`, when other tests may block GCD workers.
+- **Demo (built app, copy of demo project):** snapshots 0/5/12.5/25 s OK; ProRes 422
+  export 25.67 s in 2.3 s.
+- **Follow-ups (no owner):**
+  - everything export-dependent (golden parity, eioe, looks, transitions, caption layout);
+  - Tab from the last library tile wraps to the search field: a window-level key loop
+    (sidebar → canvas → inspector → timeline) would let focus leave the panel;
+  - Clip Speed's Duration field can use `SetClipDuration` in the inspector UI;
+  - `ToneMappingMetal` keeps a raw `CVMetalTextureCache` (safe while `convert()` waits for the
+    GPU; switch to `LockedTextureCache` if that changes);
+  - `inheritedStderrDoesNotHang` took 6.3 s on a loaded CI runner (LoadGate made it a known
+    issue); the 2 s drain bound holds on quiet machines;
+  - still [?]: why a drop onto an occupied inner spot adds nothing; `default-*` metadata of
+    Assets backgrounds; Assets `ident` rule;
+  - `release.yml`/`ci.yml` could run actionlint in CI.
+- **NEED_USER:**
+  1. One Sparkle `generate_keys` run (back up the private key offline), then the public key
+     into `release/sparkle.conf` (RELEASING "Sparkle: turning updates on").
+  2. Licensed reference exports (an activated Camtasia), for golden parity.
+  3. Keep the Mac unlocked/awake during GUI-driving sessions.
+
+## 0-s8. Session 8 snapshot (2026-10-21) — history
 
 - **`main` is green: 1107 tests** (17 known issues = golden-harness +
   LoadGate self-tests). every session-8 code merge was green on GitHub (CI runs 21–25; see the Actions page for the final push). Sections 0-pre onward are history.
@@ -477,15 +538,11 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
 
 ## 4. Team setup for the next session
 
-- **Roster:** at most about 8 concurrent agents (load hit ~50 with 8 in
-  session 5; LoadGate absorbed it). Session 8 plan (tasks in
-  `docs/NEXT_SESSION_PROMPT.md` "PENDING WORK → AGENTS"): export (bounded
-  AVFoundation waits in product code), app (main-thread GPU wait, multi-doc
-  quit, Swift 6.3 spots), qa (bounded reader loops, CI time, integration),
-  ship (rpath strip, public v0.1.0 check, Sparkle only with keys), researcher
-  (save-only experiments for the open [?] rules); timeline only if those
-  answers change a rule; render/audio/captions only with licensed exports.
-  Agent branches next: `agent/<name>11`.
+- **Roster:** at most about 8 concurrent agents (session 9 ran 8, staggered: 5 at
+  start, render/timeline/captions spawned for findings). Next plan in
+  `docs/NEXT_SESSION_PROMPT.md` "PENDING WORK → AGENTS". Agent branches next:
+  `agent/<name>13`. Agents finish fast: merge each slice as soon as it is green, and send
+  follow-up findings to a fresh owner agent rather than waiting.
 - **Toolchains:** local `swift` stays Xcode's 6.4. After any swiftly
   install, run `swiftly use --global-default xcode` (plain `swiftly use`
   writes a per-project `.swift-version`); reach 6.3.3 only through

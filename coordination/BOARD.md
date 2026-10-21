@@ -373,11 +373,11 @@ Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
 |---|---|---|---|
 | AUD12-1 | audio | done | export with missing/invalid `audioFormatSampleRate` no slower than ~1.5x valid; perf test gated `WIZREC_PERF=1` |
 | AUD12-2 | audio | done | resampler / Clip Speed stretch faster in debug, output bytes unchanged (hash test) |
-| QA12-1 | qa | claimed | serial CI media step measurably faster (optimized test builds or `-Osize` TestGenKit) |
-| QA12-2 | qa | claimed | integration tests for every merge; flaky watch 3 runs |
+| QA12-1 | qa | done | serial CI media step measurably faster (optimized test builds or `-Osize` TestGenKit) |
+| QA12-2 | qa | done | integration tests for every merge; flaky watch 3 runs |
 | QA12-3 | qa | done | golden self-test 176/180 frames under load: reproduce or harden |
 | APP12-1 | app | done | library tiles: Tab at grid ends + past last realized tile; AX audit extended |
-| APP12-2 | app | claimed | `scripts/ui-checks/run-all.sh` green on a fresh build |
+| APP12-2 | app | done | `scripts/ui-checks/run-all.sh` green on a fresh build |
 | RES12-1 | researcher | done | save-only answers: Assets-panel background, Clip Speed rounding, media-bin drop into open group |
 | SHIP12-1 | ship | done | actionlint clean on all workflows (release.yml SC2010/SC2046) |
 | SHIP12-2 | ship | done | v0.1.1 notes; rpath-clean DMG verified locally |
@@ -388,7 +388,7 @@ Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
 | TL12-1 | timeline | done | Clip Speed: floor duration, keep media range, `scalar = duration/mediaDuration` (edit-semantics ED2b) |
 | APP12-3 | app | done | import loudness and keyless playback at the mix rate (48 kHz) |
 | APP12-4 | app | done | library placement into an open group at the playhead, new top inner track; TimelineUI drop not clamped |
-| CAP12-1 | captions | claimed | whisper-cli stderr never lost on fast failure (race in WhisperProcess) |
+| CAP12-1 | captions | done | whisper-cli stderr never lost on fast failure (race in WhisperProcess) |
 | TL12-2 | timeline | done | media-bin drop into an open group: no growth, no clamp, canvas-default transform (group-edits §8.6) |
 
 ## Session 9 merges
@@ -401,3 +401,12 @@ Start: main `6b5fcd1`, CI run 28 green; no Sparkle key, no licensed exports.
 - render12: `LockedTextureCache`/`CacheTexture` (crash 6/30 under `-O` → 0/60).
 - app12 + timeline12: library Tab order over every tile, `--window-size`, Clip Speed ED2b + `SetClipDuration`, §8.6 group drops, library placement at the playhead, keyless playback 48 kHz.
 - CI: run 30 failed (mix digests on macOS 26), run 31 green.
+- captions12: whisper-cli pipes drained by reader threads (stderr race qa found).
+- qa12 (end): CI tests built `-Xswiftc -O` (CI serial media step 515 s → 91 s), "Known issues" annotation; flaky watch 5 runs (only failure = the captions race, fixed).
+- app12 (end): UI checks updated, `run-all.sh` 8/8 on a fresh build.
+- CI: run 32 failed (mix digest variant per runner machine), runs 33–34 green; v0.1.1 tagged on `0ccf292`, public 2026-10-21T10:05Z (verified from the public URL).
+
+## Session 9 result
+
+All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER in
+`docs/HANDOFF.md` §0.
