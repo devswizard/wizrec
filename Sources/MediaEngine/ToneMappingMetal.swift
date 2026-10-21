@@ -122,8 +122,22 @@ final class MetalToneMapper {
         let cTex = try texture(src, plane: 1, format: ten ? .rg16Uint : .rg8Uint)
         // BGRA bytes written as integers through an RGBA8 view: no float → unorm rounding.
         let oTex = try texture(dst, plane: 0, format: .rgba8Uint)
-        let (yt, ct, ot) = (yTex.texture, cTex.texture, oTex.texture)
+        try encodeKernel(y: yTex.texture, chroma: cTex.texture, out: oTex.texture, width: w, height: h,
+                         chromaWidth: cwid, chromaHeight: chgt, layout: lay, commandBuffer: cmd)
+        // The wrappers (and so the buffers) outlive the GPU work; released on the completion queue.
+        let keep = [yTex, cTex, oTex]
+        cmd.addCompletedHandler { _ in withExtendedLifetime(keep) {} }
+    }
 
+    /// Encodes the kernel on already-made plane textures (`width`×`height` luma px,
+    /// `chromaWidth`×`chromaHeight` chroma px). The caller keeps the textures, and the buffers
+    /// they view, alive until `cmd` completes. Split out so perf tests can time the GPU work
+    /// with and without per-frame texture creation (MED15-1).
+    func encodeKernel(y yt: any MTLTexture, chroma ct: any MTLTexture, out ot: any MTLTexture,
+                      width w: Int, height h: Int, chromaWidth cwid: Int, chromaHeight chgt: Int,
+                      layout lay: (depth: Int, cw: Int, ch: Int),
+                      commandBuffer cmd: any MTLCommandBuffer) throws {
+        let ten = lay.depth > 8
         let r = reference, fr = r.fullRange
         let maxCode: Float = ten ? 1023 : 255, unit: Float = ten ? 4 : 1
         let (m0, m1, m2) = r.gamut
@@ -151,9 +165,6 @@ final class MetalToneMapper {
         enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1),
                             threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
-        // The wrappers (and so the buffers) outlive the GPU work; released on the completion queue.
-        let keep = [yTex, cTex, oTex]
-        cmd.addCompletedHandler { _ in withExtendedLifetime(keep) {} }
     }
 
     /// Kernel: a line-by-line port of `ToneMapper.map` and the sampling in `ToneMapper.convert`

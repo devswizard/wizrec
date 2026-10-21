@@ -22,6 +22,12 @@ import Metal
 /// outlive their wrappers did not crash in 10 -O runs of the same stress tests. Textures made
 /// from the IOSurface share no state, so there is nothing to race on.
 ///
+/// Cost (MED15-1, M3 Pro, release, `TextureCachePerfTests`, 2026-10-21): 5–7 µs of CPU per
+/// texture; a 4K HDR playback frame (Y, CbCr, tone-map output, compositor input) spends
+/// 0.04–0.11 ms more CPU than with textures reused per IOSurface, and its wall and GPU times are
+/// the same within noise (≈ 1.9–3.3 ms/frame for tone map + composite). So there is no reuse
+/// cache: it would save under 1 % of the 16.6 ms 4K60 budget.
+///
 /// The type keeps its name and API from the cache it replaced; `flush()` is now a no-op.
 // @unchecked Sendable: immutable after init; `MTLDevice` is thread-safe.
 public final class LockedTextureCache: @unchecked Sendable {
