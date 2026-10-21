@@ -29,8 +29,9 @@ jobs:
       - name: Select newest Xcode
         run: |
           set -euo pipefail
-          # Newest non-beta Xcode on the image (Xcode_<version>.app).
-          xcode="$( (ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|rc' | sort -V | tail -n 1) || true)"
+          # Newest non-beta, non-RC Xcode on the image (Xcode_<version>.app).
+          xcode="$( (find /Applications -maxdepth 1 -name 'Xcode_*.app' ! -iname '*beta*' ! -iname '*rc*' 2>/dev/null \
+            | sort -V | tail -n 1) || true)"
           xcode="${xcode:-/Applications/Xcode.app}"
           echo "Using $xcode"
           sudo xcode-select -s "$xcode/Contents/Developer"
@@ -62,7 +63,7 @@ jobs:
 
       - name: Resolve packages (Sparkle, pinned in Package.resolved)
         run: |
-          for i in 1 2 3; do swift package resolve && exit 0; sleep 10; done
+          for _ in 1 2 3; do swift package resolve && exit 0; sleep 10; done
           exit 1
 
       - name: Build

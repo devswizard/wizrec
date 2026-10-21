@@ -169,6 +169,6 @@ cp "$ROOT/THIRD_PARTY_NOTICES.md" "$LIC/THIRD_PARTY_NOTICES.md"
 for f in "$FW"/*.dylib; do codesign --force --sign - "$f" >/dev/null 2>&1; done
 codesign --force --sign - "$APP" >/dev/null 2>&1
 
-count=$(ls "$FW"/*.dylib | wc -l | tr -d ' ')
+count=$(find "$FW" -maxdepth 1 -name '*.dylib' | wc -l | tr -d ' ')
 size=$(du -sh "$FW" | cut -f1)
 echo "Bundled $count dylibs ($size) into $FW; licences in $LIC; removed $stripped build run path(s)"

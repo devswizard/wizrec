@@ -31,7 +31,9 @@ jobs:
       - name: Select newest Xcode
         run: |
           set -euo pipefail
-          xcode="$( (ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|rc' | sort -V | tail -n 1) || true)"
+          # Newest non-beta, non-RC Xcode on the image (Xcode_<version>.app).
+          xcode="$( (find /Applications -maxdepth 1 -name 'Xcode_*.app' ! -iname '*beta*' ! -iname '*rc*' 2>/dev/null \
+            | sort -V | tail -n 1) || true)"
           sudo xcode-select -s "${xcode:-/Applications/Xcode.app}/Contents/Developer"
           swift --version
 
@@ -67,7 +69,14 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
           rm -f "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpass" "$kc" >/dev/null
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          # Put the temporary keychain first in the user search list, keeping the others
+          # (one path per line, quoted and indented by `security`).
+          others=()
+          while read -r k; do
+            k="${k//\"/}"
+            if [ -n "$k" ]; then others+=("$k"); fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$kc" ${others[@]+"${others[@]}"}
           echo "identity=$SIGN_IDENTITY" >> "$GITHUB_OUTPUT"
 
       - name: Notary profile (only when secrets exist)

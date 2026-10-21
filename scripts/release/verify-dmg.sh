@@ -51,11 +51,13 @@ APP="$MNT/WizRec.app"
 id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
 version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
 [ "$id" = "$EXPECT_ID" ] || { echo "error: bundle id $id, expected $EXPECT_ID" >&2; exit 1; }
-if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist" >/dev/null 2>&1; then
-  updates="on ($(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist"))"
-else
-  updates="off (no SUFeedURL)"
-fi
+# Sparkle entries: off (neither) or on (https feed + 32-byte key); a half configuration fails.
+# WIZREC_EXPECT_UPDATER=on|off also requires that state.
+updater=$("$(dirname "$0")/sparkle-plist-check.sh" "$APP" ${WIZREC_EXPECT_UPDATER:+--expect "$WIZREC_EXPECT_UPDATER"})
+case "$updater" in
+  on\ *) updates="on (${updater#on })" ;;
+  *) updates="off (no SUFeedURL/SUPublicEDKey)" ;;
+esac
 
 codesign --verify --deep --strict "$APP"
 authority=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)
