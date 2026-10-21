@@ -137,6 +137,21 @@ private let tb = Timebase.camtasia
         #expect(LaunchOptions(arguments: ["--window-size"]).windowSize == nil)
     }
 
+    /// Only interactive runs keep the saved window frame, splits and toolbar (APP15-3): UI
+    /// checks (`--ephemeral-layout`, timed, scripted or sized runs) never read or write them.
+    @Test func layoutIsKeptOnlyByInteractiveRuns() {
+        #expect(LaunchOptions(arguments: ["p.cmproj"]).keepsLayout)
+        #expect(LaunchOptions(arguments: []).keepsLayout)
+        let ephemeral = LaunchOptions(arguments: ["p.cmproj", "--ephemeral-layout"])
+        #expect(ephemeral.ephemeralLayout && !ephemeral.keepsLayout && ephemeral.paths == ["p.cmproj"])
+        #expect(!ephemeral.isScripted)
+        #expect(ephemeral != LaunchOptions(arguments: ["p.cmproj"]))
+        for args in [["p.cmproj", "--quit-after", "20"], ["p.cmproj", "--window-size", "900x560"],
+                     ["p.cmproj", "--snapshot-dir", "/tmp/s"]] {
+            #expect(!LaunchOptions(arguments: args).keepsLayout, "\(args)")
+        }
+    }
+
     @Test func groupDropIsAScriptedStep() {
         let o = LaunchOptions(arguments: ["p.cmproj", "--group-drop", "a.mp4", "--group-drop", "b.png"])
         #expect(o.groupDropPaths == ["a.mp4", "b.png"] && o.paths == ["p.cmproj"])

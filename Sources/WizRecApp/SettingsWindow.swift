@@ -14,7 +14,8 @@ final class SettingsWindowController: NSWindowController {
         window.title = String(localized: "Settings")
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("WizRec.Settings")
+        // UI check runs (`keepsLayout` false) never share the saved frame with the user's app.
+        if AppEnvironment.options.keepsLayout { window.setFrameAutosaveName("WizRec.Settings") }
         super.init(window: window)
     }
 

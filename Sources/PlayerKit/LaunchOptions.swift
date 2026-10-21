@@ -72,6 +72,9 @@ public struct LaunchOptions: Sendable, Equatable {
     public var windowSize: CGSize?
     /// Show the start screen although the run is timed (`--start-screen`, UI checks).
     public var startScreen = false
+    /// Never read or write saved window frames, split positions or toolbar layout
+    /// (`--ephemeral-layout`; UI checks pass it so their runs and the user's app never share them).
+    public var ephemeralLayout = false
 
     public init() {}
 
@@ -85,6 +88,11 @@ public struct LaunchOptions: Sendable, Equatable {
     /// so no sheets or confirmations are shown.
     public var isScripted: Bool { runsScript || quitAfter != nil }
 
+    /// Whether the editor restores and saves its window frame, split positions and toolbar in
+    /// UserDefaults: only interactive runs without `--window-size` or `--ephemeral-layout`.
+    /// Scripted and timed runs use the default layout and leave the saved one untouched.
+    public var keepsLayout: Bool { windowSize == nil && !ephemeralLayout && !isScripted }
+
     /// Whether opening a project with `missing` unresolved media shows Relink Missing Media.
     public func showsRelinkAtOpen(missing: Int) -> Bool { missing > 0 && !isScripted }
 
@@ -97,7 +105,7 @@ public struct LaunchOptions: Sendable, Equatable {
             && a.importCaptions == b.importCaptions && a.exportCaptions == b.exportCaptions
             && a.exportPresets == b.exportPresets && a.exportPath == b.exportPath
             && a.groupDropPaths == b.groupDropPaths && a.openGroup == b.openGroup && a.windowSize == b.windowSize
-            && a.startScreen == b.startScreen
+            && a.startScreen == b.startScreen && a.ephemeralLayout == b.ephemeralLayout
     }
 
     /// Parses `arguments` (without the executable path). `-psn_…` and Cocoa's `-Key value`
@@ -140,6 +148,7 @@ public struct LaunchOptions: Sendable, Equatable {
             case "--open-group": openGroup = true
             case "--window-size": windowSize = Self.size(value())
             case "--start-screen": startScreen = true
+            case "--ephemeral-layout": ephemeralLayout = true
             default:
                 if a.hasPrefix("-psn_") { break }
                 // `-Key value`: an NSArgumentDomain default (e.g. `-NSDocumentRevisionsDebugMode YES`,
