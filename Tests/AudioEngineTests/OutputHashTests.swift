@@ -134,6 +134,6 @@ private func range(_ s: Double, _ d: Double, _ rate: Int32) -> CMTimeRange {
     static let mixDigests: [Set<String>] = [
         ["e760e735dcaca112", "403d22fb17832640"],
         ["f63cd75b0afdb6be", "b6e6c50a15823ce9"],
-        ["15eca0a3d6d8b2ff"],
+        ["15eca0a3d6d8b2ff", "87f5e9806bd0ab28"],
     ]
 }
