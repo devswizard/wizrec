@@ -427,7 +427,7 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 | QA14-3 | qa | done | review the 17 known issues |
 | SHIP14-1 | ship | done | actionlint step in CI |
 | SHIP14-2 | ship | done | v0.1.3 notes draft + local rpath-clean DMG check (no key: updater off) |
-| MED14-1 | media | claimed | `ToneMappingMetal` locked texture cache or documented safety + stress test |
+| MED14-1 | media | done | `ToneMappingMetal` locked texture cache or documented safety + stress test |
 | TL14-1 | timeline | done | canvas drop (lowest track with room, else new top) + busy timeline drop (boundary insert+push → lowest higher track → new top), top level and open groups; pure placement fn + command |
 | QA14-4 | qa | done | `windowFrameMatchesWindowList` race-free (compare only windows that stayed still) |
 
@@ -438,3 +438,4 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 - qa14: StartScreenWorkflowIntegrationTests (6), all 17 known issues removed (self-tests collect expected failures; `LoadGate.verdict`), callbacks on own threads; flaky watch 5/5 `-O` + 3/3 at load 56–67 green.
 - timeline14: `DropRules`/`DropClip` (canvas drop lowest track with room else new top; busy drop boundary insert+push ≤ 1 s [WizRec] → lowest higher track → new top; groups never grow), 23 tests. Full run 1195 tests; one flaky `windowFrameMatchesWindowList` (live window moved mid-test, 3/3 alone) → qa.
 - qa15: QA14-4 window-frame test race fixed (10/10 alone, full run green).
+- media14: `LockedTextureCache`/`CacheTexture` moved to MediaEngine, textures straight from IOSurfaces (no CVMetalTextureCache; wrappers retain their buffer); REN12-1 reread as pool teardown with frames in flight (cache+lock 12/12 crash, IOSurface path 0/30 `-O`); tone mapper on it; 4K tone map +0.1–0.5 ms/frame. Full run 1204 tests, 0 known.
