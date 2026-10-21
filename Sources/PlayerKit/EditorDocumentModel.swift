@@ -25,7 +25,8 @@ public enum DocumentError: Error, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .unsupportedMedia(let s): "WizRec cannot read \(s)."
+        case .unsupportedMedia(let s):
+            String(localized: "WizRec can’t read “\(s)”. The file may be damaged, or its format isn’t supported.")
         case .noRoom(let s): s
         case .noSuchSource(let id): "Source \(id) is not in the project."
         }
@@ -370,6 +371,37 @@ public final class EditorDocumentModel {
         return id
     }
 
+    /// What `importInSequence` did: the clips placed (id and track index, in file order) and the
+    /// files that failed with their errors.
+    public struct SequencedImport {
+        public var placed: [(clip: Int64, track: Int)] = []
+        public var failures: [(file: URL, error: any Error)] = []
+    }
+
+    /// Imports `files` one after another. With `place`, each goes onto the timeline back to back
+    /// from `ticks` (the next one starts where the previous clip ends; track preference as in
+    /// `insertSource`), one undo step per file; without, into the media bin only. A file that
+    /// fails is skipped and the rest continue.
+    public func importInSequence(_ files: [URL], place: Bool, from ticks: Int64, track: Int? = nil) async -> SequencedImport {
+        var out = SequencedImport()
+        var t = ticks
+        for file in files {
+            do {
+                guard place else { _ = try await importMedia(file); continue }
+                let clip = try await importAndInsert(file, at: t, track: track)
+                for (i, tr) in project.tracks.enumerated() {
+                    guard let c = tr.clips.first(where: { $0.id == clip }) else { continue }
+                    t = c.end
+                    out.placed.append((clip, i))
+                    break
+                }
+            } catch {
+                out.failures.append((file, error))
+            }
+        }
+        return out
+    }
+
     /// Imports `files` and places them all at `ticks`, each on the next free track (the first
     /// on `track` when free), stacking upward: e.g. a recording's screen, camera and audio.
     /// One undo step named `name`. Returns the clip ids in `files` order. Files already inside
@@ -385,36 +417,44 @@ public final class EditorDocumentModel {
             do { info = try await thumbnailPool.probe(file) } catch {
                 throw DocumentError.unsupportedMedia(file.lastPathComponent)
             }
+            // As in importMedia: a file with nothing to show or play is no media.
+            guard info.kind != .unknown, info.kind == .image || info.kind == .shader || !info.streams.isEmpty else {
+                throw DocumentError.unsupportedMedia(file.lastPathComponent)
+            }
             let src = try bundle.importFile(file)
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
             descriptors.append(SourceDescriptor(info: info, src: src, lastModified: date))
             measured.append(await measureLoudness(info: info, src: src))
             shaders.append(ShaderSourceImport.entries(info: info, url: file))
         }
-        let editRate = project.timebase.editRate
         var builders: [CompoundCommand.Builder] = []
         for (i, d) in descriptors.enumerated() {
             let addIndex = builders.count
             builders.append { _, _ in AddSource(d) }
             builders += Self.loudnessSteps(addIndex: addIndex, measured[i])
             builders += ShaderSourceImport.steps(addIndex: addIndex, shaders[i])
-            builders.append { project, done in
+            // Placed by the drop rules (ui-workflow.md §4) when the step is first applied, after
+            // earlier files took their tracks: the first file on `track` as a timeline drop when
+            // given, everything else as a canvas drop at `ticks`.
+            let target = Self.dropTarget(track: i == 0 ? track : nil, at: ticks)
+            builders.append { _, done in
                 guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
-                // Placement is decided when the step is first applied, after earlier files took their tracks.
-                let place = Placement.find(in: project, start: ticks, duration: d.naturalDuration(editRate: editRate),
-                                           preferred: i == 0 ? track : nil)
-                var steps: [CompoundCommand.Builder] = []
-                if place.needsNewTrack { steps.append { _, _ in AddTrack(at: place.track) } }
-                steps.append { _, _ in InsertClip(sourceID: id, track: place.track, start: ticks) }
-                return CompoundCommand(name: name, steps)
+                return DropClip(sourceID: id, target)
             }
         }
         let c = CompoundCommand(name: name, builders)
         try perform(c)
-        return try c.steps.compactMap { $0 as? CompoundCommand }.map { place in
-            guard let id = (place.steps.last as? InsertClip)?.clipID else { throw EditError.invalid("no clip id") }
+        return try c.steps.compactMap { $0 as? DropClip }.map { drop in
+            guard let id = drop.clipID else { throw EditError.invalid("no clip id") }
             return id
         }
+    }
+
+    /// The drop rules' target for a placement at `ticks` (project time): a timeline drop on
+    /// top-level track `track`, or with no track a canvas drop at that playhead.
+    static func dropTarget(track: Int?, at ticks: Int64) -> DropTarget {
+        if let track { return .timeline(track: track, at: .timeline(ticks)) }
+        return .canvas(playhead: ticks)
     }
 
     /// Places one of WizRec's own backgrounds (`AssetCatalog.backgrounds`) at `ticks`: its
@@ -519,19 +559,16 @@ public final class EditorDocumentModel {
         return rev
     }
 
-    /// Places source `sourceID` at `ticks`: on `track` when free there, else the lowest free
-    /// track, else a new track on top. One undo step. Returns the clip id.
+    /// Places source `sourceID` by the drop rules (ui-workflow.md §4, `DropRules`): with `track`,
+    /// as a timeline drop on that top-level track at `ticks` (a busy spot inserts at a clip start
+    /// or moves up); without, as a canvas drop at playhead `ticks` (the lowest track with room,
+    /// else a new top track). One undo step ("Add to Timeline"). Returns the clip id.
     @discardableResult
     public func insertSource(_ sourceID: Int64, at ticks: Int64, track: Int? = nil) throws -> Int64 {
-        guard let source = project.source(id: sourceID) else { throw DocumentError.noSuchSource(sourceID) }
-        let duration = Placement.naturalDuration(of: source, editRate: project.timebase.editRate)
-        let place = Placement.find(in: project, start: ticks, duration: duration, preferred: track)
-        var builders: [CompoundCommand.Builder] = []
-        if place.needsNewTrack { builders.append { _, _ in AddTrack(at: place.track) } }
-        builders.append { _, _ in InsertClip(sourceID: sourceID, track: place.track, start: ticks) }
-        let c = CompoundCommand(name: "Add to Timeline", builders)
+        guard project.source(id: sourceID) != nil else { throw DocumentError.noSuchSource(sourceID) }
+        let c = DropClip(sourceID: sourceID, Self.dropTarget(track: track, at: ticks))
         try perform(c)
-        guard let clip = c.steps.last as? InsertClip, let id = clip.clipID else { throw EditError.invalid("no clip id") }
+        guard let id = c.clipID else { throw EditError.invalid("no clip id") }
         return id
     }
 
@@ -667,41 +704,6 @@ public final class EditorDocumentModel {
         let d = bundleDirectory.standardizedFileURL.resolvingSymlinksInPath().path
         let prefix = d.hasSuffix("/") ? d : d + "/"
         return f.hasPrefix(prefix) ? "./" + f.dropFirst(prefix.count) : f
-    }
-}
-
-/// Where a new clip goes on the timeline.
-public struct Placement: Equatable, Sendable {
-    /// Index into the scene's tracks (0 = bottom).
-    public var track: Int
-    /// True when `track` does not exist yet (add it first).
-    public var needsNewTrack: Bool
-
-    /// `preferred` when [start, start+duration) is free there, else the lowest free track,
-    /// else a new track above the others.
-    @MainActor
-    public static func find(in project: Project, start: Int64, duration: Int64, preferred: Int?) -> Placement {
-        let tracks = project.tracks
-        func free(_ i: Int) -> Bool {
-            let end = start + max(1, duration)
-            return !tracks[i].clips.contains { $0.start < end && start < $0.end }
-        }
-        if let p = preferred, tracks.indices.contains(p), free(p) { return Placement(track: p, needsNewTrack: false) }
-        if let i = tracks.indices.first(where: free) { return Placement(track: i, needsNewTrack: false) }
-        return Placement(track: tracks.count, needsNewTrack: true)
-    }
-
-    /// Length of a source placed at speed 1, ticks: its longest audio/video track; images 5 s [?];
-    /// shader backgrounds (an endless video track) 60 s [obs, shader-backgrounds.md SH2].
-    @MainActor
-    public static func naturalDuration(of source: SourceMedia, editRate: Int64, stillSeconds: Double = 5,
-                                       shaderSeconds: Double = 60) -> Int64 {
-        let seconds = source.tracks.compactMap { t -> Double? in
-            guard t.type != 1, let r = t.range.last, r < Int64.max / 2, t.editRate > 0, r > 0 else { return nil }
-            return t.durationSeconds
-        }.max()
-        let endless = source.tracks.contains { t in t.type == 0 && (t.range.last ?? 0) >= Int64.max / 2 }
-        return Int64(((seconds ?? (endless ? shaderSeconds : stillSeconds)) * Double(editRate)).rounded())
     }
 }
 

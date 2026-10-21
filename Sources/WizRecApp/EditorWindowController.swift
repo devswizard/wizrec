@@ -43,6 +43,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private var relinkWindow: NSWindow?
     private var relinkStatus: String?
     private var recorderHUD: RecorderHUDController?
+    /// Tab / Shift-Tab between the panes: library sidebar → canvas → inspector → timeline.
+    let keyLoop = EditorKeyLoop()
+    /// The bar above the timeline, and what its enabled states were last computed from.
+    private var timelineTools: TimelineToolbarView?
+    private var timelineToolsKey: [Int64] = []
     /// The toolbar's delegate (NSToolbar holds it weakly).
     private let toolbarItems = EditorToolbar()
     /// The last media drop into an open group while it imports and places (`placeInGroup`).
@@ -140,8 +145,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     private func buildLayout(in window: NSWindow) {
         let bar = NSHostingView(rootView: TransportBar(engine: engine))
-        let overlay = PassthroughHostingView(rootView: CanvasOverlay(engine: engine, model: model, ui: ui,
-                                                            relink: { [weak self] in self?.showRelink(nil) }))
+        let overlay = PassthroughHostingView(rootView: CanvasOverlay(
+            engine: engine, model: model, ui: ui,
+            relink: { [weak self] in self?.showRelink(nil) },
+            record: { [weak self] in self?.newRecording(nil) },
+            importMedia: { [weak self] in self?.importMedia(nil) }))
+        overlay.dropTarget = canvas
+        // The overlay follows the canvas; its text must never size the window.
+        overlay.sizingOptions = []
         let center = NSView()
         for v in [canvas, selectionOverlay, overlay, bar] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -178,6 +189,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             commit: { [weak self] in self?.commitPreview() },
             set: { [weak self] f, v in self?.setField(f, v) },
             setSpeed: { [weak self] v in self?.setSpeed(v) },
+            setDuration: { [weak self] t in self?.setDuration(t) },
             setCaptionStyle: { [weak self] s in self?.setSelectedCaptionStyle(s) },
             previewBackground: { [weak self] n, v in self?.previewBackground(n, v) },
             setBackground: { [weak self] n, v in self?.setBackground(n, v) })))
@@ -197,11 +209,34 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let root = EditorSplitView()
         root.isVertical = false
         root.dividerStyle = .thick
-        timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
-        for v in [top, timelineView] as [NSView] { root.addArrangedSubview(v) }
+        let tools = TimelineToolbarView(actions: timelineToolbarActions())
+        timelineTools = tools
+        let timelinePane = NSView()
+        for v in [tools, timelineView] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            timelinePane.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            tools.leadingAnchor.constraint(equalTo: timelinePane.leadingAnchor),
+            tools.trailingAnchor.constraint(equalTo: timelinePane.trailingAnchor),
+            tools.topAnchor.constraint(equalTo: timelinePane.topAnchor),
+            tools.heightAnchor.constraint(equalToConstant: TimelineToolbarView.height),
+            timelineView.leadingAnchor.constraint(equalTo: timelinePane.leadingAnchor),
+            timelineView.trailingAnchor.constraint(equalTo: timelinePane.trailingAnchor),
+            timelineView.topAnchor.constraint(equalTo: tools.bottomAnchor),
+            timelineView.bottomAnchor.constraint(equalTo: timelinePane.bottomAnchor),
+            timelineView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
+        ])
+        for v in [top, timelinePane] as [NSView] { root.addArrangedSubview(v) }
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
-        root.defaultSizes = { size in [max(360, size.height - 230)] }
+        keyLoop.panes = [
+            EditorKeyLoop.Pane(view: bin, ownsTabOrder: true),
+            EditorKeyLoop.Pane(view: center, extraStops: [canvas]),
+            EditorKeyLoop.Pane(view: props),
+            EditorKeyLoop.Pane(view: timelinePane, singleStop: timelineView),
+        ]
+        root.defaultSizes = { size in [max(360, size.height - 230 - TimelineToolbarView.height)] }
         if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
     }
@@ -270,12 +305,65 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             lastTimelineError = timelineModel.lastError
             if let e = lastTimelineError { ui.show(e) }
         }
+        refreshTimelineTools()
         let t = engine.currentTicks
         if t != lastPlayheadSync {
             lastPlayheadSync = t
             timelineModel.playhead = t
             if !engine.isPlaying { refreshInspector() }
         }
+    }
+
+    // MARK: Timeline toolbar
+
+    private func timelineToolbarActions() -> TimelineToolbarActions {
+        TimelineToolbarActions(
+            undo: { [weak self] in self?.undoEdit() },
+            redo: { [weak self] in self?.redoEdit() },
+            cut: { [weak self] in self?.cut(nil) },
+            copy: { [weak self] in self?.copy(nil) },
+            paste: { [weak self] in self?.paste(nil) },
+            split: { [weak self] in self?.timelineView.splitAtPlayhead(nil) },
+            delete: { [weak self] in self?.timelineView.delete(nil) },
+            rippleDelete: { [weak self] in self?.timelineView.rippleDelete(nil) },
+            addTrack: { [weak self] in self?.timelineView.addTrack(nil) },
+            toggleSnapping: { [weak self] in self?.timelineView.toggleSnapping(nil) },
+            zoomOut: { [weak self] in self?.timelineView.zoomOut(nil) },
+            zoomToFit: { [weak self] in self?.timelineView.zoomToFit(nil) },
+            zoomIn: { [weak self] in self?.timelineView.zoomIn(nil) })
+    }
+
+    /// Re-validates the timeline toolbar when something it depends on changed (cheap otherwise).
+    private func refreshTimelineTools() {
+        let undo = model.undo
+        var key: [Int64] = [Int64(model.revision), engine.currentTicks]
+        key.append(Int64(NSPasteboard.general.changeCount))
+        key.append(Int64(timelineModel.selection.count))
+        key.append(timelineModel.selection.min() ?? -1)
+        let undoBits: Int64 = (undo.canUndo ? 1 : 0) + (undo.canRedo ? 2 : 0) + (timelineModel.snappingEnabled ? 4 : 0)
+        key.append(undoBits)
+        let zoom: Double = Double(timelineModel.pointsPerSecond) * 1000
+        key.append(Int64(zoom))
+        guard key != timelineToolsKey else { return }
+        timelineToolsKey = key
+        func valid(_ action: Selector) -> Bool { validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: "")) }
+        func timeline(_ action: Selector) -> Bool {
+            timelineView.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: ""))
+        }
+        var s = TimelineToolbarState()
+        s.canUndo = undo.canUndo
+        s.canRedo = undo.canRedo
+        s.undoName = undo.undoName
+        s.redoName = undo.redoName
+        s.canCut = valid(#selector(cut(_:)))
+        s.canCopy = valid(#selector(copy(_:)))
+        s.canPaste = valid(#selector(paste(_:)))
+        s.canSplit = timeline(#selector(TimelineUI.TimelineView.splitAtPlayhead(_:)))
+        s.canDelete = timeline(#selector(TimelineUI.TimelineView.delete(_:)))
+        s.canZoomIn = timeline(#selector(TimelineUI.TimelineView.zoomIn(_:)))
+        s.canZoomOut = timeline(#selector(TimelineUI.TimelineView.zoomOut(_:)))
+        s.snapping = timelineModel.snappingEnabled
+        timelineTools?.apply(s)
     }
 
     // MARK: Project changes
@@ -313,7 +401,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         let sel = timelineModel.selection
         inspector.selectionCount = sel.count
         let next = sel.count == 1 ? sel.first.flatMap(inspection(of:)) : nil
-        inspector.speedEditable = next.map { n in model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } } } ?? false
+        if inspector.grid != engine.grid { inspector.grid = engine.grid }
+        // Clip Speed works on top-level clips with media time (not images or annotations).
+        inspector.speedEditable = next.map { n in
+            !["IMFile", "Callout"].contains(n.typeName)
+                && model.project.tracks.contains { $0.clips.contains { $0.id == n.clipID } }
+        } ?? false
         if next != inspector.inspection { inspector.inspection = next }
         let caption = selectedDynamicCaption?.style
         if caption != inspector.captionStyle { inspector.captionStyle = caption }
@@ -383,11 +476,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         run("Change background") { try model.set(changes) }
     }
 
-    /// Clip speed from the inspector, as an exact rational (percent precision); later clips ripple.
-    private func setSpeed(_ speed: Double) {
-        guard let i = inspector.inspection, speed.isFinite, speed > 0 else { return }
-        let r = Rational(max(1, Int64((speed * 100).rounded())), 100)
-        run("Clip speed") { try model.perform(SetClipSpeed(clipID: i.clipID, speed: r, ripple: true)) }
+    /// Clip speed from the inspector (exact rational, two-decimal precision); later clips ripple.
+    /// The duration is floored to a frame and the media range kept (ED2b).
+    private func setSpeed(_ speed: Rational) {
+        guard let i = inspector.inspection, speed.num > 0, speed.den > 0 else { return }
+        run(String(localized: "Clip Speed")) { try model.perform(SetClipSpeed(clipID: i.clipID, speed: speed, ripple: true)) }
+    }
+
+    /// Clip duration from the inspector's Clip Speed Duration field (ticks, floored to a frame by
+    /// `SetClipDuration`); the media range is kept and later clips ripple (ED2b).
+    private func setDuration(_ ticks: Int64) {
+        guard let i = inspector.inspection, ticks > 0 else { return }
+        run(String(localized: "Clip Speed")) { try model.perform(SetClipDuration(clipID: i.clipID, duration: ticks, ripple: true)) }
     }
 
     func undoEdit() { run("Undo") { try model.undoLast() } }
@@ -487,28 +587,36 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
     }
 
-    /// Imports `urls` into the bin; with `place`, also onto the timeline at `ticks`.
-    func importFiles(_ urls: [URL], place: Bool, track: Int? = nil, at ticks: Int64? = nil) {
+    /// Imports `urls` into the bin; with `place`, also onto the timeline at `ticks`. Projects
+    /// among them open in their own window; folders and other documents are reported.
+    func importFiles(_ given: [URL], place: Bool, track: Int? = nil, at ticks: Int64? = nil) {
+        let sorted = DroppedFiles(given)
+        if !sorted.projects.isEmpty { (NSDocumentController.shared as? WizRecDocumentController)?.openFiles(sorted.projects) }
+        let unsupported = sorted.unsupportedMessage()
+        let urls = sorted.media
+        guard !urls.isEmpty else {
+            if let unsupported { ui.show(unsupported, seconds: 10) }
+            return
+        }
         ui.isImporting = true
         Task {
-            var failures: [String] = []
-            var t = ticks ?? engine.currentTicks
-            for u in urls {
-                do {
-                    if place {
-                        let clip = try await model.importAndInsert(u, at: t, track: track)
-                        if let c = model.project.tracks.flatMap(\.clips).first(where: { $0.id == clip }) { t = c.end }
-                        select([clip])
-                    } else {
-                        try await model.importMedia(u)
-                    }
-                } catch {
-                    failures.append("\(u.lastPathComponent): \(Self.describe(error))")
-                }
-            }
+            let r = await model.importInSequence(urls, place: place, from: ticks ?? engine.currentTicks, track: track)
+            if let last = r.placed.last { select([last.clip]) }
             ui.isImporting = false
-            if !failures.isEmpty { ui.show("Import failed — " + failures.joined(separator: "; "), seconds: 10) }
+            // UI checks read this line (drops onto the bin, canvas and timeline).
+            let placed = r.placed.map { "\($0.clip)@track\($0.track)" }.joined(separator: ",")
+            print("WizRec: imported \(urls.count - r.failures.count) of \(urls.count) "
+                  + "place=\(place) clips=[\(placed)] bin=\(model.project.sourceBin.count)")
+            fflush(stdout)
+            let failures = (unsupported.map { [$0] } ?? []) + r.failures.map { Self.importFailure($0.file, $0.error) }
+            if !failures.isEmpty { ui.show(failures.joined(separator: " "), seconds: 10) }
         }
+    }
+
+    /// One plain sentence for a file that could not be imported.
+    static func importFailure(_ url: URL, _ error: any Error) -> String {
+        if case DocumentError.unsupportedMedia = error { return describe(error) }
+        return String(localized: "“\(url.lastPathComponent)” couldn’t be imported: \(describe(error))")
     }
 
     /// Places a bin item at the playhead.
@@ -813,7 +921,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     private func installKeys() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { () -> Bool in
-                guard let self, event.window === self.window, !(self.window?.firstResponder is NSText) else { return false }
+                guard let self, event.window === self.window, let window = self.window else { return false }
+                // Tab / Shift-Tab: the window's pane loop decides at pane edges (library tiles
+                // handle their own Tab and leave through `keyLoop.leave`).
+                let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                if event.keyCode == 48, mods.subtracting(.shift).isEmpty, window.attachedSheet == nil {
+                    if window.firstResponder is LibraryTileAccessibility.Element { return false }
+                    return self.keyLoop.handleTab(in: window, backward: mods.contains(.shift))
+                }
+                guard !(window.firstResponder is NSText) else { return false }
                 // A focused library tile takes Space (press) instead of play/pause.
                 if event.keyCode == 49, self.window?.firstResponder is LibraryTileAccessibility.Element { return false }
                 return self.handleKey(event)

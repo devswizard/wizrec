@@ -41,6 +41,9 @@ final class TimelineCanvas: NSView {
     var drag: TimelineDrag = .none
     /// Drop target shown while media is dragged over the view.
     var dropTarget: (track: Int, ticks: Int64)?
+    /// Where the drop rules put a media-bin item dragged over the top level (`DropRules.place`),
+    /// with its clip duration (ticks); nil for files (not imported yet) and inside groups.
+    var dropPreview: (placement: DropPlacement, duration: Int64)?
     /// Library item (effect/transition) target shown while it is dragged over the view.
     var libraryTarget: LibraryDrop?
     /// Snap distance, points.
@@ -580,21 +583,34 @@ final class TimelineCanvas: NSView {
             return libraryTarget == nil ? [] : .copy
         }
         // Media drops: top level through `onDrop`, inside an open group through `onGroupDrop`.
-        guard acceptsMediaDrops, dropPayload(sender) != nil else { dropTarget = nil; return [] }
-        dropTarget = dropLocation(convert(sender.draggingLocation, from: nil))
+        guard acceptsMediaDrops, let payload = dropPayload(sender) else { dropTarget = nil; dropPreview = nil; return [] }
+        let loc = dropLocation(convert(sender.draggingLocation, from: nil))
+        dropTarget = loc
+        dropPreview = preview(payload, track: loc.track, ticks: loc.ticks)
         needsDisplay = true
         return .copy
     }
 
+    /// The drop rules' placement for a top-level media-bin drop at (`track`, `ticks`), the same
+    /// call the drop itself makes (`DropClip`), so the hover shows where the clip will land.
+    func preview(_ payload: DropPayload, track: Int, ticks: Int64) -> (placement: DropPlacement, duration: Int64)? {
+        guard snapshot.groupPath.isEmpty, case .sources(let ids) = payload, let id = ids.first,
+              let d = try? DropRules.clipDuration(source: id, in: model.project),
+              let p = try? DropRules.place(.timeline(track: track, at: .timeline(ticks)), duration: d, in: model.project)
+        else { return nil }
+        return (p, d)
+    }
+
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
         dropTarget = nil
+        dropPreview = nil
         libraryTarget = nil
         needsDisplay = true
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         rebuildIfNeeded()
-        defer { dropTarget = nil; libraryTarget = nil; needsDisplay = true }
+        defer { dropTarget = nil; dropPreview = nil; libraryTarget = nil; needsDisplay = true }
         if let item = libraryItem(sender.draggingPasteboard) {
             guard let drop = libraryDrop(item, at: convert(sender.draggingLocation, from: nil)) else { return false }
             return perform(drop)

@@ -1,3 +1,4 @@
+import AppKit
 import Captions
 import Observation
 import PlayerKit
@@ -12,6 +13,8 @@ final class InspectorState {
     var inspection: ClipInspection?
     var selectionCount = 0
     var timebase = Timebase.camtasia
+    /// The project's frame grid (Clip Speed's Duration field counts frames at its rate).
+    var grid = FrameGrid(timebase: .camtasia, fps: Rational(30), duration: 0)
     var error: String?
     /// The selected clip sits directly on a track (speed can be changed).
     var speedEditable = false
@@ -27,8 +30,10 @@ struct InspectorActions {
     var commit: () -> Void
     /// Typed value: one undo step.
     var set: (InspectorField, Double) -> Void
-    /// New clip speed (1 = normal), top-level clips only.
-    var setSpeed: (Double) -> Void
+    /// New clip speed (1 = normal, two-decimal precision), top-level clips only.
+    var setSpeed: (Rational) -> Void
+    /// New clip duration (ticks) through Clip Speed (`SetClipDuration`), top-level clips only.
+    var setDuration: (Int64) -> Void = { _ in }
     /// New style for the selected dynamic caption: one undo step.
     var setCaptionStyle: (DynamicCaptionStyle) -> Void
     /// Live values of a shader background parameter (`ShaderInspection.Item.name`), no undo step yet;
@@ -38,7 +43,8 @@ struct InspectorActions {
     var setBackground: (String, [Double]) -> Void = { _, _ in }
 }
 
-/// Properties of the selected clip: transform, crop, opacity, volume; speed read-only.
+/// Properties of the selected clip: transform, crop, opacity, volume, and Clip Speed (duration
+/// and speed, editable on clips that sit directly on a track).
 struct InspectorView: View {
     let state: InspectorState
     let actions: InspectorActions
@@ -54,9 +60,18 @@ struct InspectorView: View {
             if let i = state.inspection {
                 ScrollView { content(i).padding(12) }
             } else {
-                Text(state.selectionCount > 1 ? "\(state.selectionCount) clips selected" : "Select a clip on the canvas or timeline")
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
+                VStack(spacing: 6) {
+                    Text(state.selectionCount > 1 ? "\(state.selectionCount) clips selected" : "No clip selected")
+                        .font(.headline).foregroundStyle(.secondary)
+                    Text(state.selectionCount > 1
+                         ? "Select one clip to see and change its properties."
+                         : "Click a clip on the timeline or the canvas to see and change its position, size, crop, opacity, speed and volume.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("inspector.empty")
+                .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
             }
             if let e = state.error {
                 Text(e).font(.caption).foregroundStyle(.red).padding(8).frame(maxWidth: .infinity, alignment: .leading)
@@ -72,16 +87,23 @@ struct InspectorView: View {
                 info("Name", i.name.isEmpty ? "—" : i.name)
                 info("Type", Self.typeLabel(i.typeName))
                 info("Start", state.timebase.timecode(i.start))
-                info("Duration", state.timebase.timecode(i.duration))
                 if state.speedEditable {
-                    HStack(spacing: 6) {
-                        Text("Speed").font(.callout).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        Spacer()
-                        NumberField(value: i.speed * 100, unit: "%") { actions.setSpeed($0 / 100) }
-                            .frame(width: 70)
+                    clipSpeedRow("Duration", id: "inspector.duration",
+                                 shown: ClipSpeedFields.durationText(i.duration, grid: state.grid), unit: "",
+                                 help: "Clip Speed: type a length (seconds;frames, e.g. 5;11) to speed the clip up or slow it down") { text in
+                        guard let t = ClipSpeedFields.durationTicks(text, grid: state.grid), t > 0 else { return false }
+                        actions.setDuration(t)
+                        return true
+                    }
+                    clipSpeedRow("Speed", id: "inspector.speed", shown: ClipSpeedFields.speedText(i.speed), unit: "x",
+                                 help: "Clip Speed: 2 plays twice as fast, 0.5 at half speed") { text in
+                        guard let r = ClipSpeedFields.speed(text) else { return false }
+                        actions.setSpeed(r)
+                        return true
                     }
                 } else {
-                    info("Speed", String(format: "%.0f%%", i.speed * 100))
+                    info("Duration", ClipSpeedFields.durationText(i.duration, grid: state.grid))
+                    info("Speed", ClipSpeedFields.speedText(i.speed) + "x")
                 }
             }
             if i.visualClipID != nil {
@@ -141,6 +163,20 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             body()
+        }
+    }
+
+    /// A Clip Speed text field: `apply` gets the typed text and returns false to put `shown` back.
+    private func clipSpeedRow(_ label: LocalizedStringKey, id: String, shown: String, unit: String, help: LocalizedStringKey,
+                              apply: @escaping (String) -> Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
+            Spacer()
+            TextEntryField(shown: shown, unit: unit, apply: apply)
+                .frame(width: 96)
+                .accessibilityLabel(label)
+                .accessibilityIdentifier(id)
+                .help(help)
         }
     }
 
@@ -219,5 +255,38 @@ struct NumberField: View {
 
     static func format(_ v: Double) -> String {
         abs(v - v.rounded()) < 0.005 ? String(Int(v.rounded())) : String(format: "%.2f", v)
+    }
+}
+
+/// A text field that hands its text to `apply` on Return or focus loss when it differs from
+/// `shown`; when `apply` refuses it (false), the field shows `shown` again.
+struct TextEntryField: View {
+    let shown: String
+    let unit: String
+    let apply: (String) -> Bool
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            TextField("", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.callout.monospacedDigit())
+                .multilineTextAlignment(.trailing)
+                .focused($focused)
+                .onSubmit(commit)
+                .onChange(of: focused) { _, f in if !f { commit() } }
+            if !unit.isEmpty {
+                Text(unit).font(.caption).foregroundStyle(.secondary).frame(width: 12, alignment: .leading)
+            }
+        }
+        .onAppear { text = shown }
+        .onChange(of: shown) { _, v in if !focused { text = v } }
+    }
+
+    private func commit() {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard t != shown else { return }
+        if !apply(t) { NSSound.beep(); text = shown }
     }
 }

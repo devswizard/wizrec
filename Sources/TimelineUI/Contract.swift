@@ -70,8 +70,48 @@ public final class TimelineView: NSView {
         canvas.frame = bounds
         canvas.autoresizingMask = [.width, .height]
         addSubview(canvas)
+        // The canvas never draws outside the view (NSView no longer clips by default).
+        clipsToBounds = true
+        setAccessibilityIdentifier("editor.timeline")
+    }
+
+    /// The canvas always fills the view (autoresizing from a zero first size can leave it off).
+    override public func layout() {
+        super.layout()
+        if canvas.frame != bounds { canvas.frame = bounds }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Draw a focus ring while the view has keyboard focus that came from the keyboard (Tab);
+    /// a click clears it. Set by the window's key loop.
+    public var showsKeyboardFocus = false {
+        didSet { if showsKeyboardFocus != oldValue { noteFocusRingMaskChanged() } }
+    }
+
+    override public var focusRingMaskBounds: NSRect { bounds }
+    override public func drawFocusRingMask() {
+        guard showsKeyboardFocus, window?.firstResponder === self else { return }
+        bounds.insetBy(dx: 1, dy: 1).fill()
+    }
+    override public func resignFirstResponder() -> Bool {
+        showsKeyboardFocus = false
+        return super.resignFirstResponder()
+    }
+
+    // VoiceOver and UI checks: the timeline is one group with a label.
+    override public func isAccessibilityElement() -> Bool { true }
+    override public func accessibilityRole() -> NSAccessibility.Role? { .group }
+    override public func accessibilityLabel() -> String? { String(localized: "Timeline") }
+    override public func accessibilityHelp() -> String? {
+        String(localized: "Space plays, the arrow keys step frames, S splits at the playhead, M adds a marker.")
+    }
+    override public func isAccessibilityFocused() -> Bool {
+        guard let r = window?.firstResponder as? NSView else { return false }
+        return r === self || r.isDescendant(of: self)
+    }
+    override public func setAccessibilityFocused(_ focused: Bool) {
+        if focused { window?.makeFirstResponder(self) }
+    }
 }

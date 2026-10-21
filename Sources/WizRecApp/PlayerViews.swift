@@ -10,13 +10,18 @@ struct TransportBar: View {
     var body: some View {
         let grid = engine.grid
         let tb = grid.timebase
+        // An empty timeline has nothing to play or step through.
+        let empty = grid.duration <= 0
         HStack(spacing: 10) {
-            button("backward.end.fill", "Go to start (Home)") { engine.goToStart() }
-            button("backward.frame.fill", "Previous frame (←)") { engine.step(by: -1) }
-            button(engine.isPlaying ? "pause.fill" : "play.fill", "Play/Pause (Space)") { engine.togglePlay() }
-                .frame(width: 22)
-            button("forward.frame.fill", "Next frame (→)") { engine.step(by: 1) }
-            button("forward.end.fill", "Go to end (End)") { engine.goToEnd() }
+            Group {
+                button("backward.end.fill", "Go to start (Home)") { engine.goToStart() }
+                button("backward.frame.fill", "Previous frame (←)") { engine.step(by: -1) }
+                button(engine.isPlaying ? "pause.fill" : "play.fill", "Play/Pause (Space)") { engine.togglePlay() }
+                    .frame(width: 22)
+                button("forward.frame.fill", "Next frame (→)") { engine.step(by: 1) }
+                button("forward.end.fill", "Go to end (End)") { engine.goToEnd() }
+            }
+            .disabled(empty)
             Text(tb.timecode(engine.currentTicks))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.primary)
@@ -36,6 +41,7 @@ struct TransportBar: View {
                 }
             )
             .controlSize(.small)
+            .disabled(empty)
             .accessibilityLabel("Playhead position")
             .accessibilityValue(tb.timecode(engine.currentTicks))
             Text(tb.timecode(grid.duration))
@@ -64,14 +70,72 @@ struct TransportBar: View {
     }
 }
 
-/// Missing-media, status and compositor banners plus the optional performance overlay.
+/// Missing-media, status and compositor banners plus the optional performance overlay; on an
+/// empty timeline, the first steps (Record, Import Media); while media is dragged over the
+/// canvas, a drop outline.
 struct CanvasOverlay: View {
     let engine: PlaybackEngine
     let model: EditorDocumentModel
     let ui: EditorUIState
     let relink: () -> Void
+    var record: () -> Void = {}
+    var importMedia: () -> Void = {}
 
     var body: some View {
+        ZStack {
+            if timelineIsEmpty && !ui.isImporting && !ui.canvasDropTargeted { emptyState }
+            if ui.canvasDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(dropLabel)
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+            banners
+        }
+    }
+
+    /// No clip on any track (an empty or new project).
+    private var timelineIsEmpty: Bool {
+        let _ = model.revision
+        return model.project.tracks.allSatisfy(\.clips.isEmpty)
+    }
+
+    private var dropLabel: some View {
+        Text("Drop to add at the playhead")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Color.accentColor, in: Capsule())
+    }
+
+    /// First steps on an empty timeline: what goes here and the two actions that fill it.
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "film.stack").font(.system(size: 34)).foregroundStyle(.white.opacity(0.55))
+                .accessibilityHidden(true)
+            Text("Your video starts here").font(.title3.weight(.semibold)).foregroundStyle(.white)
+            Text("Record your screen, or add videos, images and audio.\nYou can also drag files onto the canvas, the timeline or the media bin.")
+                .font(.callout).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                Button(action: record) { Label("Record Screen", systemImage: "record.circle") }
+                    .accessibilityIdentifier("canvas.record")
+                    .help("Record your screen into this project (⌘R)")
+                Button(action: importMedia) { Label("Import Media…", systemImage: "square.and.arrow.down") }
+                    .accessibilityIdentifier("canvas.importMedia")
+                    .help("Add video, audio or image files to the media bin (⌘I)")
+            }
+            .controlSize(.large)
+        }
+        .padding(24)
+        .frame(maxWidth: 440)
+        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("canvas.emptyState")
+    }
+
+    private var banners: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !model.missing.isEmpty {
                 HStack(spacing: 8) {

@@ -88,6 +88,12 @@ struct MediaBinView: View {
     let actions: BinActions
     @State private var selection: Int64?
     @State private var dropTargeted = false
+    /// Keyboard focus across the tiles (Tab / Shift-Tab; Space or Return adds at the playhead).
+    @State private var focus: LibraryTileFocus = {
+        let f = LibraryTileFocus()
+        f.focusSearchField = nil
+        return f
+    }()
 
     private let columns = [GridItem(.adaptive(minimum: 104, maximum: 160), spacing: 8)]
 
@@ -105,17 +111,32 @@ struct MediaBinView: View {
             .padding(.horizontal, 10).padding(.vertical, 8)
             Divider()
             if items.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "square.and.arrow.down.on.square").font(.system(size: 28)).foregroundStyle(.tertiary)
-                    Text("Drop media files here\nor choose File ▸ Import Media…")
+                        .accessibilityHidden(true)
+                    Text("Your recordings and imported media appear here. Drag files here from Finder, or:")
                         .multilineTextAlignment(.center).font(.callout).foregroundStyle(.secondary)
+                    Button("Import Media…") { actions.importMedia() }
+                        .accessibilityIdentifier("bin.importMedia")
+                        .help("Add video, audio or image files (⌘I)")
                 }
+                .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(items) { item in
                             BinTile(item: item, image: thumbnails.images[item.url], selected: selection == item.id)
+                                .id("bin.\(item.id)")
+                                .accessibilityHidden(true)
+                                .overlay(LibraryTileAccessibility(
+                                    title: item.name, note: item.missing ? String(localized: "Missing") : nil,
+                                    hint: String(localized: "Press to add at the playhead"),
+                                    identifier: "bin.\(item.id)", focus: focus) {
+                                        actions.insert(item.id)
+                                        return true
+                                    })
                                 .onAppear { if !item.missing { thumbnails.request(item.url) } }
                                 .onTapGesture(count: 2) { actions.insert(item.id) }
                                 .onTapGesture { selection = item.id }
@@ -130,6 +151,9 @@ struct MediaBinView: View {
                     }
                     .padding(10)
                 }
+                .onAppear { connectFocus(proxy, items) }
+                .onChange(of: items.map(\.id)) { _, ids in focus.order = ids.map { "bin.\($0)" } }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -138,6 +162,11 @@ struct MediaBinView: View {
             Self.loadURLs(providers) { actions.importFiles($0) }
             return true
         }
+    }
+
+    private func connectFocus(_ proxy: ScrollViewProxy, _ items: [BinItem]) {
+        focus.order = items.map { "bin.\($0.id)" }
+        focus.scrollTo = { id, backward in proxy.scrollTo(id, anchor: backward ? UnitPoint.top : UnitPoint.bottom) }
     }
 
     static func provider(for item: BinItem) -> NSItemProvider {

@@ -20,6 +20,7 @@ extension TimelineCanvas {
         drawClips(ctx, L, dirty)
         drawGroupWindow(ctx, L)
         drawPreviews(ctx, L)
+        drawEmptyHint(L)
         ctx.restoreGState()
 
         drawRuler(ctx, L, dirty)
@@ -31,6 +32,62 @@ extension TimelineCanvas {
         drawCorner(ctx, L)
         drawBreadcrumb(ctx, L)
         drawPlayhead(ctx, L)
+    }
+
+    /// Where a hovering media-bin drop will land (`DropRules.place`): the clip's outline on its
+    /// track; for an insert at a clip start, an arrow saying the later clips move right; for a
+    /// new top track, a dashed band above the top track.
+    func drawDropPreview(_ ctx: CGContext, _ L: TimelineLayout, _ p: DropPlacement, duration: Int64) {
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        func label(_ text: String, at point: CGPoint) {
+            let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white])
+            let size = s.size()
+            let pill = CGRect(x: point.x, y: point.y, width: size.width + 10, height: size.height + 4)
+            Palette.marqueeStroke.setFill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+            s.draw(at: CGPoint(x: pill.minX + 5, y: pill.minY + 2))
+        }
+        let x = L.x(ofTicks: p.start)
+        let w = max(4, L.x(ofTicks: p.start + duration) - x)
+        if p.rule == .newTopTrack {
+            guard let top = L.rows.min(by: { $0.y < $1.y }) else { return }
+            let rr = L.rowRect(top)
+            let band = CGRect(x: x, y: rr.minY, width: w, height: min(rr.height, 18))
+            Palette.marqueeFill.setFill(); ctx.fill(band)
+            ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(1.5)
+            ctx.setLineDash(phase: 0, lengths: [5, 3]); ctx.stroke(band.insetBy(dx: 0.75, dy: 0.75)); ctx.setLineDash(phase: 0, lengths: [])
+            label(String(localized: "New track on top"), at: CGPoint(x: x + 4, y: band.maxY + 2))
+            return
+        }
+        guard let r = L.clipRect(track: p.track, start: p.start, duration: duration) else { return }
+        Palette.marqueeFill.setFill(); ctx.fill(r)
+        ctx.setStrokeColor(Palette.marqueeStroke.cgColor); ctx.setLineWidth(2)
+        ctx.stroke(r.insetBy(dx: 1, dy: 1))
+        if p.rule == .insertAtClipStart {
+            label(String(localized: "Inserts here, later clips move right →"), at: CGPoint(x: r.minX + 4, y: r.minY + 4))
+        }
+    }
+
+    /// The hint on an empty top-level timeline (ui-workflow.md §5): what goes here and how.
+    static var emptyHint: String {
+        String(localized: "Drag media here from the Media tab or from Finder, or record your screen.")
+    }
+
+    func drawEmptyHint(_ L: TimelineLayout) {
+        guard snapshot.groupPath.isEmpty, snapshot.allClips.isEmpty, dropTarget == nil, dropPreview == nil else { return }
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let text = NSAttributedString(string: Self.emptyHint, attributes: [
+            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+            .foregroundColor: Palette.secondaryText,
+            .paragraphStyle: style,
+        ])
+        let area = L.clipArea
+        let h = text.boundingRect(with: CGSize(width: max(40, area.width - 40), height: 200),
+                                  options: [.usesLineFragmentOrigin]).height
+        let rect = CGRect(x: area.minX + 20, y: area.minY + max(8, (min(area.height, 160) - h) / 2),
+                          width: max(40, area.width - 40), height: h + 2)
+        text.draw(with: rect, options: [.usesLineFragmentOrigin])
     }
 
     // MARK: Open group (breadcrumb + window)
@@ -490,7 +547,9 @@ extension TimelineCanvas {
             ctx.stroke(r.insetBy(dx: 0.5, dy: 0.5))
         default: break
         }
-        if let drop = dropTarget, let row = L.row(forTrack: drop.track) {
+        if let preview = dropPreview {
+            drawDropPreview(ctx, L, preview.placement, duration: preview.duration)
+        } else if let drop = dropTarget, let row = L.row(forTrack: drop.track) {
             let rr = L.rowRect(row)
             let x = L.x(ofTicks: drop.ticks).rounded()
             Palette.marqueeStroke.setFill()

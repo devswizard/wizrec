@@ -11,12 +11,16 @@ final class EditorUIState {
     /// Last error or status line shown above the canvas; cleared after a few seconds.
     var message: String?
     var isImporting = false
+    /// Media is being dragged over the canvas (it shows a drop outline).
+    var canvasDropTargeted = false
     /// A long-running job's status (e.g. "Transcribing voice.wav… 40%"); nil when idle.
     var activity: String?
     private var messageToken = 0
 
     func show(_ text: String, seconds: Double = 6) {
         message = text
+        print("WizRec: status \(text)")   // UI checks read status lines
+        fflush(stdout)
         messageToken += 1
         let token = messageToken
         Task { @MainActor [weak self] in
@@ -126,8 +130,26 @@ final class EditorSplitView: NSSplitView {
 /// Hosting view that lets clicks through wherever its SwiftUI content has no control
 /// (the canvas overlay: banners pass clicks to the canvas, buttons still work).
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    /// Media drags over the overlay's own controls (e.g. the empty canvas's buttons) go to this
+    /// view (the canvas below), so the whole canvas area takes drops.
+    weak var dropTarget: NSView? {
+        didSet { if dropTarget != nil { registerForDraggedTypes(MediaDrop.types) } else { unregisterDraggedTypes() } }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let v = super.hitTest(point)
         return v === self ? nil : v
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        dropTarget?.draggingEntered(sender) ?? []
+    }
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        dropTarget?.draggingUpdated(sender) ?? []
+    }
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { dropTarget?.draggingExited(sender) }
+    override func draggingEnded(_ sender: any NSDraggingInfo) { dropTarget?.draggingEnded(sender) }
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        dropTarget?.performDragOperation(sender) ?? false
     }
 }
