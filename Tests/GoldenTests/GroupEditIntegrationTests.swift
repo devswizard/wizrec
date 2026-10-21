@@ -55,7 +55,7 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
     }
 
     /// Group-inner AddTrack/RemoveTrack and drops (timeline and inner time,
-    /// group growth, nested groups under a speed change), rejected edits leave
+    /// no group growth per group-edits §8.6, nested groups under a speed change), rejected edits leave
     /// the bytes alone, the dropped clips render at the mapped times, then
     /// undo/redo walk, save/reopen, continue, undo-all.
     @Test func groupTrackAndDropChain() async throws {
@@ -76,13 +76,14 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
         #expect(try group(g).tracks[1].clips.map(\.start) == [frames(10)])
         #expect(try group(g).duration == frames(120))
 
-        // A drop in inner time that ends past the group grows it (100 + 90 = 190 frames).
+        // A drop in inner time that ends past the group (100 + 90 = 190 frames) never grows it
+        // (§8.6 [obs]); the part past the 120-frame window is hidden.
         let b2 = try #require(try chain.run(InsertClipInGroup(sourceID: sb, group: g, track: 1, at: .inner(frames(100)))).clipID)
-        #expect(try group(g).duration == frames(190))
-        #expect(try group(g).mediaDuration == Rational(frames(190)))
-        #expect(chain.project.duration == frames(190))
+        #expect(try group(g).duration == frames(120))
+        #expect(try group(g).mediaDuration == Rational(frames(120)))
+        #expect(chain.project.duration == frames(120))
 
-        // Overlap on the non-magnetic inner track and a drop left of the window are rejected.
+        // Overlaps on the non-magnetic inner track are rejected, also left of the window.
         #expect(!chain.attempt(InsertClipInGroup(sourceID: sb, group: g, track: 1, at: .inner(frames(50)))))
         #expect(!chain.attempt(InsertClipInGroup(sourceID: sb, group: g, track: 1, at: .inner(-frames(5)))))
         #expect(!chain.attempt(AddGroupTrack(group: g, at: 5)))
@@ -98,7 +99,8 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
         func drawn(_ id: Int64, _ t: Int64) -> Bool { shows(id, at: t, chain.project, bundle) }
         #expect(drawn(g, frames(5)) && drawn(a1, frames(5)) && !drawn(b1, frames(5)))
         #expect(drawn(a1, frames(20)) && drawn(b1, frames(20)))
-        #expect(drawn(b2, frames(150)) && !drawn(b1, frames(150)))
+        #expect(drawn(b2, frames(110)) && !drawn(b1, frames(110)))
+        #expect(!drawn(b2, frames(150)), "past the group's window: hidden")
 
         // Nest: outer group of [g, image]; double speed on the outer group.
         let img = try #require(try chain.run(InsertClip(sourceID: sc, track: 0, start: frames(300))).clipID)
@@ -133,7 +135,7 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
     }
 
     /// A magnetic inner track takes a drop at the insertion point and packs; the
-    /// group grows to the packed end.
+    /// group keeps its timing (§8.6: drops never grow a group).
     @Test func dropOnMagneticInnerTrackPacks() async throws {
         let dir = try scratchDir("grp-magnetic")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -148,7 +150,7 @@ private func shows(_ id: Int64, at t: Int64, _ project: Project, _ bundle: Proje
         #expect(inner.count == 3)
         #expect(zip(inner, inner.dropFirst()).allSatisfy { $0.end == $1.start }, "packed without gaps")
         #expect(inner.contains { $0.id == drop.clipID })
-        #expect(try #require(locateClip(g, in: stack.project)).duration == frames(210))
+        #expect(try #require(locateClip(g, in: stack.project)).duration == frames(120))
         try stack.expectUndoRedoWalk()
         try stack.undoAll()
     }

@@ -4,6 +4,8 @@ import MediaEngine
 import TestGenKit
 import Testing
 import TimelineEngine
+import TSCProjKit
+import WizRecAssets
 @testable import PlayerKit
 
 @Suite @MainActor struct GroupPlacementTests {
@@ -56,8 +58,9 @@ import TimelineEngine
 
     /// The UI check's scenario on a Camtasia-authored group (demo fixture, group 4 with three full
     /// inner tracks): a file dropped on inner track 0 after its last clip is imported, nested in
-    /// the group (which grows to show it), saved and reopened; top-level clips are unchanged.
-    @Test func dropAfterLastClipOfCamtasiaGroupGrowsItAndSurvivesSave() async throws {
+    /// the group (which never grows, group-edits §8.6), saved and reopened; top-level clips are
+    /// unchanged.
+    @Test func dropAfterLastClipOfCamtasiaGroupKeepsItAndSurvivesSave() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-groupdrop-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -80,7 +83,7 @@ import TimelineEngine
         let g2 = try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == group.id })
         let placed = try #require(g2.tracks.first?.clips.first { $0.id == id })
         #expect(placed.start == innerEnd)
-        #expect(g2.duration > group.duration)
+        #expect(g2.duration == group.duration && g2.mediaDuration == group.mediaDuration)
         #expect(doc.project.tracks.map { $0.clips.map(\.id) } == topLevel)
         #expect(doc.project.sourceBin.count == 3)
 
@@ -91,6 +94,45 @@ import TimelineEngine
         #expect(reopened.project.sourceBin.count == 3)
 
         try doc.undoLast()
+        #expect(doc.project.serialized() == before)
+    }
+
+    /// APP12-4: a library background double-clicked with a group open goes on a new top inner
+    /// track at the playhead mapped into the group (unclamped), and the group never grows.
+    @Test func libraryBackgroundGoesOnANewTopInnerTrackAtThePlayhead() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-groupbg-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let doc = try EditorDocumentModel.untitled(width: 640, height: 360, in: dir)
+        doc.backgroundLibraryRoot = dir.appendingPathComponent("Library", isDirectory: true)
+        let tb = doc.project.timebase
+        let aurora = try #require(AssetCatalog.background(id: "wizrec-aurora") as BackgroundAsset?)
+        let first = try await doc.placeBackground(aurora, at: tb.ticks(seconds: 10))
+        let group = GroupClips(clipIDs: [first])
+        try doc.perform(group)
+        let gid = try #require(group.groupID)
+        func groupClip() throws -> Clip { try #require(doc.project.tracks.flatMap(\.clips).first { $0.id == gid }) }
+        let g0 = try groupClip()
+        #expect(g0.tracks.count == 1)
+        let before = doc.project.serialized()
+
+        // Playhead 25 s = inner 15 s (group at 10 s, mediaStart 0): new inner track 1.
+        let id = try await doc.placeBackground(aurora, inGroup: gid, atPlayhead: tb.ticks(seconds: 25))
+        let g1 = try groupClip()
+        #expect(g1.tracks.count == 2)
+        #expect(g1.tracks[1].clips.map(\.id) == [id] && g1.tracks[1].clips.first?.start == tb.ticks(seconds: 15))
+        #expect(g1.duration == g0.duration && g1.mediaDuration == g0.mediaDuration && g1.start == g0.start)
+        #expect(g1.tracks[1].clips.first?.metadata?["ShaderVidSource"] == nil)   // not inner track 0
+        #expect(doc.undo.undoName == "Add Background")
+
+        // Before the group: kept at inner −5 s (hidden), on a further new top track; no growth.
+        let early = try await doc.placeBackground(aurora, inGroup: gid, atPlayhead: tb.ticks(seconds: 5))
+        let g2 = try groupClip()
+        #expect(g2.tracks.count == 3 && g2.tracks[2].clips.first?.id == early)
+        #expect(g2.tracks[2].clips.first?.start == -tb.ticks(seconds: 5))
+        #expect(g2.duration == g0.duration && g2.start == g0.start)
+
+        try doc.undoLast(); try doc.undoLast()
         #expect(doc.project.serialized() == before)
     }
 

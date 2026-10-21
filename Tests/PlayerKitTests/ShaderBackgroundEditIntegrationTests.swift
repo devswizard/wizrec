@@ -50,8 +50,9 @@ import WizRecAssets
         return try #require(i.shader)
     }
 
-    /// Aurora at 0 grouped into a Rev group, then Moving Stripes placed on its inner track 0
-    /// after it (the library double-click into an open Rev group). Returns the doc, group, clip.
+    /// Aurora at 0 grouped into a 60 s Rev group, its inner clip trimmed to 30 s, then Moving
+    /// Stripes placed on inner track 0 at inner 30 s, inside the group's window (a group never
+    /// grows for an inner placement, group-edits §8.6). Returns the doc, group, clip.
     private func revFixture(in dir: URL) async throws -> (EditorDocumentModel, group: Int64, clip: Int64, before: Data) {
         let doc = try EditorDocumentModel.untitled(width: 1280, height: 720, in: dir)
         doc.backgroundLibraryRoot = dir.appendingPathComponent("Library", isDirectory: true)
@@ -61,8 +62,9 @@ import WizRecAssets
         let gid = try #require(group.groupID)
         // A Rev group as Camtasia saves one (`groupType` "revMedia", §11); WizRec has no Rev UI yet.
         clip(gid, in: doc.project)?.metadata?["groupType"] = .string("revMedia")
+        try doc.perform(TrimClip(clipID: first, edge: .end, to: 30 * Self.rate))   // inner ticks
         let before = doc.project.serialized()
-        let id = try await doc.placeBackground(try asset("wizrec-stripes"), inGroup: gid, track: 0, at: 60 * Self.rate)
+        let id = try await doc.placeBackground(try asset("wizrec-stripes"), inGroup: gid, track: 0, at: 30 * Self.rate)
         return (doc, gid, id, before)
     }
 
@@ -96,9 +98,11 @@ import WizRecAssets
         // The background is drawn from the reopened project (inside the group at its inner time).
         let groupClip = try #require(clip(gid, in: reopened.project))
         let inner = try #require(clip(id, in: reopened.project))
-        #expect(groupClip.start + groupClip.duration >= inner.start + inner.duration, "group does not cover the new background")
-        let a = try await render(reopened, at: 100 * Self.rate)
-        let b = try await render(reopened, at: 100 * Self.rate + Self.rate / 2)
+        #expect(groupClip.duration == 60 * Self.rate, "the group must not grow")
+        #expect(inner.start == 30 * Self.rate && groupClip.start + groupClip.duration > inner.start,
+                "the group's window does not show the new background")
+        let a = try await render(reopened, at: 45 * Self.rate)
+        let b = try await render(reopened, at: 45 * Self.rate + Self.rate / 2)
         #expect(a != b, "nested Rev background not drawn or not animated")
 
         // Ungroup: the clip keeps ShaderVidSource; RevBackground goes with the group.
@@ -123,7 +127,7 @@ import WizRecAssets
         let path = try #require(clip(id, in: doc.project)?.metadata?["ShaderVidSource"]?.string)
         let beforeSplit = doc.project.serialized()
 
-        let split = SplitClip(clipID: id, at: 90 * Self.rate)   // inner timeline ticks
+        let split = SplitClip(clipID: id, at: 45 * Self.rate)   // inner timeline ticks
         try doc.perform(split)
         let right = try #require(split.rightID)
         for half in [id, right] {
@@ -149,8 +153,8 @@ import WizRecAssets
             if c.id != pastedID, let s = c.metadata?["ShaderVidSource"]?.string { copiedOrigins.append(s) }
         }
         #expect(copiedOrigins == [path, path], "pasted group's stripes halves: \(copiedOrigins)")
-        // The pasted copy draws: at 200 s + 100 s inner, its stripes are the top layer.
-        let frame = try await render(doc, at: 300 * Self.rate)
+        // The pasted copy draws: at 200 s + 50 s inner, its stripes are the top layer.
+        let frame = try await render(doc, at: 250 * Self.rate)
         let px = frame.pixel(160, 90)
         #expect(px.a == 255 && Int(px.r) + Int(px.g) + Int(px.b) > 60, "pasted background not drawn: \(px)")
 

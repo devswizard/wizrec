@@ -10,8 +10,9 @@ public struct GroupDropTarget: Sendable, Equatable {
     public var groupPath: [Int64]
     /// Inner track index of `group` (0 = bottom; always an existing inner track).
     public var track: Int
-    /// Start on the group's inner timeline, ticks (snapped like moves, clamped to the group's
-    /// visible window, frame-rounded, ≥ 0).
+    /// Start on the group's inner timeline, ticks (snapped like moves, frame-rounded). Not
+    /// clamped: before 0 or past the group's window the clip is kept there, hidden, as Camtasia
+    /// does (group-edits §8.6).
     public var ticks: Int64
 
     public init(group: Int64, groupPath: [Int64], track: Int, ticks: Int64) {
@@ -78,14 +79,12 @@ extension TimelineEditor {
         return true
     }
 
-    /// Group drop target for a drop at shown `track` and root (display) tick `ticks`, clamped
-    /// to the group's visible window; nil at the top level.
+    /// Group drop target for a drop at shown `track` and root (display) tick `ticks`, mapped to
+    /// the group's inner time without clamping (group-edits §8.6); nil at the top level.
     public func groupDropTarget(track: Int, ticks: Int64) -> GroupDropTarget? {
         guard let group = snapshot.groupPath.last, snapshot.track(track) != nil else { return nil }
-        // Media must start inside the group's visible window (else it would be hidden).
-        let root = snapshot.groupWindow.map { min(max(ticks, $0.lowerBound), $0.upperBound) } ?? ticks
         let f = max(snapshot.frameTicks, 1)
-        let inner = max(0, Int64((Double(map.inner(root)) / Double(f)).rounded()) * f)
+        let inner = Int64((Double(map.inner(ticks)) / Double(f)).rounded()) * f
         return GroupDropTarget(group: group, groupPath: snapshot.groupPath, track: track, ticks: inner)
     }
 }
