@@ -43,8 +43,8 @@ GOAL (session 11), in priority order:
    docs/testing/camtasia-session-2.md. Never use the trial's watermarked
    exports or saved thumbnails as references.
 5. End of session: an honest progress report in Bengali — % complete and %
-   remaining per area and overall, vs session 10's baseline (product ~45–50%,
-   engine/format ~65–70%, editor UX ~40%, look parity unverified).
+   remaining per area and overall, vs the end of session 10 (product ~50%,
+   engine/format ~70%, editor UX ~50%, look parity unverified).
 
 PENDING WORK → AGENTS (branches `agent/<name>15`, all from main)
 I test the installed app myself (/Applications/WizRec.app). Agents never touch
@@ -130,7 +130,8 @@ in BOARD.md. Merge each slice as soon as it is green (speed matters).
 RULES: clean room (only the researcher may use REA or drive Camtasia; you
 review every spec before publishing; implementers never read
 docs/ledger/EVIDENCE.md); nothing licensing-related (never touch the trial
-watermark or export gate); no TechSmith assets in the repo; user projects
+watermark or export gate, and never build or pitch WizRec as a way to export
+Camtasia-trial projects without the watermark — declined in session 10); no TechSmith assets in the repo; user projects
 read-only for agents (tests on temp copies); projects only via
 TSCProjKit/TimelineEngine; Swift 6 strict concurrency and **Swift 6.3
 compatible**; tests for every public behaviour; `@MainActor` tests never wait
