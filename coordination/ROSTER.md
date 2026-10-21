@@ -141,3 +141,16 @@ branches were deleted with the user's OK.
 | timeline | a170779a586fd4dc1 | `agent/timeline14` (drop placement §4/§8.7) |
 
 Not spawned (no finding / no licensed exports yet): render, captions, audio.
+
+## Session 11 (2026-10-21)
+
+| Name | Address | Branch |
+|---|---|---|
+| main (lead) | main | `main` |
+| app | a045822b4f021390b | `agent/app15` |
+| timeline | a8ffb19296ea254bd | `agent/timeline15` |
+| researcher | a27765824dc8d7f4d | `agent/researcher15` |
+| qa | aae9206b121acedd4 | `agent/qa16` |
+| media | a820d7956aa00b898 | `agent/media15` |
+
+Not spawned (no Sparkle key, no licensed exports, no finding yet): ship, render, captions, audio.

@@ -446,3 +446,18 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 
 All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER in
 `docs/HANDOFF.md` §0; next plan in `docs/NEXT_SESSION_PROMPT.md`.
+
+## Session 11 tasks (2026-10-21)
+
+| id | owner | status | acceptance |
+|---|---|---|---|
+| APP15-1 | app | claimed | ui-workflow §12 items 6–9: canvas move/scale/rotate handles + crop mode; tile drags (annotation/transition/effect/animation) onto clips and canvas; clip/track context menus (§9); captions entry points |
+| APP15-2 | app | claimed | group drops through `DropRules` (group: id); Finder-file hover preview with probed duration (async, cached) |
+| APP15-3 | app | claimed | editor window frame autosave isolated from UI-check runs |
+| TL15-1 | timeline | claimed | new projects start with two empty tracks (`ProjectBundle.create`), round-trip and Camtasia-open safe |
+| TL15-2 | timeline | claimed | commands for app's context menus (duplicate, ripple cut, select-at-playhead, …), API_CHANGE first |
+| RES15-1 | researcher | claimed | properties-panel parameters per effect/annotation (names, ranges, defaults, units) → effects/*.md, callouts.md |
+| RES15-2 | researcher | claimed | canvas handles and crop mode behaviour (§8), save-only |
+| QA15-1 | qa | claimed | integration tests: every import path through `DropClip`, canvas drop, key loop model; every session-11 merge |
+| QA15-2 | qa | claimed | flaky watch on each merge under `-O` and load |
+| MED15-1 | media | claimed | measure 4K tone-map texture cost; IOSurface texture reuse cache only if it matters |
