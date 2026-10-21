@@ -23,13 +23,21 @@ import Metal
 ///
 /// Drop-in for `ToneMapper.convert(_:into:)`: the source must be an IOSurface-backed
 /// bi-planar YCbCr buffer (8-bit, or 10-bit in the 16-bit MSBs) and the destination an
-/// IOSurface-backed 32BGRA buffer of the same size in pixels. Not thread-safe: use one per
-/// decoder (as `FrameConverter` does).
+/// IOSurface-backed 32BGRA buffer of the same size in pixels. One per decoder (as
+/// `FrameConverter` does); concurrent `convert` calls on one mapper are nevertheless safe.
+///
+/// Texture lifetime (MED14-1): the zero-copy plane textures come from a `LockedTextureCache`
+/// and are released on Metal's completion queue once the GPU is done with them, which may be
+/// after `convert` has returned and while the next `convert` (on any thread) is wrapping new
+/// planes. A raw `CVMetalTextureCache` is not safe there: a wrapper's final release calls back
+/// into the cache, which crashed RenderEngine under `-O` (REN12-1). Every create, flush and final
+/// release therefore runs under the cache's lock, and each wrapper keeps the cache alive, so a
+/// mapper may be freed with its last frame still in flight. Guarded by `ToneMapMetalStressTests`.
 final class MetalToneMapper {
     /// The CPU reference this mapper reproduces (curves, matrix, range, LUTs).
     let reference: ToneMapper
     private let gpu: GPU
-    private let cache: CVMetalTextureCache
+    private let cache: LockedTextureCache
     private let eotf: MTLBuffer, ootf: MTLBuffer, encode: MTLBuffer
 
     /// Process-wide Metal objects, built once (pipeline compilation costs milliseconds).
@@ -59,8 +67,7 @@ final class MetalToneMapper {
     /// GPU mapper reproducing `reference`, or nil when Metal is unavailable.
     init?(_ reference: ToneMapper) {
         guard let gpu = Self.shared else { return nil }
-        var c: CVMetalTextureCache?
-        guard CVMetalTextureCacheCreate(nil, nil, gpu.device, nil, &c) == kCVReturnSuccess, let cache = c else { return nil }
+        guard let cache = LockedTextureCache(device: gpu.device) else { return nil }
         let d = gpu.device
         func upload(_ raw: UnsafeRawBufferPointer) -> MTLBuffer? {
             raw.baseAddress.flatMap { d.makeBuffer(bytes: $0, length: raw.count) }
@@ -73,11 +80,10 @@ final class MetalToneMapper {
         (eotf, ootf, encode) = (e, o, n)
     }
 
-    private func texture(_ buf: CVPixelBuffer, plane: Int, format: MTLPixelFormat) throws -> CVMetalTexture {
+    private func texture(_ buf: CVPixelBuffer, plane: Int, format: MTLPixelFormat) throws -> CacheTexture {
         let w = CVPixelBufferGetWidthOfPlane(buf, plane), h = CVPixelBufferGetHeightOfPlane(buf, plane)
-        var t: CVMetalTexture?
-        let rc = CVMetalTextureCacheCreateTextureFromImage(nil, cache, buf, nil, format, w, h, plane, &t)
-        guard rc == kCVReturnSuccess, let t else {
+        var rc: CVReturn = kCVReturnSuccess
+        guard let t = cache.texture(buf, format: format, width: w, height: h, plane: plane, status: &rc) else {
             throw MediaError.decodeFailed("GPU tone mapping: no Metal texture for plane \(plane) (\(rc))")
         }
         return t
@@ -86,6 +92,19 @@ final class MetalToneMapper {
     /// Tone-maps `src` into `dst`, waiting for the GPU. Throws on unsupported or non-IOSurface
     /// buffers; callers fall back to the CPU reference.
     func convert(_ src: CVPixelBuffer, into dst: CVPixelBuffer) throws {
+        guard let cmd = gpu.queue.makeCommandBuffer() else {
+            throw MediaError.decodeFailed("GPU tone mapping: no command buffer")
+        }
+        try encode(src, into: dst, commandBuffer: cmd)
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        if let err = cmd.error { throw MediaError.decodeFailed("GPU tone mapping: \(err.localizedDescription)") }
+    }
+
+    /// Encodes the tone mapping of `src` into `dst` on `cmd` without committing it. The plane
+    /// textures stay alive until `cmd` completes and are then released on Metal's completion
+    /// queue (through the cache's lock). Throws as `convert` does, before encoding anything.
+    func encode(_ src: CVPixelBuffer, into dst: CVPixelBuffer, commandBuffer cmd: any MTLCommandBuffer) throws {
         guard let lay = ToneMapper.layout(CVPixelBufferGetPixelFormatType(src)) else {
             throw MediaError.decodeFailed("GPU tone mapping: unsupported pixel format")
         }
@@ -100,14 +119,12 @@ final class MetalToneMapper {
         let cwid = CVPixelBufferGetWidthOfPlane(src, 1), chgt = CVPixelBufferGetHeightOfPlane(src, 1)
         guard cwid > 0, chgt > 0 else { throw MediaError.decodeFailed("GPU tone mapping: empty chroma plane") }
         let ten = lay.depth > 8
+        cache.flush() // recycle the backings of frames whose wrappers were already released
         let yTex = try texture(src, plane: 0, format: ten ? .r16Uint : .r8Uint)
         let cTex = try texture(src, plane: 1, format: ten ? .rg16Uint : .rg8Uint)
         // BGRA bytes written as integers through an RGBA8 view: no float → unorm rounding.
         let oTex = try texture(dst, plane: 0, format: .rgba8Uint)
-        guard let yt = CVMetalTextureGetTexture(yTex), let ct = CVMetalTextureGetTexture(cTex),
-              let ot = CVMetalTextureGetTexture(oTex) else {
-            throw MediaError.decodeFailed("GPU tone mapping: texture unavailable")
-        }
+        let (yt, ct, ot) = (yTex.texture, cTex.texture, oTex.texture)
 
         let r = reference, fr = r.fullRange
         let maxCode: Float = ten ? 1023 : 255, unit: Float = ten ? 4 : 1
@@ -121,8 +138,8 @@ final class MetalToneMapper {
         var uints: [UInt32] = [UInt32(w), UInt32(h), UInt32(cwid), UInt32(chgt), ten ? 1 : 0,
                                UInt32(lay.cw), UInt32(lay.ch), r.transfer == .hlg ? 1 : 0]
 
-        guard let cmd = gpu.queue.makeCommandBuffer(), let enc = cmd.makeComputeCommandEncoder() else {
-            throw MediaError.decodeFailed("GPU tone mapping: no command buffer")
+        guard let enc = cmd.makeComputeCommandEncoder() else {
+            throw MediaError.decodeFailed("GPU tone mapping: no compute encoder")
         }
         enc.setComputePipelineState(gpu.pipeline)
         enc.setTexture(yt, index: 0)
@@ -136,10 +153,9 @@ final class MetalToneMapper {
         enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1),
                             threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
-        cmd.commit()
-        cmd.waitUntilCompleted()
-        if let err = cmd.error { throw MediaError.decodeFailed("GPU tone mapping: \(err.localizedDescription)") }
-        withExtendedLifetime((yTex, cTex, oTex)) {}
+        // The wrappers outlive the GPU work; their last release runs on the completion queue.
+        let keep = [yTex, cTex, oTex]
+        cmd.addCompletedHandler { _ in withExtendedLifetime(keep) {} }
     }
 
     /// Kernel: a line-by-line port of `ToneMapper.map` and the sampling in `ToneMapper.convert`
