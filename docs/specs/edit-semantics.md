@@ -240,14 +240,31 @@ around the drag, and every mouse event carried the Shift flag.
   trims the same edge of every selected clip by the same amount [obs].
 - **Video trim-start** moves `mediaStart` and writes no `trimStartSum`.
   Image trim-start adds to `trimStartSum` (as X7 #5) [obs].
-- **Which gesture ripple-trims is [?].** Not tried: Command-drag; Shift on
-  the end edge; Option-drag. The Option-drag attempt coincided with the
-  screen locking, so it gave no result.
+- **No ripple trim by edge drag or by menu** [obs, follow-up saves in the
+  same folder]. Each case started from `ed4a-before` (or an Undo back to
+  it) with nothing selected:
+
+  | Gesture | Result | Save |
+  |---|---|---|
+  | Plain drag of the start edge (control) | The same as Shift-drag: video 2–10 s, photo still at 10 s | `ed4b-plain-trim` |
+  | Command-drag of the start edge | Nothing changed | — |
+  | Option-drag of the start edge | Nothing changed | — |
+  | Shift-drag of the **end** edge, 2 s left | Video 0–8 s; the photo stays at 10 s, leaving a gap | `ed4c-shift-end` |
+  | *Edit ▸ Playhead ▸ Trim Start to Playhead* at 2 s | Video 2–10 s; the photo did not move | `ed4d-trimstart-playhead` |
+
+  - **What Camtasia 2026.2.3 offers.** The Edit menu's only ripple commands
+    are *Ripple Cut* and *Ripple Delete*. On a normal track, trims never move
+    the neighbours.
+  - **Magnetic tracks** pack after every edit (ED3). Trimming there acts like
+    a ripple trim [inf].
 
 **WizRec (`RippleTrim`):**
 
 - **Different command.** `RippleTrim` keeps the clip's `start` and shifts
-  later clips left. That is not what Shift-drag does in Camtasia.
+  later clips left. That is not what Shift-drag does in Camtasia, and
+  Camtasia has no gesture that does it on a normal track. `RippleTrim` is
+  therefore a WizRec-only convenience: keep it, but don't bind it to plain
+  Shift-drag if the goal is Camtasia muscle memory [inf].
 - **The plain trim matches.** WizRec's plain `TrimClip` gives the same
   result as Camtasia's Shift-drag for one selected clip.
 - **Multi-clip trim.** Trimming every selected clip's edge together is not
