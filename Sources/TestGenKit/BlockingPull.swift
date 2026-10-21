@@ -3,9 +3,8 @@ import Foundation
 
 /// Hands a non-`Sendable` value to the private pull thread of `BlockingPull.drain`.
 ///
-/// Wrap only values that, after the hand-off, the pull thread alone touches (an
-/// `AVAssetReaderTrackOutput`), or whose methods are safe from any thread
-/// (`AVAssetReader.cancelReading`).
+/// Wrap only values that are never used by two threads at once: `drain` runs `next` on its
+/// thread and `cancel` on the caller only after that thread has returned.
 public struct PullHandle<Value>: @unchecked Sendable {
     // @unchecked: the caller promises the single-owner / thread-safe use described above.
     public let value: Value
@@ -33,11 +32,23 @@ public struct PullStalled: Error, CustomStringConvertible {
 /// cooperative thread, or the main thread inside a `@MainActor` test, and hangs the run.
 /// `drain` calls `next` on a private thread and feeds the items to `body` on the caller.
 /// If no item arrives within `seconds` (scaled by `WIZREC_WAIT_SCALE`, like the tests'
-/// `Deadline`) of the previous one, it calls `cancel`, abandons the thread and throws
-/// `PullStalled`. Lives in TestGenKit (no Testing import) so `MovieFrameReader` can use it.
+/// `Deadline`) of the previous one, it abandons the thread and throws `PullStalled`.
+/// Lives in TestGenKit (no Testing import) so `MovieFrameReader` can use it.
+///
+/// `cancel` (`reader.cancelReading()`) never runs while the thread is inside `next`: calling
+/// `cancelReading` during a `copyNextSampleBuffer` on another thread crashed CoreMedia
+/// (SIGSEGV, measured). An abandoned thread keeps its captures (reader, output) alive, so
+/// nothing is freed under a pull that never returns.
 public enum BlockingPull {
     /// Default stall bound, seconds (before `scale`).
     public static let defaultSeconds = 120.0
+
+    /// Sleeps `seconds` on the suspending clock (stands still while the Mac sleeps, like the
+    /// `systemUptime` the stall check reads).
+    static func timerSleep(_ seconds: Double) async {
+        let d = Duration.nanoseconds(Int64(max(seconds, 0) * 1e9))
+        try? await Task.sleep(until: SuspendingClock.now + d, clock: SuspendingClock())
+    }
 
     /// Multiplier for every bound, from `WIZREC_WAIT_SCALE` (default 1).
     public static var scale: Double {
@@ -51,8 +62,9 @@ public enum BlockingPull {
     ///   - seconds: stall bound, seconds of wall time between two items (not for the whole loop).
     ///   - buffer: items decoded ahead of `body` (decoders own a small pool of buffers: keep it small).
     ///   - next: the blocking pull; nil ends the stream. Runs on the private thread only.
-    ///   - cancel: unblocks `next` (`reader.cancelReading()`); called when the wait times out,
-    ///     `body` throws or `body` stops early, never after a normal end.
+    ///   - cancel: releases the source (`reader.cancelReading()`) when `body` stops early or
+    ///     throws; runs on the caller once the thread has left `next` for good. Never called after
+    ///     a normal end or on a stall.
     public static func drain<T: Sendable>(_ what: String, seconds: Double = defaultSeconds,
                                           buffer: Int = 4,
                                           next: @escaping @Sendable () -> T?,
@@ -65,35 +77,39 @@ public enum BlockingPull {
         thread.name = "wizrec-test-pull: \(what)"
         thread.stackSize = 4 << 20
         thread.start()
-        /// Stops the producer, unblocks it, and waits (bounded) until it left `next`, so the caller
-        /// never tears its reader down while the thread is still inside a pull. A pull that never
-        /// returns keeps its captures alive on the abandoned thread, so nothing is freed under it.
-        func shutDown() async {
+        /// Stops the producer and waits (bounded) until it has left its in-flight pull and
+        /// returned; then `cancel` runs here. Returns false if the thread is still inside `next`
+        /// after the bound (then `cancel` is skipped and the thread abandoned).
+        func shutDown() async -> Bool {
             channel.stop()
+            guard await channel.waitForExit(seconds: bound) else { return false }
             cancel()
-            await channel.waitForExit(seconds: min(bound, 10))
+            return true
         }
-        var last = Date()
+        var last = ProcessInfo.processInfo.systemUptime
         while true {
             switch channel.take() {
             case .item(let item):
-                last = Date()
+                last = ProcessInfo.processInfo.systemUptime
                 let keepGoing: Bool
                 do { keepGoing = try body(item) } catch {
-                    await shutDown()
+                    _ = await shutDown()
                     throw error
                 }
-                if !keepGoing { await shutDown(); return }
+                if !keepGoing {
+                    if await shutDown() { return }
+                    throw PullStalled(what: "\(what) (stopping)", seconds: bound)
+                }
             case .end:
                 return
             case .empty:
-                let remaining = bound - Date().timeIntervalSince(last)
+                let remaining = bound - (ProcessInfo.processInfo.systemUptime - last)
                 if remaining <= 0 {
-                    await shutDown()
+                    channel.stop()
                     throw PullStalled(what: what, seconds: bound)
                 }
                 let timer = Task {
-                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1e9))
+                    await BlockingPull.timerSleep(remaining)
                     channel.wake()
                 }
                 await channel.waitForData()
@@ -203,10 +219,10 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
         w?.resume()
     }
 
-    /// Suspends until the producer loop has returned, at most `seconds`.
-    func waitForExit(seconds: Double) async {
+    /// Suspends until the producer loop has returned, at most `seconds`; returns whether it did.
+    func waitForExit(seconds: Double) async -> Bool {
         let timer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1e9))
+            await BlockingPull.timerSleep(seconds)
             self?.wakeExit()
         }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
@@ -220,7 +236,10 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
             lock.unlock()
         }
         timer.cancel()
+        return hasExited
     }
+
+    private var hasExited: Bool { lock.withLock { exited } }
 
     private func wakeExit() {
         lock.lock()
@@ -234,16 +253,17 @@ final class PullChannel<T: Sendable>: @unchecked Sendable {
 
 extension BlockingPull {
     /// `drain` for the usual `AVAssetReader` loop: pulls `output.copyNextSampleBuffer()` on the
-    /// private thread and calls `body` with each sample until it returns false. A stall cancels
-    /// the reader and throws `PullStalled`. Call after `reader.startReading()`; check
-    /// `reader.status` afterwards as before.
+    /// private thread and calls `body` with each sample until it returns false (then the reader
+    /// is cancelled once the thread is out of its pull). A stall throws `PullStalled` and leaves
+    /// the reader to the abandoned thread: do not cancel it afterwards. Call after
+    /// `reader.startReading()`; check `reader.status` afterwards as before.
     public static func samples(_ what: String, reader: AVAssetReader, output: AVAssetReaderOutput,
                                seconds: Double = defaultSeconds,
                                isolation: isolated (any Actor)? = #isolation,
                                _ body: (CMSampleBuffer) throws -> Bool) async throws {
-        // The output is used only by the pull thread from here on; `cancelReading` is safe from
-        // any thread; each sample is handed to the consumer and not touched by the thread again.
-        // `next` captures the reader too: the output must not outlive it while a pull runs.
+        // The output is used only by the pull thread from here on, `cancelReading` only after that
+        // thread returned; each sample is handed to the consumer and not touched by the thread
+        // again. `next` captures the reader too: the output must not outlive it while a pull runs.
         let pair = PullHandle((reader, output))
         try await drain(what, seconds: seconds,
                         next: { () -> PullHandle<CMSampleBuffer>? in

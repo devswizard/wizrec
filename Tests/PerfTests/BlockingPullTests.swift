@@ -58,12 +58,12 @@ struct BlockingPullTests {
         #expect(cancels.value == 1)
     }
 
-    /// A pull that never returns (the CI `copyNextSampleBuffer` stall) fails on time, and
-    /// `cancel` is what unblocks it.
-    @Test func stalledPullTimesOutAndCancels() async throws {
+    /// A pull that never returns (the CI `copyNextSampleBuffer` stall) fails on time; `cancel`
+    /// is not called while the thread is still inside the pull (CoreMedia crashed on that).
+    @Test func stalledPullTimesOutWithoutCancelling() async throws {
         let gate = DispatchSemaphore(value: 0), cancels = Counter(), source = Counter()
         var seen: [Int] = []
-        let start = Date()
+        let start = SuspendingClock.now
         await #expect(throws: PullStalled.self) {
             try await BlockingPull.drain("stuck reader", seconds: 0.1,
                                          next: { () -> Int? in
@@ -76,9 +76,27 @@ struct BlockingPullTests {
                 return true
             }
         }
-        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(SuspendingClock.now - start < .seconds(10))
         #expect(seen == [1, 2])
-        #expect(cancels.value == 1)
+        #expect(cancels.value == 0)
+        gate.signal() // let the abandoned thread finish
+    }
+
+    /// An early stop while the thread is inside a slow (not stuck) pull: `cancel` runs only
+    /// after the pull returned.
+    @Test func cancelWaitsForTheInFlightPull() async throws {
+        let inPull = Counter(), overlaps = Counter(), source = Counter()
+        try await BlockingPull.drain("slow pulls", seconds: 60, buffer: 1,
+                                     next: { () -> Int? in
+                                         _ = inPull.next()
+                                         Thread.sleep(forTimeInterval: 0.05)
+                                         _ = inPull.next()
+                                         return source.next()
+                                     },
+                                     cancel: { if inPull.value % 2 == 1 { _ = overlaps.next() } }) { (i: Int) throws -> Bool in
+            i < 2
+        }
+        #expect(overlaps.value == 0)
     }
 
     /// The same stall inside a `@MainActor` test: the main thread is never blocked.
@@ -87,8 +105,9 @@ struct BlockingPullTests {
         await #expect(throws: PullStalled.self) {
             try await BlockingPull.drain("stuck on main", seconds: 0.1,
                                          next: { () -> Int? in gate.wait(); return nil },
-                                         cancel: { gate.signal() }) { (_: Int) throws -> Bool in true }
+                                         cancel: {}) { (_: Int) throws -> Bool in true }
         }
+        gate.signal()
     }
 
     @Test func stallMessageNamesTheLoop() {
