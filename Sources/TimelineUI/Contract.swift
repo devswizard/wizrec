@@ -51,6 +51,13 @@ public final class TimelineModel {
     /// appears on a later drag update). Nil closure: files show no preview.
     @ObservationIgnored public var fileClipDuration: ((URL) -> Int64?)?
 
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-1c).
+
+    /// The app's own items for a timeline context menu (clipboard, duplicate, ripple cut, group,
+    /// captions …), by section; they follow the timeline's items of the same section. Items
+    /// keep their own target and enabled state (the menu does not auto-enable).
+    @ObservationIgnored public var contextMenuItems: ((TimelineMenuContext) -> [TimelineMenuSection: [NSMenuItem]])?
+
     public init(undo: UndoStack) { self.undo = undo }
 }
 
