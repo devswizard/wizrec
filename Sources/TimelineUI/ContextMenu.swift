@@ -163,10 +163,18 @@ extension TimelineCanvas {
             i.setAccessibilityIdentifier("timeline.menu.\(c.rawValue)")
             return i
         }
-        return [
+        var items = [
             item(String(localized: "Add Track Above"), #selector(menuAddTrack(_:)), tag: track + 1, enabled: add),
             item(String(localized: "Add Track Below"), #selector(menuAddTrack(_:)), tag: track, enabled: add),
             item(String(localized: "Remove Track"), #selector(menuRemoveTrack(_:)), tag: track, enabled: editor.canRemoveTrack(at: track)),
+        ]
+        // Top-level tracks move with their flags and name (TimelineEngine `MoveTrack`).
+        if snapshot.groupPath.isEmpty {
+            let n = snapshot.tracks.count
+            items.append(item(String(localized: "Move Track Up"), #selector(menuMoveTrackUp(_:)), tag: track, enabled: track + 1 < n))
+            items.append(item(String(localized: "Move Track Down"), #selector(menuMoveTrackDown(_:)), tag: track, enabled: track > 0))
+        }
+        return items + [
             .separator(),
             flag(String(localized: "Lock Track"), .locked, t.locked),
             flag(String(localized: "Mute Track Audio"), .audioMuted, t.audioMuted),
@@ -201,6 +209,12 @@ extension TimelineCanvas {
     @objc func menuRippleDelete(_ sender: Any?) { if !editor.deleteSelection(ripple: true) { NSSound.beep() } }
     @objc func menuAddTrack(_ sender: NSMenuItem) { if !editor.addTrack(at: sender.tag) { NSSound.beep() } }
     @objc func menuRemoveTrack(_ sender: NSMenuItem) { if !editor.removeTrack(at: sender.tag) { NSSound.beep() } }
+    @objc func menuMoveTrackUp(_ sender: NSMenuItem) {
+        if !editor.perform(MoveTrack(from: sender.tag, to: sender.tag + 1)) { NSSound.beep() }
+    }
+    @objc func menuMoveTrackDown(_ sender: NSMenuItem) {
+        if !editor.perform(MoveTrack(from: sender.tag, to: sender.tag - 1)) { NSSound.beep() }
+    }
     @objc func menuToggleTrackFlag(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let c = TrackHeaderControl(rawValue: raw),
               editor.toggle(c, track: sender.tag) else { NSSound.beep(); return }

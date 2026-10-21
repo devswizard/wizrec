@@ -559,6 +559,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             return true
         }
         if kind == .captionStyle { return false }
+        if kind == .animation { return applyAnimation(name) }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
@@ -1184,6 +1185,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 .contains { $0.contains(engine.currentTicks) }
         case #selector(copy(_:)), #selector(cut(_:)), #selector(duplicate(_:)), #selector(rippleCut(_:)):
             return !model.clipboardSelection(timelineModel.selection, openGroup: timelineModel.openGroups.last).isEmpty
+        case #selector(splitAllTracks(_:)):
+            return timelineModel.openGroups.isEmpty && canSplitAllTracks
+        case #selector(selectAtPlayhead(_:)):
+            return timelineModel.openGroups.isEmpty && !TimelineSelection.clips(at: engine.currentTicks, in: model.project).isEmpty
         case #selector(toggleCropMode(_:)):
             item.state = ui.cropMode ? .on : .off
             return ui.cropMode || canvasScaleTarget != nil

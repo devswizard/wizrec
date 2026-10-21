@@ -90,6 +90,27 @@ extension EditorWindowController {
         }
     }
 
+    /// Timeline ▸ Split All Tracks at Playhead: every top-level clip under the playhead on an
+    /// unlocked track, one undo step (TimelineEngine `SplitAllTracks`).
+    @objc func splitAllTracks(_ sender: Any?) {
+        let c = SplitAllTracks(at: engine.currentTicks)
+        run(String(localized: "Split")) { try model.perform(c) }
+        if !c.rightIDs.isEmpty { select(Set(c.rightIDs)) }
+    }
+
+    /// Edit ▸ Select Clips at Playhead: every top-level clip playing at the playhead.
+    @objc func selectAtPlayhead(_ sender: Any?) {
+        select(Set(TimelineSelection.clips(at: engine.currentTicks, in: model.project)))
+    }
+
+    /// Clips `splitAllTracks` would split (strictly under the playhead, unlocked tracks).
+    var canSplitAllTracks: Bool {
+        let t = engine.currentTicks
+        return TimelineSelection.clips(at: t, in: model.project, unlockedOnly: true).contains { id in
+            model.project.tracks.flatMap(\.clips).contains { $0.id == id && $0.start < t }
+        }
+    }
+
     /// Edit ▸ Ripple Cut (⇧⌘X): Cut, closing the gaps the clips leave. One undo step.
     @objc func rippleCut(_ sender: Any?) {
         run(String(localized: "Ripple Cut")) {
