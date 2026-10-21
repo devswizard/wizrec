@@ -17,7 +17,7 @@ struct LibraryActions {
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, backgrounds, annotations, effects, audio, transitions, captions
+        case media, backgrounds, annotations, effects, animations, audio, transitions, captions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
@@ -25,6 +25,7 @@ struct SidebarView: View {
             case .backgrounds: "Backgrounds"
             case .annotations: "Annotations"
             case .effects: "Effects"
+            case .animations: "Animations"
             case .audio: "Audio"
             case .transitions: "Transitions"
             case .captions: "Captions"
@@ -54,6 +55,9 @@ struct SidebarView: View {
             case .effects:
                 LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
                             hint: "Drag an effect onto a clip on the timeline or the canvas, or double-click to add it to the selected clips.")
+            case .animations:
+                LibraryList(items: Self.animationItems(), kind: .animation, apply: library.apply,
+                            hint: "Drag an animation onto a clip on the timeline or the canvas, or double-click to add it to the selected clips. It runs for 1 second, ending at the playhead.")
             case .annotations:
                 LibraryList(items: Self.calloutItems(), kind: .callout, apply: library.apply,
                             hint: "Drag an annotation onto the canvas (at the playhead) or the timeline (where you drop it), or double-click to add it at the playhead. It lasts 5 seconds, above the clips there.")
@@ -76,6 +80,7 @@ struct SidebarView: View {
         case .backgrounds: String(localized: "Backgrounds")
         case .annotations: String(localized: "Annotations")
         case .effects: String(localized: "Effects")
+        case .animations: String(localized: "Animations")
         case .audio: String(localized: "Audio")
         case .transitions: String(localized: "Transitions")
         case .captions: String(localized: "Captions")
@@ -86,7 +91,7 @@ struct SidebarView: View {
     /// accessibility identifier its tile carries (`library.<name>`).
     static func libraryManifest() -> [(tab: String, identifier: String)] {
         let lists: [(Tab, [LibraryItem])] = [(.backgrounds, backgroundItems()), (.annotations, calloutItems()),
-                                             (.effects, effectItems()), (.audio, audioItems()),
+                                             (.effects, effectItems()), (.animations, animationItems()), (.audio, audioItems()),
                                              (.transitions, transitionItems())]
         var out: [(tab: String, identifier: String)] = []
         for (tab, items) in lists {
@@ -94,6 +99,23 @@ struct SidebarView: View {
             for item in items { out.append((tab: name, identifier: "library.\(item.name)")) }
         }
         return out
+    }
+
+    /// The menu animations (`AnimationPreset`, animation.md §2): one 1 s segment ending at the playhead.
+    static func animationItems() -> [LibraryItem] {
+        AnimationPreset.allCases.map { p in
+            let symbol: String = switch p {
+            case .custom: "slider.horizontal.below.rectangle"
+            case .noOpacity: "circle.dotted"
+            case .fullOpacity: "circle.fill"
+            case .scaleUp: "arrow.up.left.and.arrow.down.right"
+            case .scaleDown: "arrow.down.right.and.arrow.up.left"
+            case .scaleToFit: "arrow.up.and.down.and.arrow.left.and.right"
+            case .tiltLeft: "rotate.left"
+            case .tiltRight: "rotate.right"
+            }
+            return LibraryItem(name: p.rawValue, title: p.displayName, symbol: symbol)
+        }
     }
 
     static func effectItems() -> [LibraryItem] {
@@ -216,7 +238,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition, audio, callout, background, captionStyle }
+    enum Kind { case effect, transition, audio, callout, background, captionStyle, animation }
     var name: String
     var title: String
     var symbol: String
@@ -248,6 +270,7 @@ struct LibraryList: View {
         case .callout: TimelineUI.TimelineView.calloutType.rawValue
         case .background: TimelineUI.TimelineView.backgroundType.rawValue
         case .captionStyle: TimelineUI.TimelineView.captionStyleType.rawValue
+        case .animation: TimelineUI.TimelineView.animationType.rawValue
         }
     }
 
@@ -349,7 +372,7 @@ struct LibraryList: View {
         switch kind {
         case .transition: String(localized: "Drag onto a cut or clip, or double-click to add at the cut under the playhead or to the selected clips")
         case .callout, .background: String(localized: "Drag onto the canvas or timeline, or double-click to add at the playhead")
-        case .effect, .audio, .captionStyle: String(localized: "Drag onto a clip, or double-click to add to the selected clips")
+        case .effect, .audio, .captionStyle, .animation: String(localized: "Drag onto a clip, or double-click to add to the selected clips")
         }
     }
 

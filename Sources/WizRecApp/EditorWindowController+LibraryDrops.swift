@@ -79,7 +79,16 @@ extension EditorWindowController {
             select([clip])
             return applyAudioItem(item)
         case .animation:
-            return false   // TimelineEngine `AddAnimation` (TL15-2) not merged yet
+            guard let clip, let preset = AnimationPreset(rawValue: name),
+                  AddAnimation.canApply(preset, clipID: clip, in: model.project) else { return false }
+            guard perform else { return true }
+            var ok = false
+            run(String(localized: "Add Animation")) {
+                try model.perform(AddAnimation(clipID: clip, preset: preset, at: engine.currentTicks))
+                ok = true
+            }
+            if ok { select([clip]) }
+            return ok
         case .captionStyle:
             // A dynamic caption style onto a clip with audio: transcribe it if needed, then add the
             // caption over it (ui-workflow.md §4).
@@ -90,6 +99,25 @@ extension EditorWindowController {
             addDynamicCaptions(presetIndex: index)
             return true
         }
+    }
+
+    /// Animations library double-click: animation `name` on every selected clip it fits (1 s
+    /// ending at the playhead), one undo step.
+    func applyAnimation(_ name: String) -> Bool {
+        guard let preset = AnimationPreset(rawValue: name) else { return false }
+        let ids = timelineModel.selection.sorted().filter { AddAnimation.canApply(preset, clipID: $0, in: model.project) }
+        guard !ids.isEmpty else {
+            ui.show(String(localized: "Select clips with a picture on the timeline first, or drag the animation onto a clip."))
+            return false
+        }
+        let at = engine.currentTicks
+        var ok = false
+        run(String(localized: "Add Animation")) {
+            let steps: [CompoundCommand.Builder] = ids.map { id in { _, _ in AddAnimation(clipID: id, preset: preset, at: at) } }
+            try model.perform(CompoundCommand(name: String(localized: "Add Animation"), steps))
+            ok = true
+        }
+        return ok
     }
 
     /// A tile dropped on the canvas at view point `p` (canvas px `point`, nil outside the

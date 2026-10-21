@@ -75,6 +75,9 @@
     "Abstract" : {
 
     },
+    "Add Animation" : {
+
+    },
     "Add Audio Point" : {
 
     },
@@ -124,6 +127,9 @@
 
     },
     "Animated: edits set a keyframe at the playhead" : {
+
+    },
+    "Animations" : {
 
     },
     "Annotations" : {
@@ -816,6 +822,9 @@
     "Select All" : {
 
     },
+    "Select Clips at Playhead" : {
+
+    },
     "Select a clip with audio under the playhead." : {
 
     },
@@ -826,6 +835,9 @@
 
     },
     "Select clips on the timeline first, or drag the effect onto a clip." : {
+
+    },
+    "Select clips with a picture on the timeline first, or drag the animation onto a clip." : {
 
     },
     "Select clips with audio on the timeline first." : {
@@ -922,6 +934,9 @@
 
     },
     "Split" : {
+
+    },
+    "Split All Tracks at Playhead" : {
 
     },
     "Split at Playhead" : {

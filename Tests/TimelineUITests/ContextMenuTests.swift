@@ -33,7 +33,7 @@ import TSCProjKit
                      "Hide Track Video", "Magnetic Track"] {
             #expect(t.contains(want), "\(want)")
         }
-        #expect(menu.items.allSatisfy { $0.isSeparatorItem || $0.isEnabled || $0.title == "Extend Frame" })
+        #expect(menu.items.allSatisfy { $0.isSeparatorItem || $0.isEnabled || ["Extend Frame", "Move Track Down"].contains($0.title) })
         let speeds = try #require(menu.items.first { $0.title == "Clip Speed" }?.submenu)
         #expect(speeds.items.map(\.title) == ["25 %", "50 %", "75 %", "100 %", "150 %", "200 %", "400 %"])
         #expect(speeds.items.first { $0.state == .on }?.title == "100 %")
@@ -57,6 +57,13 @@ import TSCProjKit
         let mute = try #require(menu.items.first { $0.title == "Mute Track Audio" })
         view.canvas.menuToggleTrackFlag(mute)
         #expect(view.snapshot.track(1)?.audioMuted == true)
+        // Move Track Down: the locked, muted track 1 becomes track 0 with its flags.
+        #expect(menu.items.first { $0.title == "Move Track Up" }?.isEnabled == false)
+        let down = try #require(menu.items.first { $0.title == "Move Track Down" })
+        view.canvas.menuMoveTrackDown(down)
+        #expect(m.undo.undoName == "Move Track")
+        #expect(view.snapshot.track(0)?.locked == true && view.snapshot.track(0)?.clips.isEmpty == true)
+        #expect(view.snapshot.track(1)?.clips.count == 2)
         // The empty part of a track row offers the same track items.
         let row = titles(view.canvas.contextMenu(for: .track(0, ticks: 80)))
         #expect(row.contains("Add Track Below") && row.contains("Hide Track Video") && row.contains("Zoom to Fit"))

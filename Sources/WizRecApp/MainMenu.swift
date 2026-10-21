@@ -56,6 +56,8 @@ enum MainMenu {
                                keyEquivalent: String(UnicodeScalar(NSBackspaceCharacter).map { Character($0) } ?? "\u{8}"))
         del.keyEquivalentModifierMask = []
         edit.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: String(localized: "Select Clips at Playhead"),
+                     action: #selector(EditorWindowController.selectAtPlayhead(_:)), keyEquivalent: "")
         edit.addItem(.separator())
         edit.addItem(withTitle: String(localized: "Add Audio Point"),
                      action: #selector(EditorWindowController.addAudioPoint(_:)), keyEquivalent: "")
@@ -125,6 +127,8 @@ enum MainMenu {
         // editor window forwards them to the timeline when it is not focused.
         let timeline = NSMenu(title: String(localized: "Timeline"))
         timeline.addItem(withTitle: String(localized: "Split at Playhead  (S)"), action: #selector(TimelineView.splitAtPlayhead(_:)), keyEquivalent: "")
+        timeline.addItem(withTitle: String(localized: "Split All Tracks at Playhead"),
+                         action: #selector(EditorWindowController.splitAllTracks(_:)), keyEquivalent: "")
         timeline.addItem(withTitle: String(localized: "Ripple Delete"), action: #selector(TimelineView.rippleDelete(_:)),
                          keyEquivalent: String(Character(UnicodeScalar(NSBackspaceCharacter) ?? "\u{8}")))
             .keyEquivalentModifierMask = [.shift]
