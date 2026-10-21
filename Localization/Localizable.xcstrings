@@ -39,6 +39,9 @@
     "%arg exports are still running. Quit anyway?" : {
 
     },
+    "1. Select a clip with audio on the timeline.\n2. Generate captions from its speech, or add one at the playhead.\n3. Type into a caption below to change it; click its time to go there." : {
+
+    },
     "1080p (1920)" : {
 
     },
@@ -78,6 +81,9 @@
     "Add Callout" : {
 
     },
+    "Add Caption" : {
+
+    },
     "Add Captions" : {
 
     },
@@ -93,6 +99,9 @@
     "Add a track on top" : {
 
     },
+    "Add at Playhead" : {
+
+    },
     "Add to Timeline at Playhead" : {
 
     },
@@ -100,6 +109,9 @@
 
     },
     "Add video, audio or image files to the media bin (⌘I)" : {
+
+    },
+    "Added %arg captions. Edit them in the Captions tab." : {
 
     },
     "An export is still running. Close anyway?" : {
@@ -231,7 +243,13 @@
     "Caption Settings…" : {
 
     },
+    "Caption text" : {
+
+    },
     "Captions" : {
+
+    },
+    "Captions (%arg)" : {
 
     },
     "Change Caption Style" : {
@@ -298,6 +316,15 @@
         }
       }
     },
+    "Crop" : {
+
+    },
+    "Crop Mode" : {
+
+    },
+    "Crop the selected clip on the canvas (⌥⌘C)" : {
+
+    },
     "Cut" : {
 
     },
@@ -313,16 +340,25 @@
     "Delete All Captions" : {
 
     },
+    "Delete Caption" : {
+
+    },
     "Delete Captions" : {
 
     },
     "Delete Crash Reports" : {
 
     },
+    "Delete caption" : {
+
+    },
     "Delete the selected clips and close the gap (⇧⌫)" : {
 
     },
     "Delete the selected clips, leaving a gap (⌫)" : {
+
+    },
+    "Delete this caption" : {
 
     },
     "Deselect All" : {
@@ -334,13 +370,16 @@
     "Done" : {
 
     },
-    "Double-click to add at the cut under the playhead or to the selected clips" : {
+    "Drag a style onto a clip with audio, or double-click it to caption the selected audio at the playhead." : {
 
     },
-    "Double-click to add at the playhead" : {
+    "Drag onto a clip, or double-click to add to the selected clips" : {
 
     },
-    "Double-click to add to the selected clips" : {
+    "Drag onto a cut or clip, or double-click to add at the cut under the playhead or to the selected clips" : {
+
+    },
+    "Drag onto the canvas or timeline, or double-click to add at the playhead" : {
 
     },
     "Drop a .cmproj or .tscproj project, or a video, audio or image file." : {
@@ -352,6 +391,12 @@
     "Drop to add at the playhead" : {
 
     },
+    "Duplicate" : {
+
+    },
+    "Duplicate failed: %arg" : {
+
+    },
     "Duration" : {
 
     },
@@ -361,7 +406,13 @@
     "Dynamic Caption Style…" : {
 
     },
+    "Dynamic caption styles" : {
+
+    },
     "Edit" : {
+
+    },
+    "Edit Caption" : {
 
     },
     "Effects" : {
@@ -380,6 +431,9 @@
 
     },
     "Export Captions as WebVTT…" : {
+
+    },
+    "Export SRT…" : {
 
     },
     "Export is not available in this build." : {
@@ -415,7 +469,13 @@
     "File name" : {
 
     },
+    "Fill Canvas" : {
+
+    },
     "Fit the timeline to the window (⌘0)" : {
+
+    },
+    "Fit to Canvas" : {
 
     },
     "Formats" : {
@@ -442,6 +502,12 @@
     "General" : {
 
     },
+    "Generate Captions" : {
+
+    },
+    "Generate Captions from Speech" : {
+
+    },
     "Get Started" : {
 
     },
@@ -449,6 +515,9 @@
 
     },
     "Go to Start  (Home)" : {
+
+    },
+    "Go to this caption" : {
 
     },
     "Gradients" : {
@@ -506,6 +575,9 @@
     "Importing…" : {
 
     },
+    "Import…" : {
+
+    },
     "Include audio" : {
 
     },
@@ -536,10 +608,16 @@
     "Modified %arg" : {
 
     },
+    "Move the playhead over a clip with audio to add a caption there." : {
+
+    },
     "New Project" : {
 
     },
     "New Recording…" : {
+
+    },
+    "New caption" : {
 
     },
     "New recording (⌘R)" : {
@@ -548,10 +626,16 @@
     "Next Frame  (→)" : {
 
     },
+    "No captions yet." : {
+
+    },
     "No matches" : {
 
     },
     "No recent projects" : {
+
+    },
+    "No speech was found in the selected audio." : {
 
     },
     "Not found" : {
@@ -696,6 +780,9 @@
     "Revert" : {
 
     },
+    "Ripple Cut" : {
+
+    },
     "Ripple Delete" : {
 
     },
@@ -709,6 +796,9 @@
 
     },
     "Save to" : {
+
+    },
+    "Scale" : {
 
     },
     "Screen recorder & editor" : {
@@ -789,7 +879,7 @@
     "Show the whole timeline (⌘0)" : {
 
     },
-    "Shows the frame at the playhead. Click a clip to select it, drag to move it." : {
+    "Shows the frame at the playhead. Click a clip to select it; drag it to move, its corners to scale, the knob above it to rotate. Crop Mode adds edge handles." : {
 
     },
     "Sidebar" : {
@@ -834,6 +924,9 @@
     "Split" : {
 
     },
+    "Split at Playhead" : {
+
+    },
     "Split at Playhead  (S)" : {
 
     },
@@ -861,6 +954,9 @@
     "The selected whisper.cpp model is English-only and cannot transcribe %arg." : {
 
     },
+    "There is already a caption at the playhead." : {
+
+    },
     "Timeline" : {
 
     },
@@ -871,6 +967,9 @@
 
     },
     "Transcribe Selected Audio" : {
+
+    },
+    "Transcribe the selected audio and add captions from the words" : {
 
     },
     "Transcribed. Captions ▸ Add Dynamic Captions shows the words on the canvas." : {

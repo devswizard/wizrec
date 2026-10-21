@@ -44,6 +44,28 @@ public final class TimelineModel {
     /// Builds inner-track add/remove commands (seam over TimelineEngine's group-track commands).
     @ObservationIgnored var groupTracks: any GroupTrackCommands = EngineGroupTracks()
 
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-2).
+
+    /// Clip duration (ticks) a Finder file dragged over the timeline would get, for the landing
+    /// preview; nil while unknown (the app probes it asynchronously and caches it; the preview
+    /// appears on a later drag update). Nil closure: files show no preview.
+    @ObservationIgnored public var fileClipDuration: ((URL) -> Int64?)?
+
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-1c).
+
+    /// The app's own items for a timeline context menu (clipboard, duplicate, ripple cut, group,
+    /// captions …), by section; they follow the timeline's items of the same section. Items
+    /// keep their own target and enabled state (the menu does not auto-enable).
+    @ObservationIgnored public var contextMenuItems: ((TimelineMenuContext) -> [TimelineMenuSection: [NSMenuItem]])?
+
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-1b).
+
+    /// App-handled library tiles (`TimelineView.appLibraryTypes`: annotations, backgrounds, audio
+    /// effects, animations) dragged over the timeline: pasteboard type, tile name, target, and
+    /// `perform` (false while hovering: may it drop here; true on drop: do it). Returns whether it
+    /// can (hover) or did (drop). Nil: such tiles are refused.
+    @ObservationIgnored public var onLibraryDrop: ((NSPasteboard.PasteboardType, String, TimelineLibraryTarget, _ perform: Bool) -> Bool)?
+
     public init(undo: UndoStack) { self.undo = undo }
 }
 

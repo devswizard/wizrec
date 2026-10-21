@@ -12,7 +12,8 @@
 #   2. open project (a copy of the demo): a video dropped on the canvas is added at the
 #      playhead, one dropped on the timeline is added there, one dropped on the media bin only
 #      goes into the bin; a text file and a folder are refused with a plain sentence; a dropped
-#      project opens in its own window.
+#      project opens in its own window; the timeline drop's hover preview has the file's length;
+#   3. with the demo's group open: a canvas drop and a timeline drop go into it (drop rules).
 #
 # SHOTS_DIR=<dir>: window snapshots (start screen, empty project, canvas drop outline).
 set -u
@@ -135,8 +136,14 @@ case_editor() {
     drop_on editor.canvas 0 0 2 "$WORK/clip.mp4"
     expect_import "$before" "drop on the canvas adds at the playhead" "place=true clips=\[[0-9]*@track[0-9]*\]"
     before=$(imports)
-    drop_on editor.timeline 200 10 1 "$WORK/clip.mp4"
+    drop_on editor.timeline 200 10 3 "$WORK/clip.mp4"
     expect_import "$before" "drop on the timeline adds there" "place=true clips=\[[0-9]*@track[0-9]*\]"
+    # APP15-2: the Finder file was probed while hovering, so the landing preview had its length.
+    if grep -q '^WizRec: drop preview clip.mp4 ticks=[1-9]' "$WORK/app.log"; then
+        pass "Finder hover preview shows the file's length ($(grep -m1 '^WizRec: drop preview' "$WORK/app.log" | sed 's/^WizRec: //'))"
+    else
+        fail "no Finder hover preview length"
+    fi
     tile=$(ax dump demo 2>/dev/null | grep -o 'bin\.[0-9]*' | head -1)
     if [ -n "$tile" ]; then
         before=$(imports)
@@ -167,11 +174,38 @@ case_editor() {
     stop_app
 }
 
+# APP15-2 / QA16-F1: with the demo's group open, drops go into it by the drop rules: a canvas
+# drop at the playhead (canvas rule on the inner tracks) and a timeline drop onto a busy inner
+# spot (insert or move up, never a "would overlap" error).
+case_group() {
+    : > "$WORK/app.log"
+    open_project --no-audio --window-size 1280x800 --open-group --seek 1 ${shots[@]+"${shots[@]}"} || return
+    grep -q "^WizRec: opened group " "$WORK/app.log" || { fail "no group opened"; stop_app; return; }
+    local n
+    n=$(grep -c '^WizRec: placed in group ' "$WORK/app.log")
+    drop_on editor.canvas 0 0 1 "$WORK/clip.mp4"
+    if wait_until 20 '[ "$(grep -c "^WizRec: placed in group " "$WORK/app.log")" -gt "$n" ]'; then
+        pass "canvas drop goes into the open group ($(grep '^WizRec: placed in group ' "$WORK/app.log" | tail -1 | sed 's/^WizRec: //'))"
+    else
+        fail "canvas drop did not go into the open group"; grep '^WizRec: status' "$WORK/app.log" | tail -2
+    fi
+    n=$(grep -c '^WizRec: placed in group ' "$WORK/app.log")
+    drop_on editor.timeline 40 40 3 "$WORK/clip.mp4"
+    if wait_until 20 '[ "$(grep -c "^WizRec: placed in group " "$WORK/app.log")" -gt "$n" ]'; then
+        pass "timeline drop into the open group follows the drop rules"
+    else
+        fail "timeline drop into the open group failed"; grep '^WizRec: status' "$WORK/app.log" | tail -2
+    fi
+    grep -q 'would overlap' "$WORK/app.log" && fail "a group drop reported an overlap" || pass "no overlap error"
+    stop_app
+}
+
 gui_lock
 caffeinate -d -t 600 &
 CAFF=$!
 case_start_screen
 case_editor
+case_group
 kill "$CAFF" 2>/dev/null
 gui_unlock
 

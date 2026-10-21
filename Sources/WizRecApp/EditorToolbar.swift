@@ -92,6 +92,9 @@ final class EditorToolbar: NSObject, NSToolbarDelegate {
         case .zoomIn:
             Spec(label: String(localized: "Zoom In"), tip: String(localized: "Zoom the timeline in (⌘=)"),
                  symbol: "plus.magnifyingglass", action: #selector(TimelineView.zoomIn(_:)))
+        case .cropMode:
+            Spec(label: String(localized: "Crop"), tip: String(localized: "Crop the selected clip on the canvas (⌥⌘C)"),
+                 symbol: "crop", action: #selector(EditorWindowController.toggleCropMode(_:)))
         case .export:
             Spec(label: String(localized: "Export"), tip: String(localized: "Export the project as a video, GIF or audio file (⌘E)"),
                  symbol: "film.stack", action: #selector(EditorWindowController.showExport(_:)))

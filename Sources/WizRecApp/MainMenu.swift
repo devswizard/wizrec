@@ -50,6 +50,8 @@ enum MainMenu {
         edit.addItem(withTitle: String(localized: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: String(localized: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: String(localized: "Duplicate"), action: #selector(EditorWindowController.duplicate(_:)), keyEquivalent: "d")
+        edit.addItem(withTitle: String(localized: "Ripple Cut"), action: #selector(EditorWindowController.rippleCut(_:)), keyEquivalent: "X")
         let del = edit.addItem(withTitle: String(localized: "Delete"), action: #selector(EditorWindowController.delete(_:)),
                                keyEquivalent: String(UnicodeScalar(NSBackspaceCharacter).map { Character($0) } ?? "\u{8}"))
         del.keyEquivalentModifierMask = []
@@ -67,9 +69,21 @@ enum MainMenu {
         clip.addItem(withTitle: String(localized: "Unstitch"), action: #selector(EditorWindowController.unstitchClip(_:)), keyEquivalent: "")
         clip.addItem(.separator())
         clip.addItem(withTitle: String(localized: "Separate Video and Audio"), action: #selector(EditorWindowController.detachAudio(_:)), keyEquivalent: "")
+        clip.addItem(.separator())
+        // Canvas tools: crop handles on the selected clip; scale presets (one undo step each).
+        clip.addItem(withTitle: String(localized: "Crop Mode"), action: #selector(EditorWindowController.toggleCropMode(_:)),
+                     keyEquivalent: "c").keyEquivalentModifierMask = [.command, .option]
+        let scale = NSMenu(title: String(localized: "Scale"))
+        for (title, tag) in [(String(localized: "Fit to Canvas"), -1), (String(localized: "Fill Canvas"), -2),
+                             ("200 %", 200), ("100 %", 100), ("50 %", 50), ("25 %", 25)] {
+            scale.addItem(withTitle: title, action: #selector(EditorWindowController.scaleSelection(_:)), keyEquivalent: "").tag = tag
+        }
+        clip.addItem(withTitle: String(localized: "Scale"), action: nil, keyEquivalent: "").submenu = scale
         add(clip, to: main)
 
         let captions = NSMenu(title: String(localized: "Captions"))
+        captions.addItem(withTitle: String(localized: "Generate Captions from Speech"),
+                         action: #selector(EditorWindowController.generateCaptions(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Transcribe Selected Audio"),
                          action: #selector(EditorWindowController.transcribeSelection(_:)), keyEquivalent: "")
         captions.addItem(withTitle: String(localized: "Cancel Transcription"),

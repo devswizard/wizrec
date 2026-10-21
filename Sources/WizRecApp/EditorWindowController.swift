@@ -28,9 +28,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     let inspector = InspectorState()
     private weak var projectDocument: ProjectDocument?
     let options: LaunchOptions
-    private let canvas: EditorCanvasView
+    let canvas: EditorCanvasView
     private let selectionOverlay = SelectionOverlayView()
-    private let timelineView: TimelineUI.TimelineView
+    let timelineView: TimelineUI.TimelineView
     private var providerDirectory: URL?
     private let thumbnails: ThumbnailStore
     private var renderer: CanvasRenderer?
@@ -87,20 +87,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .unified
         super.init(window: window)
-        window.toolbar = toolbarItems.make(autosave: !options.isScripted)
+        window.toolbar = toolbarItems.make(autosave: options.keepsLayout)
         window.editor = self
         window.delegate = self
         canvas.editor = self
         selectionOverlay.editor = self
-        canvas.registerForDraggedTypes(MediaDrop.types)
+        canvas.registerForDraggedTypes(MediaDrop.types + LibraryDragKind.types)
 
         renderer = CanvasRenderer(view: canvas)
         renderer?.engine = engine
         if renderer == nil { ui.compositorError = "Metal is not available on this Mac." }
         buildLayout(in: window)
         shouldCascadeWindows = false
-        // `--window-size` runs leave the saved frame alone (no autosave name, no restore).
-        if options.windowSize == nil { windowFrameAutosaveName = "WizRec.EditorWindow" }
+        // Scripted, timed, `--window-size` and `--ephemeral-layout` runs leave the saved frame
+        // alone (no autosave name, no restore): UI checks never share it with the user's app.
+        if options.keepsLayout { windowFrameAutosaveName = Self.frameAutosaveName }
 
         timelineModel.onSeek = { [weak self] t in self?.engine.seek(toTicks: t) }
         timelineModel.onDrop = { [weak self] payload, track, ticks in
@@ -119,7 +120,28 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             }
             return true
         }
+        // Finder files dragged over the timeline: probed once, then the landing preview shows
+        // their real length (the clip they would become under the drop rules).
+        let durations = DropDurationCache { [weak model] url in
+            guard let model, let info = try? await model.thumbnailPool.probe(url) else { return nil }
+            return model.dropClipDuration(for: info)
+        }
+        var announced = Set<URL>()
+        timelineModel.contextMenuItems = { [weak self] context in self?.timelineMenuItems(context) ?? [:] }
+        timelineModel.onLibraryDrop = { [weak self] type, name, target, perform in
+            self?.timelineLibraryDrop(type, name, target, perform: perform) ?? false
+        }
+        timelineModel.fileClipDuration = { url in
+            let d = durations.duration(of: url)
+            if let d, announced.insert(url).inserted {
+                // UI checks read this line (the Finder hover preview has its length).
+                print("WizRec: drop preview \(url.lastPathComponent) ticks=\(d)")
+                fflush(stdout)
+            }
+            return d
+        }
         updateMediaProvider()
+        startUILog()
         model.onChange = { [weak self] in self?.projectDidChange() }
         // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
         // into a Rev group are written (UI checks keep them out of Application Support).
@@ -140,6 +162,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// UserDefaults name of the saved editor window frame (interactive runs only, `keepsLayout`).
+    static let frameAutosaveName = "WizRec.EditorWindow"
 
     // MARK: Layout
 
@@ -183,7 +208,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             importFiles: { [weak self] urls in self?.importFiles(urls, place: false) },
             insert: { [weak self] id in self?.insertSource(id) },
             relink: { [weak self] id in self?.locate(id) }),
-            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false })))
+            library: LibraryActions(apply: { [weak self] kind, name in self?.applyLibraryItem(kind, name) ?? false },
+                                    captions: captionActions())))
         let props = NSHostingView(rootView: InspectorView(state: inspector, actions: InspectorActions(
             preview: { [weak self] f, v in self?.previewField(f, v) },
             commit: { [weak self] in self?.commitPreview() },
@@ -204,7 +230,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         top.setHoldingPriority(.defaultLow - 10, forSubviewAt: 1)
         top.setHoldingPriority(.defaultLow + 10, forSubviewAt: 2)
         top.defaultSizes = { size in [250, max(360, size.width - 250 - 290 - 2)] }
-        if options.windowSize == nil { top.persist(as: "WizRec.EditorSplit.Panes") } else { top.useDefaultLayout() }
+        if options.keepsLayout { top.persist(as: "WizRec.EditorSplit.Panes") } else { top.useDefaultLayout() }
 
         let root = EditorSplitView()
         root.isVertical = false
@@ -237,7 +263,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             EditorKeyLoop.Pane(view: timelinePane, singleStop: timelineView),
         ]
         root.defaultSizes = { size in [max(360, size.height - 230 - TimelineToolbarView.height)] }
-        if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
+        if options.keepsLayout { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
     }
 
@@ -248,7 +274,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let size = options.windowSize {
             window.setContentSize(size)
             window.center()
-        } else if !window.setFrameUsingName("WizRec.EditorWindow") {
+        } else if !options.keepsLayout || !window.setFrameUsingName(Self.frameAutosaveName) {
             window.center()
         }
         window.layoutIfNeeded()
@@ -300,6 +326,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             lastSelection = timelineModel.selection
             refreshInspector()
             selectionOverlay.needsDisplay = true
+            logSelection()
         }
         if timelineModel.lastError != lastTimelineError {
             lastTimelineError = timelineModel.lastError
@@ -378,6 +405,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     private func projectDidChange() {
         engine.replaceScene(model.scene, audioScene: model.audioScene)
+        if !model.isPreviewing, Self.logsUI {
+            logEdit()
+            // After the next frames, so the logged handle positions show the edit.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                self?.logSelection()
+            }
+        }
         updateMediaProvider()
         projectDocument?.refreshEditedState()
         let kept = timelineModel.selection.filter { ClipInspection.make(project: model.project, clipID: $0, playhead: 0) != nil }
@@ -391,6 +426,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         timelineModel.selection = ids
         refreshInspector()
         selectionOverlay.needsDisplay = true
+    }
+
+    /// Where top-level clip `clipID` is drawn on the canvas at the playhead (handles).
+    func canvasFrame(of clipID: Int64) -> CanvasFrame? {
+        CanvasGeometry.frame(of: clipID, plan: engine.drawState().plan, project: model.project)
+    }
+
+    /// Redraws the selection and drop outlines over the canvas.
+    func refreshCanvasOverlay() { selectionOverlay.needsDisplay = true }
+
+    /// Canvas ▸ Crop Mode: edge handles on the selected clip crop it; again (or Esc) leaves it.
+    @objc func toggleCropMode(_ sender: Any?) {
+        ui.cropMode.toggle()
+        selectionOverlay.needsDisplay = true
+        print("WizRec: crop mode \(ui.cropMode ? "on" : "off")")   // UI checks read this line
+        fflush(stdout)
+        logSelection()
     }
 
     func inspection(of clipID: Int64) -> ClipInspection? {
@@ -502,6 +554,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if kind == .callout, let preset = AssetCatalog.callout(id: name) { return insertCallout(preset) }
         if kind == .background, let bg = AssetCatalog.background(id: name) { return placeBackground(bg) }
         if kind == .background { return false }
+        if kind == .captionStyle, let i = DynamicCaptionPreset.all.firstIndex(where: { $0.presetID == name }) {
+            addDynamicCaptions(presetIndex: i)
+            return true
+        }
+        if kind == .captionStyle { return false }
         if timelineModel.selection.isEmpty, kind == .effect {
             ui.show(String(localized: "Select clips on the timeline first, or drag the effect onto a clip."))
             return false
@@ -528,8 +585,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     /// Annotations library double-click: the callout at the playhead (5 s, above the clips
     /// there), selected. One undo step.
-    func insertCallout(_ preset: CalloutPreset) -> Bool {
-        let c = CalloutInsertion.command(preset, project: model.project, playhead: engine.currentTicks)
+    func insertCallout(_ preset: CalloutPreset, at ticks: Int64? = nil) -> Bool {
+        let c = CalloutInsertion.command(preset, project: model.project, playhead: ticks ?? engine.currentTicks)
         var ok = false
         run(String(localized: "Add Callout")) { try model.perform(c); ok = true }
         if let id = c.clipID { select([id]) }
@@ -540,8 +597,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// track), selected. With a group open on the timeline it goes on a new top inner track of
     /// that group at the playhead instead; the group never grows (`placeBackground(_:inGroup:atPlayhead:)`).
     /// One undo step ("Add Background").
-    func placeBackground(_ bg: BackgroundAsset) -> Bool {
-        let at = engine.currentTicks
+    func placeBackground(_ bg: BackgroundAsset, at ticks: Int64? = nil, track: Int? = nil) -> Bool {
+        let at = ticks ?? engine.currentTicks
         let group = timelineModel.openGroups.last
         ui.isImporting = true
         Task {
@@ -551,7 +608,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
                 if let group {
                     clip = try await model.placeBackground(bg, inGroup: group, atPlayhead: at)
                 } else {
-                    clip = try await model.placeBackground(bg, at: at)
+                    clip = try await model.placeBackground(bg, at: at, track: track)
                 }
                 select([clip])
             } catch {
@@ -623,8 +680,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     func insertSource(_ id: Int64) { place(.sources([id]), track: nil, at: engine.currentTicks) }
 
     /// Handles a drop on the canvas or timeline: files are imported, then placed;
-    /// bin items are placed one after another from `ticks`.
+    /// bin items are placed one after another from `ticks`. With a group open on the timeline, a
+    /// canvas drop or bin double-click (`track` nil) goes into that group by the canvas rule
+    /// (`placeInGroup(_:group:atPlayhead:)`, DECISIONS session 11).
     func place(_ drop: MediaDrop, track: Int?, at ticks: Int64) {
+        if track == nil, let group = timelineModel.openGroups.last {
+            switch drop {
+            case .files(let urls):
+                let media = DroppedFiles(urls)
+                if !media.projects.isEmpty { (NSDocumentController.shared as? WizRecDocumentController)?.openFiles(media.projects) }
+                if let unsupported = media.unsupportedMessage() { ui.show(unsupported, seconds: 10) }
+                guard !media.media.isEmpty else { return }
+                placeInGroup(.files(media.media), atPlayhead: ticks, group: group)
+            case .sources(let ids):
+                placeInGroup(.sources(ids), atPlayhead: ticks, group: group)
+            }
+            return
+        }
         switch drop {
         case .files(let urls):
             importFiles(urls, place: true, track: track, at: ticks)
@@ -649,6 +721,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             do {
                 let ids = try await model.placeInGroup(items, group: target.group, track: target.track, at: target.ticks)
                 if let last = ids.last { select([last]) }
+                print("WizRec: placed in group \(target.group) clips=\(ids)")   // UI checks read this line
+                fflush(stdout)
+            } catch {
+                ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
+            }
+        }
+    }
+
+    /// A canvas drop or bin double-click while group `group` is open: into the group at the
+    /// playhead by the canvas rule (one undo step).
+    private func placeInGroup(_ items: EditorDocumentModel.GroupPlacement, atPlayhead ticks: Int64, group: Int64) {
+        if case .files = items { ui.isImporting = true }
+        groupDrop = Task {
+            defer { ui.isImporting = false }
+            do {
+                let ids = try await model.placeInGroup(items, group: group, atPlayhead: ticks)
+                if let last = ids.last { select([last]) }
+                print("WizRec: placed in group \(group) clips=\(ids)")
+                fflush(stdout)
             } catch {
                 ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
             }
@@ -952,6 +1043,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case (119, []), (124, [.command]): engine.goToEnd()
         case (1, []): timelineView.splitAtPlayhead(nil)       // S
         case (46, []): timelineView.addMarker(nil)            // M
+        case (53, []) where ui.cropMode: toggleCropMode(nil)  // Esc leaves crop mode
         default: return false
         }
         return true
@@ -979,12 +1071,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     static let clipsOriginType = NSPasteboard.PasteboardType("com.devswizard.wizrec.clips-origin")
 
     /// Selected clips that sit directly on a track (copy, group and stitch work on those).
-    private var topLevelSelection: [Int64] {
+    var topLevelSelection: [Int64] {
         let top = Set(model.project.tracks.flatMap(\.clips).map(\.id))
         return model.project.tracks.flatMap(\.clips).map(\.id).filter { timelineModel.selection.contains($0) && top.contains($0) }
     }
 
-    private func put(_ payload: ClipboardPayload) {
+    func put(_ payload: ClipboardPayload) {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setData(payload.data, forType: Self.clipsType)
@@ -1056,7 +1148,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let v = c.videoID { select([v]) }
     }
 
-    private func kindOfSelection() -> ClipKind? {
+    func kindOfSelection() -> ClipKind? {
         guard topLevelSelection.count == 1, let id = topLevelSelection.first else { return nil }
         return model.project.tracks.flatMap(\.clips).first { $0.id == id }?.kind
     }
@@ -1090,8 +1182,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case #selector(addAudioPoint(_:)):
             return AudioPanel.audioClips(in: model.project, selection: timelineModel.selection)
                 .contains { $0.contains(engine.currentTicks) }
-        case #selector(copy(_:)), #selector(cut(_:)):
-            return !topLevelSelection.isEmpty
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(duplicate(_:)), #selector(rippleCut(_:)):
+            return !model.clipboardSelection(timelineModel.selection, openGroup: timelineModel.openGroups.last).isEmpty
+        case #selector(toggleCropMode(_:)):
+            item.state = ui.cropMode ? .on : .off
+            return ui.cropMode || canvasScaleTarget != nil
+        case #selector(scaleSelection(_:)):
+            return canvasScaleTarget != nil
         case #selector(paste(_:)):
             return NSPasteboard.general.availableType(from: [Self.clipsType]) != nil
         case #selector(groupClips(_:)):
@@ -1119,6 +1216,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// Toolbar items validate like the menu items with the same action.
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         guard let action = item.action else { return true }
+        if action == #selector(toggleCropMode(_:)) {
+            // Tinted while crop mode is on.
+            let tint: NSColor = ui.cropMode ? .controlAccentColor : .labelColor
+            item.image = NSImage(systemSymbolName: "crop", accessibilityDescription: item.label)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [tint]))
+        }
         return validateMenuItem(NSMenuItem(title: item.label, action: action, keyEquivalent: ""))
     }
 

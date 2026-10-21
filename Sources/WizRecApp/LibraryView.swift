@@ -9,13 +9,15 @@ struct LibraryActions {
     /// Double-click: apply the item to the timeline selection (effect → selected clips,
     /// transition → selected clip edges). Returns false when nothing could take it.
     var apply: (LibraryItem.Kind, String) -> Bool = { _, _ in false }
+    /// The Captions tab's buttons and caption rows.
+    var captions = CaptionActions()
 }
 
 /// Left pane: the media bin plus the effects and transitions library (drag items onto
 /// the timeline; TimelineUI applies the preset defaults on drop).
 struct SidebarView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case media, backgrounds, annotations, effects, audio, transitions
+        case media, backgrounds, annotations, effects, audio, transitions, captions
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
@@ -25,6 +27,7 @@ struct SidebarView: View {
             case .effects: "Effects"
             case .audio: "Audio"
             case .transitions: "Transitions"
+            case .captions: "Captions"
             }
         }
     }
@@ -47,19 +50,21 @@ struct SidebarView: View {
             case .media: MediaBinView(model: model, thumbnails: thumbnails, actions: actions)
             case .backgrounds:
                 LibraryList(items: Self.backgroundItems(), kind: .background, apply: library.apply,
-                            hint: "Double-click to add at the playhead for 60 seconds. Camtasia won't show WizRec backgrounds.")
+                            hint: "Drag a background onto the canvas or the timeline, or double-click to add it at the playhead for 60 seconds. Camtasia won't show WizRec backgrounds.")
             case .effects:
                 LibraryList(items: Self.effectItems(), kind: .effect, apply: library.apply,
-                            hint: "Drag an effect onto a clip, or double-click to add it to the selected clips.")
+                            hint: "Drag an effect onto a clip on the timeline or the canvas, or double-click to add it to the selected clips.")
             case .annotations:
                 LibraryList(items: Self.calloutItems(), kind: .callout, apply: library.apply,
-                            hint: "Double-click to add at the playhead, above the clips there, for 5 seconds.")
+                            hint: "Drag an annotation onto the canvas (at the playhead) or the timeline (where you drop it), or double-click to add it at the playhead. It lasts 5 seconds, above the clips there.")
             case .audio:
                 LibraryList(items: Self.audioItems(), kind: .audio, apply: library.apply,
-                            hint: "Double-click to add to the selected clips' audio. Captions adds empty captions to type into.")
+                            hint: "Drag onto a clip with audio, or double-click to add to the selected clips' audio. Captions adds empty captions to type into.")
             case .transitions:
                 LibraryList(items: Self.transitionItems(), kind: .transition, apply: library.apply,
                             hint: "Drag a transition onto the cut between two clips or a clip's start or end, or double-click to add it at the playhead cut or to the selected clips.")
+            case .captions:
+                CaptionsPanel(model: model, actions: library.captions, apply: library.apply)
             }
         }
     }
@@ -73,6 +78,7 @@ struct SidebarView: View {
         case .effects: String(localized: "Effects")
         case .audio: String(localized: "Audio")
         case .transitions: String(localized: "Transitions")
+        case .captions: String(localized: "Captions")
         }
     }
 
@@ -210,7 +216,7 @@ struct SidebarView: View {
 
 /// One library tile: `name` is what the project stores, `title` what the user sees.
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind { case effect, transition, audio, callout, background }
+    enum Kind { case effect, transition, audio, callout, background, captionStyle }
     var name: String
     var title: String
     var symbol: String
@@ -232,12 +238,16 @@ struct LibraryList: View {
     @FocusState private var searchFocused: Bool
     private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 8)]
 
-    /// Drag pasteboard type; nil for audio items (double-click only: the timeline takes no audio drops).
+    /// Drag pasteboard type (ui-workflow.md §4): effects, transitions and audio effects onto a
+    /// clip, annotations and backgrounds onto the canvas or the timeline.
     private var type: String? {
         switch kind {
         case .effect: TimelineUI.TimelineView.effectType.rawValue
         case .transition: TimelineUI.TimelineView.transitionType.rawValue
-        case .audio, .callout, .background: nil
+        case .audio: TimelineUI.TimelineView.audioItemType.rawValue
+        case .callout: TimelineUI.TimelineView.calloutType.rawValue
+        case .background: TimelineUI.TimelineView.backgroundType.rawValue
+        case .captionStyle: TimelineUI.TimelineView.captionStyleType.rawValue
         }
     }
 
@@ -337,9 +347,9 @@ struct LibraryList: View {
 
     static func hint(for kind: LibraryItem.Kind) -> String {
         switch kind {
-        case .transition: String(localized: "Double-click to add at the cut under the playhead or to the selected clips")
-        case .callout, .background: String(localized: "Double-click to add at the playhead")
-        case .effect, .audio: String(localized: "Double-click to add to the selected clips")
+        case .transition: String(localized: "Drag onto a cut or clip, or double-click to add at the cut under the playhead or to the selected clips")
+        case .callout, .background: String(localized: "Drag onto the canvas or timeline, or double-click to add at the playhead")
+        case .effect, .audio, .captionStyle: String(localized: "Drag onto a clip, or double-click to add to the selected clips")
         }
     }
 

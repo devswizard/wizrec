@@ -510,7 +510,7 @@ public final class EditorDocumentModel {
         let file = try libraryFile(for: background)
         let origin: (path: String, rev: String)? = track == 0 && Self.isRevGroup(groupID, in: project)
             ? (path: file.path, rev: "backgrounds/" + background.fileName) : nil
-        let ids = try await placeInGroup(.files([file]), group: groupID, track: track, at: innerTicks,
+        let ids = try await placeInGroup(.files([file]), group: groupID, first: .timeline(track: track, at: .inner(innerTicks)),
                                          name: String(localized: "Add Background"), origin: origin)
         guard let id = ids.first else { throw EditError.invalid("no clip id") }
         return id
@@ -572,6 +572,19 @@ public final class EditorDocumentModel {
         return id
     }
 
+    /// Duration (ticks) of the clip a file with probe result `info` would become when dropped
+    /// (the `InsertClip` rules, `DropRules.clipDuration`), for the hover preview of a Finder drag
+    /// before the file is imported. The project is left unchanged (a source is added and removed
+    /// again, outside the undo history). Nil when the file has nothing to show or play.
+    public func dropClipDuration(for info: MediaInfo) -> Int64? {
+        guard info.kind != .unknown, info.kind == .image || info.kind == .shader || !info.streams.isEmpty else { return nil }
+        let add = AddSource(SourceDescriptor(info: info, src: info.url.path, lastModified: Date()))
+        do { try add.apply(to: project) } catch { return nil }
+        defer { try? add.revert(on: project) }
+        guard let id = add.sourceID else { return nil }
+        return try? DropRules.clipDuration(source: id, in: project)
+    }
+
     // MARK: Placing inside an open group
 
     /// What goes into a group: bin sources, or files to import first.
@@ -580,17 +593,33 @@ public final class EditorDocumentModel {
         case files([URL])
     }
 
-    /// Places `items` on inner track `track` of group `groupID`, the first at `innerTicks`
-    /// (ticks on the group's inner timeline), each next one where the previous ends. Files are
-    /// imported into the bin in the same step. One undo step; returns the new clip ids in order.
+    /// Places `items` as timeline drops on inner track `track` of group `groupID` by the drop
+    /// rules (`DropClip` with `group`, ui-workflow.md §4, group-edits §8.6–§8.7): the first at
+    /// `innerTicks` (ticks on the group's inner timeline), each next one on the track where the
+    /// previous landed, at its end. A busy spot inserts at a clip start or moves up a track; a
+    /// track index at or above the inner track count is a new top inner track. The group never
+    /// grows. Files are imported into the bin in the same step. One undo step; returns the new
+    /// clip ids in order.
     @discardableResult
     public func placeInGroup(_ items: GroupPlacement, group groupID: Int64, track: Int,
                              at innerTicks: Int64) async throws -> [Int64] {
-        try await placeInGroup(items, group: groupID, track: track, at: innerTicks, name: "Add to Group", origin: nil)
+        try await placeInGroup(items, group: groupID, first: .timeline(track: track, at: .inner(innerTicks)),
+                               name: "Add to Group", origin: nil)
     }
 
-    /// `placeInGroup` named `name`; `origin` adds `SetShaderVidSource` for the first clip (Rev backgrounds).
-    private func placeInGroup(_ items: GroupPlacement, group groupID: Int64, track: Int, at innerTicks: Int64,
+    /// Places `items` into open group `groupID` as a canvas drop (or a media-bin double-click) at
+    /// project time `playhead` [WizRec, DECISIONS session 11]: the first by the canvas rule on the
+    /// group's inner tracks (the lowest inner track with room at the playhead, mapped onto the inner
+    /// timeline, else a new top inner track), each next one at the end of the previous on its track.
+    /// The group never grows. One undo step ("Add to Group"); returns the new clip ids in order.
+    @discardableResult
+    public func placeInGroup(_ items: GroupPlacement, group groupID: Int64, atPlayhead playhead: Int64) async throws -> [Int64] {
+        try await placeInGroup(items, group: groupID, first: .canvas(playhead: playhead), name: "Add to Group", origin: nil)
+    }
+
+    /// `placeInGroup` with the first item at `first`, named `name`; `origin` adds
+    /// `SetShaderVidSource` for the first clip when it lands on inner track 0 (Rev backgrounds).
+    private func placeInGroup(_ items: GroupPlacement, group groupID: Int64, first: DropTarget,
                               name: String, origin: (path: String, rev: String)?) async throws -> [Int64] {
         var builders: [CompoundCommand.Builder] = []
         var inserts: [Int] = []
@@ -599,7 +628,7 @@ public final class EditorDocumentModel {
             for id in ids {
                 guard project.source(id: id) != nil else { throw DocumentError.noSuchSource(id) }
                 inserts.append(builders.count)
-                builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
+                builders.append(Self.groupInsert(group: groupID, first: first,
                                                  previous: inserts.dropLast().last) { _ in id })
             }
         case .files(let files):
@@ -621,7 +650,7 @@ public final class EditorDocumentModel {
                 builders += ShaderSourceImport.steps(
                     addIndex: addIndex, ShaderSourceImport.entries(info: info, url: file))
                 inserts.append(builders.count)
-                builders.append(Self.groupInsert(group: groupID, track: track, first: innerTicks,
+                builders.append(Self.groupInsert(group: groupID, first: first,
                                                  previous: inserts.dropLast().last) { done in
                     guard let id = (done[addIndex] as? AddSource)?.sourceID else { throw EditError.invalid("no source id") }
                     return id
@@ -631,29 +660,32 @@ public final class EditorDocumentModel {
         guard !builders.isEmpty else { return [] }
         if let origin, let first = inserts.first {
             builders.append { _, done in
-                guard let id = (done[first] as? InsertClipInGroup)?.clipID else { throw EditError.invalid("no clip id") }
+                guard let drop = done[first] as? DropClip, let id = drop.clipID else { throw EditError.invalid("no clip id") }
+                // Rev keys only for a background that really landed on inner track 0.
+                guard drop.placement?.track == 0 else { return CompoundCommand(name: name, []) }
                 return SetShaderVidSource(clipID: id, path: origin.path, revBackground: origin.rev)
             }
         }
         let c = CompoundCommand(name: name, builders)
         try perform(c)
         return try inserts.map { i in
-            guard let id = (c.steps[i] as? InsertClipInGroup)?.clipID else { throw EditError.invalid("no clip id") }
+            guard let id = (c.steps[i] as? DropClip)?.clipID else { throw EditError.invalid("no clip id") }
             return id
         }
     }
 
-    /// One `InsertClipInGroup` step: at `first`, or at the end of the clip inserted by step `previous`.
-    private static func groupInsert(group: Int64, track: Int, first: Int64, previous: Int?,
+    /// One `DropClip` step into group `group`: at `first`, or, after step `previous`, as a timeline
+    /// drop on the inner track that clip landed on, at its end.
+    private static func groupInsert(group: Int64, first: DropTarget, previous: Int?,
                                     source: @escaping @MainActor ([any EditCommand]) throws -> Int64)
         -> CompoundCommand.Builder {
         { project, done in
-            var start = first
-            if let p = previous, let prev = (done[p] as? InsertClipInGroup)?.clipID,
-               let end = innerClipEnd(prev, in: project) {
-                start = end
+            var target = first
+            if let p = previous, let prev = done[p] as? DropClip, let id = prev.clipID,
+               let end = innerClipEnd(id, in: project), let track = prev.placement?.track {
+                target = .timeline(track: track, at: .inner(end))
             }
-            return InsertClipInGroup(sourceID: try source(done), group: group, track: track, at: .inner(start))
+            return DropClip(sourceID: try source(done), group: group, target)
         }
     }
 

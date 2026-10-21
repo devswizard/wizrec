@@ -56,6 +56,48 @@ import WizRecAssets
         #expect(doc.project.serialized() == before)
     }
 
+    /// APP15-2 / QA16-F1: group drops follow the drop rules (`DropClip(group:)`). A drop on a busy
+    /// inner spot just after a clip's start inserts there and pushes that clip (no "would overlap"
+    /// error); a canvas drop with the group open takes the lowest inner track with room at the
+    /// playhead, else a new top inner track. Each is one undo step.
+    @Test func groupDropsFollowTheDropRules() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wizrec-groupdrop-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let wav = dir.appendingPathComponent("voice.wav")
+        try AudioSignals.writeWAV(AudioSignals.pinkNoise(seconds: 2, lufs: -23), to: wav)
+        let doc = try EditorDocumentModel.untitled(in: dir)
+        let tb = doc.project.timebase
+        let a = try await doc.importAndInsert(wav, at: 0)
+        let group = GroupClips(clipIDs: [a])
+        try doc.perform(group)
+        let gid = try #require(group.groupID)
+        let src = try #require(doc.project.sourceBin.first?.id)
+        let before = doc.project.serialized()
+        func innerTracks() -> [[Int64]] {
+            (doc.project.tracks.flatMap(\.clips).first { $0.id == gid }?.tracks ?? []).map { $0.clips.map(\.id) }
+        }
+        let inner0 = try #require(innerTracks().first?.first)
+
+        // Busy spot 0.3 s into the grouped clip: inserted at its start, the old clip pushed right.
+        let ids = try await doc.placeInGroup(.sources([src]), group: gid, track: 0, at: tb.ticks(seconds: 0.3))
+        let id = try #require(ids.first)
+        #expect(nestedStarts([id], in: doc) == [0])
+        let pushed = try #require(nestedStarts([inner0], in: doc).first)
+        #expect(pushed == EditorDocumentModel.innerClipEnd(id, in: doc.project))
+        #expect(innerTracks().count == 1)
+        try doc.undoLast()
+        #expect(doc.project.serialized() == before)
+
+        // Canvas drop at the playhead (1 s, inside the busy clip): a new top inner track.
+        let canvas = try await doc.placeInGroup(.sources([src]), group: gid, atPlayhead: tb.ticks(seconds: 1))
+        let c = try #require(canvas.first)
+        #expect(innerTracks().count == 2 && innerTracks()[1] == [c])
+        #expect(nestedStarts([c], in: doc) == [tb.ticks(seconds: 1)])
+        try doc.undoLast()
+        #expect(doc.project.serialized() == before)
+    }
+
     /// The UI check's scenario on a Camtasia-authored group (demo fixture, group 4 with three full
     /// inner tracks): a file dropped on inner track 0 after its last clip is imported, nested in
     /// the group (which never grows, group-edits §8.6), saved and reopened; top-level clips are

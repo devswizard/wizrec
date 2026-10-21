@@ -109,7 +109,9 @@ launch_app() {
     app_warm || limit=$((WATCHDOG + FIRST_LAUNCH_TIMEOUT))
     # No window restoration: AppKit would otherwise reopen windows a previous (possibly killed)
     # run left open; the run keeps its own state in a temp folder, never the user's.
-    "$BIN" -ApplePersistenceIgnoreState YES "$@" > "$WORK/app.log" 2>&1 &
+    # --ephemeral-layout: no saved window frame, split or toolbar layout is read or written, so
+    # check runs and the user's own WizRec (same defaults domain) never share them.
+    "$BIN" -ApplePersistenceIgnoreState YES --ephemeral-layout "$@" > "$WORK/app.log" 2>&1 &
     APP_PID=$!
     ( sleep "$limit"; kill -9 "$APP_PID" 2>/dev/null && echo "watchdog killed $APP_PID" >> "$WORK/app.log" ) &
     WATCH_PID=$!

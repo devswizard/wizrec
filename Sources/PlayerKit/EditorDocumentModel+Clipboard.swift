@@ -48,6 +48,26 @@ extension EditorDocumentModel {
         return payload
     }
 
+    /// Ripple Cut = copy + ripple delete (later clips on each track close the gaps), one undo
+    /// step ("Ripple Cut").
+    public func rippleCutClips(_ ids: [Int64]) throws -> ClipboardPayload {
+        let payload = try copyClips(ids)
+        try perform(CompoundCommand(name: String(localized: "Ripple Cut"), [{ _, _ in DeleteClips(clipIDs: ids, ripple: true) }]))
+        return payload
+    }
+
+    /// Duplicate: copies of `ids` placed right after them (the copy's first clip starts at
+    /// `end`, the selection's end in project time) on the track of the first selected clip, else
+    /// on a new top track; inside open group `group` by the group paste rule. The clipboard is not
+    /// touched. One undo step ("Duplicate"); returns the new top-level (or inner) clip ids
+    /// [WizRec: Camtasia's placement is unobserved].
+    @discardableResult
+    public func duplicateClips(_ ids: [Int64], end: Int64, track: Int?, group: Int64? = nil) async throws -> [Int64] {
+        let payload = try copyClips(ids)
+        return try await paste(payload, origin: nil, track: track, at: end, group: group,
+                               name: String(localized: "Duplicate"))
+    }
+
     /// Pastes `payload` at `ticks` on `track` (0 = bottom); if that overlaps, on a new top
     /// track. One undo step ("Paste"). Returns the pasted top-level clip ids.
     ///
@@ -61,10 +81,10 @@ extension EditorDocumentModel {
     /// (`PasteClips(_:group:at:)`, group-edits.md §8.3).
     @discardableResult
     public func paste(_ payload: ClipboardPayload, origin: URL?, track: Int?, at ticks: Int64,
-                      group: Int64? = nil) async throws -> [Int64] {
+                      group: Int64? = nil, name: String = "Paste") async throws -> [Int64] {
         let relinks = try await crossProjectRelinks(payload, origin: origin)
         func attempt(_ builders: [CompoundCommand.Builder]) throws -> [Int64] {
-            let c = CompoundCommand(name: "Paste", builders + relinks)
+            let c = CompoundCommand(name: name, builders + relinks)
             try perform(c)
             return c.steps.compactMap { ($0 as? PasteClips)?.pastedIDs }.first ?? []
         }
