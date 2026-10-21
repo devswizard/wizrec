@@ -106,3 +106,7 @@ stated: colour black, `color-alpha` 1, `opacity` 1.
 | 8 | M-grey, 0.5, `rotation2` = π/4 | 0 | 40 | 0 | 1 | does the shadow rotate with the layer? |
 | 9 | M-grey, 0.5, colour (1, 0, 0), `color-alpha` 0.5 | 3π/2 | 30 | 0 | 1 | how colour alpha combines with opacity |
 | 10 | M-grey, 0.5 | 0 | 40 | 0 | 1, **`enabled` 0** | `enabled` flag |
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

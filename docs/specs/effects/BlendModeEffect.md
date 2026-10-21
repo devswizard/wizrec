@@ -99,3 +99,7 @@ layer at i = 0. Wait for EF5 before treating this as settled.)
 Each cell's colour against the underlying ramp gives that mode's curve. A
 second save of this project after the user opens it lets Camtasia normalise
 any invalid modes, which shows the valid range.
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

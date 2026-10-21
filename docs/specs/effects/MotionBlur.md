@@ -49,3 +49,7 @@ This needs a **video export**, not a still: export `ef6.mp4` at 1920×1080,
 - **Clip E:** a fifth row with a rotation-only animation, 0 → 2π in 1 s.
 
 The streak length per frame divided by 53.33 gives the shutter fraction.
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

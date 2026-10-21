@@ -71,3 +71,7 @@ opacity 0, invert 0, cornerRadius 0.
 | 8 | shape 0, blend −0.1 | Feather, negative |
 | 9 | shape 0, opacity 0.5 | Outside opacity |
 | 10 | shape 0, invert 1 | Invert |
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

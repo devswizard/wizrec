@@ -4,6 +4,22 @@ This file records every use of REA tools and every static analysis of
 TechSmith binaries. Each entry gives the evidence id, the target's SHA-256,
 the method, the conclusion and any open unknowns.
 
+## Status (2026-10-21, session 11)
+
+- **Method 3 only**, RT-030 and RT-031: the Properties panel read through
+  the accessibility tree (labels, slider min/max, field text, pop-up
+  entries, tooltips) and save-only experiments (typed fields, pop-ups,
+  toggles, synthetic canvas drags). No REA tool use, no binary analysis,
+  no exports, no screen capture, nothing licensing-related. Camtasia
+  stopped answering accessibility calls after the crop tool was pressed;
+  it was quit without saving that state.
+- **New helpers in `camtasia_rea_refs/_automation/`** (no TechSmith
+  assets): `axq` (`axq.swift`, a fast AX dumper/presser/pop-up lister),
+  `mdrag` (`mdrag.swift`, clean drags with held modifiers), `props.sh`,
+  `pfx.py`, `show.sh`, `fxset.py`, `typeat.sh`, `snap.sh`, `cvg.sh`,
+  `cvprobe.sh`, `cosum.py`, `coruns.py`, `codrop*.sh`, `codump*.sh`,
+  `coplan*.sh`, `planC.sh`, `ranges.sh`, `tlscroll.sh`.
+
 ## Status (2026-10-21, session 10)
 
 - **Method 3 only**, RT-027 to RT-029: the main-window workflow read
@@ -144,3 +160,5 @@ playhead time field, Properties text fields and panel context menus.
 | RT-027 | 2026-10-21 | UI1 main-window workflow (session 10; AX tree, tooltips, menus, synthetic drags) | Camtasia started with no document → welcome window, *File ▸ New Project* (unsaved); `format/video-photo-base` copy → `research/ui14/ui-base` → `ui1-bin-to-canvas`, `ui2-bin-to-canvas-7s`, `ui3-bin-to-canvas-5_5s` | Welcome window offers record/new/open, recent-project cards and templates; editor layout (tab rail, tools panel, canvas + transport, properties, timeline); toolbar, timeline toolbar and empty states; a media-bin drop onto the canvas adds at the playhead on the lowest track with room for the whole clip, else a new top track | `ui-workflow.md` |
 | RT-028 | 2026-10-21 | Drops onto occupied spots, top level and in an open group (session 10; synthetic CGEvent drags, straight and waypoint paths, timeline pane enlarged) | `research/ui14/ui-base` copy → `research/timeline/dr14/dr-base` → `d1-photo-on-video-5s` … `d6-photo-mid-video-15s`; `research/groups/mb12/mb-base` copy → `research/groups/mb14/mg-base` → `g1-on-video-7s-above-free` … `g5-video-30pct` | Busy drop goes to the lowest higher track with room; a drop at or just after a clip's start inserts and pushes that track (also non-magnetic; in a group past the window, no growth); with no room, refused (long holds, along-track approaches) or a new top track (short holds; hover lag suspected). Groups follow the top-level rules, so `mb3` was a refusal. The Edit menu's undo label stayed the same internal-looking name after every drop, so it was not used as evidence | `group-edits.md` §8.7, `edit-semantics.md` ED3 |
 | RT-029 | 2026-10-21 | Background `ident` rule (session 10) | `research/shaders/as12/as2-alabaster-canvas-drop` copy → `research/shaders/id14/id1-bin-redrop-alabaster`; `as-base` copy + `id14/files/MyBG_Test.tscshadervid` (a renamed copy of the Assets-downloaded file) → `id2-import-mixedcase` | Imports and bin drops take the file stem, case kept, also for the bundle copy's name; Assets placements take their label from the asset library record (not read); `ident` is kept as saved. The files were read for top-level scalar keys only (`svdef.py`: name, size, version) | `shader-backgrounds.md` §11.3 |
+| RT-030 | 2026-10-21 | RES15-1 Properties-panel parameters of effects and callouts (session 11; AX tree, typed fields, pop-ups, toggles) | `research/effects/ef0-all-visual` copy → `research/props15/pv.cmproj` (saves `out/pA`–`pD`); `research/effects/vid-ops` copy → `props15/pvid.cmproj` (`out/v0`, `v1`); `research/callouts/card-base` copy → `props15/co/pco.cmproj` with 34 Annotations tiles (`out/c0`–`c3`); `research/callouts/co3-regions` copy → `props15/co/pco3.cmproj` (read only). Panel dumps in `props15/dumps/`, `props15/codumps/` | Per control: label, key, slider range, display format and UI = f(stored) (×100 percentages, contrast/saturation offset by 1, Blur Region field ×10, Spotlight brightness ×10, degrees ↔ radians); typed values clamp to the slider range and round to the display precision; Ease In/Out write `left/rightEdgeMods` whose `FadeFrom/ToValueFunc` values are the no-effect values; range presets → channel and ramps; Corner Rounding toggles; callout tabs → `def` keys (H Spacing = run `kerning`, auto-resize off = `resizeCallout`, arrow point and line pop-up orders, Draw Time = edge-mod duration, key styles) | `effects/inspector.md`, `callouts.md` §6a |
+| RT-031 | 2026-10-21 | RES15-2 canvas handles (session 11; synthetic drags with held modifiers, each undone after its save) | `format/x-photo-base` copy → `research/props15/cv/cv.cmproj` (`out/k0` baseline, `k1-move`, `probe-*`) | Move inside; corner = uniform scale about the opposite corner (larger axis ratio wins), Shift = free; edge = uniform scale about the opposite edge, Shift = one axis; Option changes nothing; no rotation handle found; snapping put an edge on the canvas border. Crop mode not observed: Camtasia stopped answering AX after the crop tool press | `ui-workflow.md` §8.1 |

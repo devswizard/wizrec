@@ -58,3 +58,7 @@ cell.
 | 3 | 80 | 0.5, 1, 1, 1 | Is a fractional flag a radius multiplier? |
 | 4 | 400 | 1, 1, 1, 1 | Clamp behaviour (is the result a circle?) |
 | 5 | 80, scale **0.25** | 1, 1, 1, 1 | Units (compare with cell 1) |
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.
