@@ -19,8 +19,9 @@ unknown.
   (roles, labels, tooltips, enabled state, frames), menus listed, three
   media-bin drops onto the canvas saved (`ui1`–`ui3`). Window at
   1466×949 pt [obs].
-- Earlier sessions (RT-010, RT-016, RT-017, RT-020, RT-025, RT-026) for drag
-  targets of panel tiles, transitions and the media bin.
+- Earlier sessions (RT-010, RT-016, RT-017, RT-020, RT-025, RT-026) and
+  RT-028 (drops onto busy spots) for drag targets of panel tiles,
+  transitions and the media bin.
 - Not studied: account, plan and purchase controls, sign-in, the trial
   export gate and the recorder window (permission-bound). Nothing
   licensing-related was opened.
@@ -66,7 +67,7 @@ One window per project, four regions [obs]:
 | Right: the **properties panel** for the selection, toggled by a *Properties* button under it | [obs] |
 | Bottom: the **timeline**, separated by a draggable splitter; it can be detached into its own window | [obs] |
 | The canvas can also be detached (*View ▸ Canvas ▸ Detach Canvas*) | [obs] |
-| A new project starts with **two empty tracks** ("Track 1", "Track 2") | [obs] |
+| A new project starts with **two empty tracks**, named by number | [obs] |
 
 ## 3. Main toolbar (top of the editor)
 
@@ -91,8 +92,8 @@ middle. Undo/redo/split live in the **timeline** toolbar, not here.
 
 | Source → target | Result | Tag |
 |---|---|---|
-| Media bin tile → **canvas** | "Add Media" at the **playhead**, on the **lowest track with room for the whole clip** from the playhead; if none has room, a **new track on top**. Seen three times: playhead 0 with tracks 1–2 busy → new track 3; playhead 7 s → track 2 (free from 5 s, while track 3 was also free); playhead 5.5 s → track 3, because track 2 had only 1.5 s free before its next clip | [obs] `ui1`–`ui3`; rule [inf] from 3 cases |
-| Media bin tile → **timeline** track | Lands at the drop point on that track; onto the empty area above the top track, a new track. Onto an occupied spot, nothing (non-magnetic) or an insert at a boundary (magnetic) | [obs] RT-020, RT-025 |
+| Media bin tile → **canvas** | Adds the clip (one undoable add step) at the **playhead**, on the **lowest track with room for the whole clip** from the playhead; if none has room, a **new track on top**. Seen three times: playhead 0 with tracks 1–2 busy → new track 3; playhead 7 s → track 2 (free from 5 s, while track 3 was also free); playhead 5.5 s → track 3, because track 2 had only 1.5 s free before its next clip | [obs] `ui1`–`ui3`; rule [inf] from 3 cases |
+| Media bin tile → **timeline** track | Lands at the drop point on that track; onto the empty area above the top track, a new track. Onto an occupied spot: at or just after a clip's start, an insert that pushes that track's later clips; elsewhere, the lowest higher track with room; with no room, refused (`group-edits.md` §8.7) | [obs] RT-020, RT-025, RT-028; the no-room case [inf] |
 | Annotation / callout tile → canvas | New callout, 5 s, at the playhead | [obs] RT-017 |
 | Visual / audio / cursor effect, behaviour, animation tile → a clip (timeline or canvas) | Adds that item to the clip | [obs] RT-010, RT-016 |
 | Transition tile → a clip edge or a cut | One- or two-sided transition | [obs] RT-016 |
@@ -109,9 +110,9 @@ upwards, else a new top track"; a timeline drop is "add where dropped".
 
 | Where | What a first-time user sees | Tag |
 |---|---|---|
-| Media bin, no media | A sentence saying recordings and imported media appear here, and an **Import Media…** button in the middle of the panel | [obs] |
-| Library, empty | A sentence saying the library is empty and holds media reusable across projects, plus **Import Media…** | [obs] |
-| Properties, nothing selected | A title "Empty Selection" and a hint to select something on the timeline | [obs] |
+| Media bin, no media | A sentence saying recordings and imported media appear here, and an **import** button in the middle of the panel | [obs] |
+| Library, empty | A sentence saying the library is empty and holds media reusable across projects, plus the same import button | [obs] |
+| Properties, nothing selected | A heading saying nothing is selected, and a hint to select something on the timeline | [obs] |
 | Canvas, empty project | Just the canvas background colour (black by default) at the project size; no hint text | [obs] |
 | Timeline, empty project | Two empty, named tracks; the playhead at 0; time label `00:00:00;00/00:00:00;00` | [obs] |
 | Transport and edit buttons, empty project | Play, frame step and clip step are disabled; Undo, Redo, Cut, Copy and Split are disabled; **Paste stays enabled** | [obs] |
@@ -122,3 +123,136 @@ upwards, else a new top track"; a timeline drop is "add where dropped".
 
 For WizRec (checklist, [inf]): every empty panel says what goes there and
 offers the one action that fills it (Import, Record, drag a style).
+
+## 6. Tools panel (left), tab by tab
+
+Twelve tabs on the rail, top to bottom. Each tab is a grid of tiles with a
+search field and/or a type filter at the top. Tiles are used by
+**dragging them onto a clip, the canvas or the timeline** (§4). The same
+list is in *View ▸ Tools* [obs].
+
+| Tab | What it holds | Notes | Tag |
+|---|---|---|---|
+| Favorites | Tiles the user starred in other tabs, filterable by type | Empty at first | [obs] |
+| Media | Three segments: the project's **media bin**; an **online assets** browser (rows of titles, stock footage, callouts, animated backgrounds and music, each with a see-all grid; some items marked premium); and the user's **library** (assets reused across projects, with a library picker and search) | The bin has a sort pop-up (media type, name, date added, date created, dimensions, duration) with ascending/descending toggles, a view switch and an add button (import media, import from a meeting service). Tiles sit under alphabetical headings | [obs] |
+| Annotations | Six sub-tabs: callouts (bubbles, plain text), arrows and lines, shapes, blur and highlight (blur, pixelate, spotlight, highlighter), sketch motion (draw-on), keystroke callouts. Style and theme pop-ups at the top | Format: `callouts.md` | [obs] |
+| Transitions | One searchable grid of named transitions, with a type filter | Dimmed in an empty project | [obs] |
+| Visual Effects | Two sub-tabs: effects (background removal, blend mode, blur region, border, clip speed, colour adjustment, tint, colourize …) and colour **filters** (looks) | `effects/catalog.md` | [obs] |
+| Animations | Preset zoom/opacity/tilt/scale moves, a custom animation, motion path, automatic focus | `animation.md` | [obs] |
+| Behaviors | Behaviour presets for text and media (drifting, explode, fade, fly in …) | `behaviors.md` | [obs] |
+| Cursor Effects | Three sub-tabs: cursor (colour, glow, highlight, isolation, magnify, motion blur, path creator, shadow …), left-click and right-click effects (rings, ripples, sound …) | Only usable on screen recordings with cursor data: on a plain video they are disabled in the canvas menu | [obs] |
+| Audio Effects | Noise removal, compression, captions, clip speed, emphasize, fade in/out, pitch | `audio.md` | [obs] |
+| Narration | Microphone picker, input level, an option to mute the speakers while recording, a start button; below, AI voice generation and AI script writing | Voice-over recording | [obs] |
+| Gesture Effects | Tap, double tap, pinch, swipe, tap and hold (for mobile demos) | | [obs] |
+| Captions | Dynamic caption style tiles with a short how-to, and a transcription section | `captions.md` | [obs] |
+
+For WizRec (checklist, [inf]): a first-time user needs Media (bin and
+import), Annotations, Transitions, Visual Effects, Animations, Cursor
+Effects, Audio Effects and Captions. Favorites, an online asset store,
+gesture effects and AI narration can come later or stay out of scope.
+
+## 7. Main menus, grouped by purpose
+
+Not a transcript: the groups say which jobs the menus cover [obs].
+
+| Purpose | Where | What is there |
+|---|---|---|
+| Project files | File | New, open, open recent, new from template, close, save, save as, save as template, revert; the welcome window |
+| Bring media in | *File ▸ Import* | Media, captions, zipped project, template, package, a meeting-service import |
+| Get media out | *File ▸ Export* and the Export menu (same items) | Local file, two online services, audio only, **a frame as an image**, captions, batch export, export history. *File ▸ Export* adds project-for-Windows, template and package |
+| Record | File | New recording, new narration, connect a mobile device; launchers for two companion apps |
+| Library | *File ▸ Library* | Import/export the library or single assets, expand/collapse |
+| Clipboard and selection | Edit | Undo/redo, cut/copy/paste/delete, **ripple cut and ripple delete**, duplicate; select (all, preceding/succeeding, to the start/end of a clip, everything left/right, transitions, everything at the playhead), deselect; copy/paste effects; copy/paste properties |
+| Cutting | Edit | **Split**, split all tracks at the playhead, stitch selected, separate audio and video; playhead commands (extend frame to the playhead, trim start/end to the playhead, add the exported frame) |
+| Audio | Edit | Silence/restore audio, sync media, add an audio point, a hand-off to a companion app |
+| Arranging | Edit | Group, ungroup, resize a group (to the canvas, to the visible size, custom), stacking order, placeholders |
+| Navigation | *Edit ▸ Jump To* | Beginning/end, 15 frames forward/back, a typed time, next/previous clip, animation, marker, quiz |
+| Canvas framing | Edit | Zoom-and-pan; pan here; scale to 200/100/50/25 %, fit, fill |
+| Project | *Edit ▸ Project Settings…* | Canvas size (presets from small social sizes up to 4K, square and vertical, fit to visible, custom; width/height with an aspect lock), background colour, frame rate (25/30/50/60 in this project), automatic loudness normalisation |
+| Clip changes | Modify | Duration; add animation, behaviour, effects (visual, audio, cursor, gesture), filter; **remove** (stitches, animations, audio points, transitions, each kind of effect, clip speed, everything); captions add/remove; dynamic caption style; markers (add a timeline marker, remove all); quizzes |
+| Text | Text | Edit text, bold/italic/underline, alignment, copy/paste style |
+| Panels and view | View | Show the tools panel, each tool tab, properties, markers, quizzes, transcript, caption track; canvas zoom (in, out, fit, 100 %, centre, preview outside a group, detach/attach); timeline zoom (in, out, fit, to selection, maximum), track heights, detach; **open/close group**; canvas and timeline **snapping**; rulers; timeline display (thumbnails, waveforms, names); captions in the preview; full-screen preview |
+| App | App menu | Settings, themes, templates, account, updates |
+| Help | Help | Online help, quick start, tutorials, support, feedback, **keyboard shortcuts** |
+
+## 8. Canvas tools
+
+| Tool | Behaviour | Tag |
+|---|---|---|
+| Edit (default) | Select, move, rotate and resize media on the canvas; edit text | [obs] tooltip |
+| Corner pin | Drag the corner points for a perspective look | [obs] tooltip |
+| Pan | Drag the view around; the project doesn't change | [obs] tooltip |
+| Crop | Trim the edges of the selected media on the canvas; also reachable from the canvas context menu | [obs] |
+| Auto-animate | While on, canvas edits write animations at the playhead instead of constant changes | [obs] tooltip; file effect [inf] (`animation.md`) |
+| Zoom menu | Fit, 25 %–2000 %, centre, detach; *View ▸ Canvas* adds zoom in/out and 100 % | [obs] |
+| Snapping | *View ▸ Enable Canvas Snapping*; optional rulers | [obs] |
+| Canvas context menu (on a clip) | Cut, copy, duplicate, delete; scale (fit, fill, actual pixels, 200/100/75/50/25 %); stacking order; group; add effects (every visual, audio, cursor and gesture effect, and filters); hide properties; copy properties; crop mode; project settings | [obs] |
+
+Transport under the canvas: previous frame, play/pause, next frame,
+previous/next clip, a scrub slider and the time label. Buttons that can't
+act are disabled, not hidden [obs].
+
+## 9. Timeline tools
+
+| Element | Behaviour | Tag |
+|---|---|---|
+| Timeline toolbar, left | Undo, redo, cut, copy, paste, split, add exported frame; each tooltip shows the shortcut | [obs] |
+| Timeline toolbar, centre | Zoom to fit (all media in view), zoom out, a zoom slider, zoom in | [obs] |
+| Timeline toolbar, right | Detach the timeline; an audio meter toggle (a level meter with a peak readout and an output-level slider) | [obs] |
+| A wide unlabelled button after add-frame, disabled in every state seen | — | [?] |
+| Ruler and playhead | The playhead carries **left and right range handles** for selecting a time range | [obs] (element names); how ranges are used [inf] |
+| Above the track headers | **Add a track**; a toggle for a tray above the timeline showing quizzes, markers or the transcript; a slider for all track heights | [obs] |
+| Caption track header | A menu: remove captions, hide the caption view, transcribe the selected media, flag durations that break caption guidelines, caption language, caption settings | [obs] |
+| Track header | The track name and three buttons: **lock**, **disable** (hidden from preview and export; Option-click solos the track), **magnetic**. An edge handle sets the track height | [obs] |
+| Track header context menu | Add a placeholder, insert a track above/below, move the track (top, up), remove, rename, turn off, solo, lock, magnetic, detach the timeline, minimise/maximise | [obs] |
+| Empty track area context menu | The track-header items without minimise/maximise | [obs] |
+| Clip context menu | Cut, copy, delete, ripple cut, ripple delete, hide properties, select in media bin, copy/paste properties, group, colour label (seven colours), add clip speed, update media, convert to placeholder, add to library | [obs] |
+| Clip look | Name and thumbnails; *View ▸ Display* picks thumbnails, waveforms, names | [obs] |
+| Snapping | *View ▸ Enable Timeline Snapping* | [obs] |
+| Markers | *Modify ▸ Markers ▸ Add Timeline Marker*; shown in the tray above the timeline | [obs] (`markers.md`) |
+| Magnetic tracks | Track-header button or context menu | [obs] (`edit-semantics.md` ED3) |
+
+## 10. Properties panel (right)
+
+| Claim | Tag |
+|---|---|
+| Nothing selected: a heading saying so, and a hint | [obs] |
+| A selected video shows a heading with the clip name (a double-click collapses it), a reset-all button and tabs along the top. For the silent test video only the visual tab was present | [obs] |
+| Visual tab: scale and opacity (slider and field each), rotation X/Y/Z (dial and field), position X/Y/Z, size width/height with an aspect lock, skew (slider and field) | [obs] |
+| Each applied effect adds its own section with its parameters | [obs] RT-003 |
+| Fields take typed values; clicking a changed value's label resets it | [obs] (tooltip of a rotation label) |
+
+## 11. Record and export entry points
+
+| Job | Entry points | Tag |
+|---|---|---|
+| Record the screen | Welcome tile; toolbar Record; *File ▸ New Recording…*; the toolbar flyout, which shows a global shortcut | [obs] |
+| Record a voice-over | Narration tab; *File ▸ New Narration…* | [obs] |
+| Other capture kinds | Toolbar flyout: audio only and image capture (companion apps); *File ▸ Connect Mobile Device…* | [obs] |
+| Export a video | Toolbar Export (far right); the Export menu; *File ▸ Export* | [obs] (dialogs not opened: trial gate, RT-001) |
+| Export a frame, audio only or captions | Export menu items | [obs] |
+| Export several projects | *Export ▸ Batch Export…* | [obs] |
+| Put a still of the current frame on the timeline | Timeline toolbar button; *Edit ▸ Playhead ▸ Add Exported Frame at Playhead* | [obs] |
+
+## 12. First-time user path (priority checklist for WizRec)
+
+Ordered by what a new user meets first [inf, from §1–§11]:
+
+1. Start screen: record, new, open, recent projects.
+2. An empty editor that explains itself: the bin's import button and
+   hint, the properties hint, two empty tracks.
+3. Import by button, menu or a drag from Finder; media shows in the bin.
+4. Drag from the bin to the canvas (placed at the playhead) or to the
+   timeline (placed where dropped).
+5. Play, scrub, step frames; the time label.
+6. Select a clip; change position, scale, rotation and opacity in
+   properties or on the canvas.
+7. Split at the playhead, trim, delete or ripple delete, undo/redo: all in
+   the timeline toolbar and the clip context menu.
+8. Add an annotation, transition, effect or animation by dragging a tile.
+9. Captions: add or generate them, then edit.
+10. Export through one prominent button, and save.
+
+Later: groups, magnetic tracks, markers, cursor effects, templates and a
+library, a detachable canvas and timeline, snapping toggles, track solo
+and lock.

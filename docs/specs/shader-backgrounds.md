@@ -469,7 +469,7 @@ Saves are in `camtasia_rea_refs/research/shaders/as12/`.
 | The file is copied into the bundle as `media/<stamp>/<stem>.tscshadervid`, with a new `sourceBin` entry of the import form (numeric `effectDef`, `sourceTracks` with `metaData` "<file>;", `metadata.timeAdded`). It also appears in the media bin | [obs] |
 | Neither file is in the app bundle, so Camtasia fetched them from its online asset library [inf] | [inf] |
 | **No `ShaderVidSource`** on either clip, and no `Rev*` or `groupType` keys anywhere | [obs] |
-| `attributes.ident` is "4stopgradient" (the file stem; the same as the bin drop) for one, and "Alabaster" (the tile title, capitalised) for the other | [obs]; rule [?] |
+| `attributes.ident` is "4stopgradient" (the file stem; the same as the bin drop) for one, and "Alabaster" (the tile title, capitalised) for the other | [obs]; rule in §11.3 |
 | `sourceEffect` lists every `effectDef` entry, then `sourceFileType`, as in §6. For Alabaster, every value is the file's default. For 4 Stop Gradient, the colours are the defaults but the eight `PosN.x`/`PosN.y` values are **not** (for example `Pos0` 127.12, 968.69 against the file's 135, 970). The bin drop of the same file wrote the file's defaults | [obs]; the asset carrying its own preset values [inf] |
 | Clip `parameters` are in the long form `{type, defaultValue, interp "eioe"}` (the four `geometryCrop` keys; one clip also had `translation1` of −2.8e-14, float noise) | [obs] |
 | Clip `metadata` has the usual insert keys plus `default-*` keys. These differ between the two clips. 4 Stop Gradient has typed doubles `default-anchor0..2`, `rotation0..2`, `scale0..2`, `shear0..2`, `translation0..2`, `width` 1920 and `height` 1080, and four strings `default-SourceEffect-Color0..3` such as "(255,255,34,255)" that don't match its colours. Alabaster has `default-width`/`height`, `default-scale` "1" and `default-translation0/1` 95.64/176.0, while its real translation is 0 | [obs]; meaning [?] (compare the `default-…-Amount` key of RT-019) |
@@ -483,3 +483,35 @@ the Assets shape: a new top track at the playhead, 15 s, the file's
 `effectDef` defaults and no `ShaderVidSource`. The `default-*` metadata
 keys are not needed: Camtasia opens projects without them (every bin
 import lacks them).
+
+### 11.3 Session 10: the `ident` rule (RT-029)
+
+Saves in `camtasia_rea_refs/research/shaders/id14/`. Inputs: a copy of
+`as2-alabaster-canvas-drop` (§11.2) and a fresh copy of `as-base`; the
+Alabaster file from the `as2` bundle, copied once as is and once under a
+mixed-case name, `MyBG_Test.tscshadervid`. Only the files' top-level
+scalar keys were read (the reader skips the code and signature).
+
+| Experiment | Result | Save | Tag |
+|---|---|---|---|
+| Reopen `as2` and look at the media bin | The Assets-made Alabaster entry is labelled with its file stem, "alabaster" (lower case) | — | [obs] |
+| Drop that bin entry onto track 1 | New clip, 60 s (bin-drop length), `ident` **"alabaster"**. The Assets placement in the same project still says "Alabaster" | `id1-bin-redrop-alabaster` | [obs] |
+| *File ▸ Import ▸ Media…* of `MyBG_Test.tscshadervid`, then a drop onto track 1 | The bundle copy keeps the name and case (`media/<stamp>/MyBG_Test.tscshadervid`, `metaData` "MyBG_Test.tscshadervid;"); bin label and `ident` **"MyBG_Test"** | `id2-import-mixedcase` | [obs] |
+| The two files' own `name` keys | "Gradient4Stop" for `4stopgradient`, "Alabaster" for `alabaster` | — | [obs] |
+
+The rule:
+
+- **Imports and media-bin drops: `ident` = the source file's stem**,
+  exactly as named, case kept [obs: `id1`, `id2`, `as4`].
+- **Assets placements: `ident` comes from the asset library's own record**,
+  not from the bundle file [inf]. For Alabaster it matched the tile title
+  and the file's `name` key; for 4 Stop Gradient it matched neither (title
+  "4 Stop Gradient", `name` "Gradient4Stop") but matched the file stem.
+  The library record itself was not read (it is network data) [?].
+- **`ident` is a stored label.** Camtasia keeps it as saved and doesn't
+  re-derive it on reopen [obs: `id1` keeps both spellings side by side].
+  That it has no effect on playback is [inf].
+
+WizRec: write the file stem (case kept) for imports and bin drops. For a
+background placed from WizRec's own library, write that asset's own name.
+Never use `ident` to find or match a source; use `src` [inf].
