@@ -64,9 +64,9 @@ continue here.
      order and the exact text of numbers.
    - Never re-serialise a project through `Codable` or `JSONSerialization`.
 
-## Current state (2026-10-21, end of build session 10)
+## Current state (2026-10-21, end of build session 11)
 
-- **Resume from `docs/HANDOFF.md` §0** (session 10 snapshot, follow-ups,
+- **Resume from `docs/HANDOFF.md` §0** (session 11 snapshot, follow-ups,
   user's pending items).
 - Done and merged: M0–M3, M7 recorder, M8 audio (aligned to Camtasia
   2026.2.3 AU1/AU2), M9 export (ProRes demo 25.7 s in ~2 s), M10 captions
@@ -76,9 +76,21 @@ continue here.
   modes, matte modes, Border/Reflection, CO3 callouts, Extend Frame, Metal
   HDR tone map for playback), group/split/trim/ungroup/marker/copy-paste/
   drop/Clip Speed rules from observed Camtasia saves. Automated UI checks of
-  the built app (`scripts/ui-checks/`, 10/10). **1227 tests green, 0 known
+  the built app (`scripts/ui-checks/`, 10/10). **1296 tests green, 0 known
   issues** (golden/LoadGate self-tests now check collected failures).
-- Session 10 landed:
+- Session 11 landed (v0.1.4 notes ready, **not tagged**: screen locked, UI
+  checks never ran):
+  - **New projects have two empty tracks** like Camtasia.
+  - **Editor:** canvas corner/side handles per ui-workflow §8.1 + rotation
+    knob [WizRec], crop mode, sectioned context menus, tile drags (effects,
+    transitions, annotations, animations, caption styles), Captions and
+    Animations tabs, Duplicate/Ripple Cut/Split All/Select at Playhead,
+    group drops through `DropClip(group:)`, `--ephemeral-layout` for UI runs.
+  - **TimelineEngine:** `AddAnimation`, `MoveTrack`, `RenameTrack`,
+    `SplitAllTracks`, `TimelineSelection`.
+  - Researcher: `docs/specs/effects/inspector.md` (properties-panel
+    controls), callouts §6a, ui-workflow §8.1 canvas handles.
+- Session 10 landed (v0.1.3):
   - **First-use UX (v0.1.3):** empty states that offer the next action,
     drops on start screen/canvas/timeline/bin with plain errors, a timeline
     toolbar, window-level Tab loop, Clip Speed Duration/Speed fields.
@@ -94,7 +106,7 @@ continue here.
     in MediaEngine, no `CVMetalTextureCache`); REN12-1 was most likely pool
     teardown with frames in flight.
   - CI: actionlint job (pinned, checksummed); `check-notes.sh` on tags.
-- **CI / release:** CI green on GitHub (runs 44–51). Mix digests of
+- **CI / release:** CI green on GitHub (runs 44–56). Mix digests of
   `OutputHashTests` vary per CI machine type; each variant is pinned,
   unknown ones show in the "Known issues" annotation.
 - Camtasia here is a **trial**: export only offers "with/without watermark",

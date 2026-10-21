@@ -154,3 +154,6 @@ Not spawned (no finding / no licensed exports yet): render, captions, audio.
 | media | a820d7956aa00b898 | `agent/media15` |
 
 Not spawned (no Sparkle key, no licensed exports, no finding yet): ship, render, captions, audio.
+
+Session 11 end: researcher, timeline, media worktrees removed (merged). app15 worktree kept
+(UI checks never ran: screen locked); qa's watch worktree kept while its last run finishes.

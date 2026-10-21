@@ -6,7 +6,61 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ---
 
-## 0. Session 10 snapshot (2026-10-21) — read this first
+## 0. Session 11 snapshot (2026-10-21) — read this first
+
+- **`main` is green: 1296 tests, 0 known issues**, 6.3.3 build green. CI runs 53–56 green; run
+  57 (final merge push) was running at the end — check the Actions page first.
+- **User at start:** no Sparkle key (`public_ed_key` empty), no licensed exports (0/26).
+  Mid-session the user set a short time budget. The screen locked at ~21:57 and stayed locked
+  to the end, so **app's UI checks and window snapshots never ran** and **v0.1.4 was not
+  tagged**. v0.1.3 stays the public release.
+- **v0.1.4 is ready to cut** once the UI checks pass: notes in
+  `docs/release-notes-template.md` (`check-notes.sh 0.1.4` OK), `make-app.sh` default
+  `VERSION` 0.1.4. Steps: unlock → `scripts/ui-checks/run-all.sh` (11 checks, incl. new
+  `check-canvas-tools.sh`) green → tag `v0.1.4` on a green main → Release draft →
+  `release/publish` = `v0.1.4` → verify from the public URL → install in /Applications only
+  while the user's WizRec is not running.
+- **Landed in session 11** (agents app, timeline, researcher, qa, media):
+  - timeline15: new projects have **two empty tracks** (`ProjectBundle.create(trackCount: 2)`,
+    shape of Camtasia's saved empty track); `AddAnimation`/`AnimationPreset` (animation.md
+    §1–§2), `MoveTrack`, `RenameTrack`, `SplitAllTracks`, `TimelineSelection`.
+  - app15: `--ephemeral-layout` (UI runs never touch the user's window layout); group drops via
+    `DropClip(group:)` (QA16-F1 fixed; canvas/bin double-click with a group open go into it);
+    Finder hover shows the real length; sectioned clip/track/canvas context menus; canvas
+    corner + side handles per §8.1 (opposite corner/side fixed, Shift free) plus a WizRec
+    rotation knob; crop mode (⌥⌘C, edge handles → `geometryCrop0–3`); tile drags for
+    annotations, backgrounds, effects, transitions, audio effects, animations, caption
+    styles; Captions tab (generate, add, edit, SRT); Animations tab; Duplicate ⌘D, Ripple Cut
+    ⇧⌘X, Split All Tracks, Select Clips at Playhead.
+  - researcher15 (wall-reviewed): `docs/specs/effects/inspector.md` (each effect's controls,
+    ranges, display scales, ease keys; values saved as float32), callouts §6a, ui-workflow
+    §8.1 canvas handles (RT-030/031).
+  - qa16–18: import-path placement and key-loop integration tests, group-drop, 2-track and
+    session-11 edit integration tests; two load flakes fixed (thumbnail keyframe assumption;
+    recorder non-real-time writer drops under load ≥ 130 → LoadGate bound).
+  - media15: tone-map texture creation measured negligible (21–28 µs/4K frame) → no cache.
+- **Follow-ups:**
+  - run the UI checks and ship v0.1.4 (above);
+  - crop mode keys/gestures in Camtasia [?] (Camtasia hung on AX after the crop tool);
+  - canvas snapping (§8.1), handle hit radius 7 pt vs Camtasia ~±4 pt;
+  - inline track rename UI (`RenameTrack` exists, not wired);
+  - Captions tab doesn't list empty "Add Captions" slots (`ClassicCaptions.cues` skips empty
+    text; a Captions `slots(in:)` would fix); caption style tiles not in the AX-audit manifest;
+  - inspector pass using `effects/inspector.md` (ranges, clamping, display scales);
+  - researcher save-only checks: clip colour label `colorAttribute` values (→ `SetClipColor`),
+    Duplicate placement, Select at Playhead on locked tracks, Camtasia opening a WizRec
+    2-track empty project; gradient fill keys; snap distance; Size lock; Motion Path keys;
+  - Custom animation's empty `animationTracks` entry dropped by `AnimationSync.sync` on a later
+    `SetParameter` (pre-existing);
+  - Recorder: non-real-time `MediaFileWriter.append` waits only 2 s per sample (tests only).
+- **NEED_USER:**
+  1. Keep the Mac unlocked/awake while UI checks and the release run.
+  2. One Sparkle `generate_keys` run, public key into `release/sparkle.conf`.
+  3. Licensed reference exports (an activated Camtasia), for golden parity.
+- **Progress estimate:** product ~55% (was ~50%), engine/format ~72% (was ~70%), editor UX
+  ~60% (was ~50%), look parity unverified (0 references).
+
+## 0-s10. Session 10 snapshot (2026-10-21) — history
 
 - **`main` is green: 1227 tests, 0 known issues** (qa14: golden-harness and LoadGate
   self-tests now collect their expected failures, so a known issue in CI's annotation is
@@ -670,7 +724,7 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
   - WizRec ships its own originals (WizRecAssets).
 - Nothing licensing-related, ever.
 
-## 6. Lessons (sessions 1–10)
+## 6. Lessons (sessions 1–11)
 
 - **The format had surprises:** `scalar = 1/speed`; keyframes run on media
   time; video size comes from `sourceTracks[trackNumber].trackRect`.
@@ -707,3 +761,10 @@ save-only Camtasia experiments. Decided by the lead: bundle ID, Sparkle,
     compare only state that stayed still across two reads.
   - A lock around `CVMetalTextureCache` doesn't make pool teardown safe; IOSurface-backed
     `MTLTexture`s that retain their `CVPixelBuffer` do.
+- **Session 11:**
+  - A locked screen stops every UI check; ask the user to keep the Mac awake before GUI work,
+    and run UI checks before the long test/merge loop, not after.
+  - Merging two branches that each pass alone can still break the build (a test against an
+    API the other branch renamed): run the full build after every batch merge before pushing.
+  - Camtasia can stop answering Accessibility after some tool presses (crop tool): save often.
+

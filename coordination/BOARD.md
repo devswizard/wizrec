@@ -451,13 +451,23 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 
 | id | owner | status | acceptance |
 |---|---|---|---|
-| APP15-1 | app | claimed | ui-workflow §12 items 6–9: canvas move/scale/rotate handles + crop mode; tile drags (annotation/transition/effect/animation) onto clips and canvas; clip/track context menus (§9); captions entry points |
-| APP15-2 | app | claimed | group drops through `DropRules` (group: id); Finder-file hover preview with probed duration (async, cached) |
-| APP15-3 | app | claimed | editor window frame autosave isolated from UI-check runs |
-| TL15-1 | timeline | claimed | new projects start with two empty tracks (`ProjectBundle.create`), round-trip and Camtasia-open safe |
-| TL15-2 | timeline | claimed | commands for app's context menus (duplicate, ripple cut, select-at-playhead, …), API_CHANGE first |
-| RES15-1 | researcher | claimed | properties-panel parameters per effect/annotation (names, ranges, defaults, units) → effects/*.md, callouts.md |
-| RES15-2 | researcher | claimed | canvas handles and crop mode behaviour (§8), save-only |
-| QA15-1 | qa | claimed | integration tests: every import path through `DropClip`, canvas drop, key loop model; every session-11 merge |
-| QA15-2 | qa | claimed | flaky watch on each merge under `-O` and load |
-| MED15-1 | media | claimed | measure 4K tone-map texture cost; IOSurface texture reuse cache only if it matters |
+| APP15-1 | app | review (UI checks pending: screen locked) | ui-workflow §12 items 6–9: canvas move/scale/rotate handles + crop mode; tile drags (annotation/transition/effect/animation) onto clips and canvas; clip/track context menus (§9); captions entry points |
+| APP15-2 | app | done | group drops through `DropRules` (group: id); Finder-file hover preview with probed duration (async, cached) |
+| APP15-3 | app | done | editor window frame autosave isolated from UI-check runs |
+| TL15-1 | timeline | done | new projects start with two empty tracks (`ProjectBundle.create`), round-trip and Camtasia-open safe |
+| TL15-2 | timeline | done | commands for app's context menus (duplicate, ripple cut, select-at-playhead, …), API_CHANGE first |
+| RES15-1 | researcher | done | properties-panel parameters per effect/annotation (names, ranges, defaults, units) → effects/*.md, callouts.md |
+| RES15-2 | researcher | done | canvas handles and crop mode behaviour (§8), save-only |
+| QA15-1 | qa | done | integration tests: every import path through `DropClip`, canvas drop, key loop model; every session-11 merge |
+| QA15-2 | qa | done | flaky watch on each merge under `-O` and load |
+| MED15-1 | media | done | measure 4K tone-map texture cost; IOSurface texture reuse cache only if it matters |
+
+## Session 11 merges
+
+- media15: MED15-1 measured (texture creation 21–28 µs per 4K frame, CPU +0.04–0.11 ms/frame): no reuse cache; `TextureCachePerfTests` (WIZREC_PERF=1).
+- timeline15: TL15-1 two empty tracks for new projects; TL15-2 `AddAnimation`/`AnimationPreset`, `MoveTrack`, `RenameTrack`, `SplitAllTracks`, `TimelineSelection`.
+- app15: APP15-3 `--ephemeral-layout`; APP15-2 group drops via `DropClip(group:)` (QA16-F1), Finder hover duration; APP15-1 context menus, canvas handles + crop mode, tile drags (annotation/background/effect/transition/audio/animation/caption style), Captions tab, Animations tab, Duplicate/Ripple Cut, Split All, Select at Playhead; §8.1 resize rules (opposite corner/side fixed, Shift free); `check-canvas-tools.sh`.
+- qa16/17/18: import-path placement + key loop integration tests, group-drop and 2-track tests, session-11 edit integration tests; thumbnail keyframe flake and recorder writer load flake fixed (test-only).
+- researcher15 (wall-reviewed): `effects/inspector.md` (every effect's controls, ranges, display scales, ease keys), callouts §6a, ui-workflow §8.1 canvas handles (RT-030, RT-031). Crop mode [?] (Camtasia hung on AX).
+- Full run 1296 tests, 0 known issues; 6.3.3 build green. CI runs 54–56 green, 57 on the final push.
+- v0.1.4 notes ready (`check-notes.sh 0.1.4` OK), **not tagged**: app's UI checks could not run (screen locked from 21:57).

@@ -8,20 +8,28 @@ run_in_background true), let them talk to each other with SendMessage, and use a
 workflow if useful. I want automated solutions: do everything yourself, decide
 sensible defaults, and only ask me what truly needs me.
 
-WHERE SESSION 10 ENDED (2026-10-21)
-- main is green on GitHub (CI runs 44–51) and locally: 1227 tests,
-  0 known issues (self-tests collect their expected failures; any known issue
-  in CI's annotation is now real). CI builds tests with `-Xswiftc -O` and runs
-  a separate actionlint job.
-- v0.1.0–v0.1.3 are PUBLIC (publish.yml with the workflow's GITHUB_TOKEN).
-  v0.1.3 = tag on `3ea58d4` (empty states, drops everywhere, timeline toolbar,
-  drop placement rules, Clip Speed by duration, Tab between panes);
-  installed in /Applications on my Mac.
-- Sparkle feed prepared but OFF: no key yet.
-- No open agent branches or worktrees.
-- Full story: docs/HANDOFF.md §0 (session-10 snapshot, follow-ups, NEED_USER).
+WHERE SESSION 11 ENDED (2026-10-21)
+- main is green locally: 1296 tests, 0 known issues, Swift 6.3.3 build green.
+  CI runs 53–56 green; run 57 (final merge push) and the wrap-up push were
+  running at the end: check the Actions page first.
+- v0.1.0–v0.1.3 PUBLIC; v0.1.3 installed in /Applications on my Mac.
+- **v0.1.4 NOT TAGGED**: my screen locked at ~21:57, so app's UI checks
+  (scripts/ui-checks/run-all.sh, 11 checks incl. new check-canvas-tools.sh)
+  and window snapshots never ran. Notes ready (`check-notes.sh 0.1.4` OK),
+  make-app.sh VERSION 0.1.4.
+- Session 11 landed: 2 empty tracks for new projects; canvas handles (§8.1)
+  + crop mode; context menus; tile drags (effects/transitions/annotations/
+  animations/caption styles); Captions + Animations tabs; Duplicate, Ripple
+  Cut, Split All, Select at Playhead; group drops via DropClip(group:);
+  --ephemeral-layout; researcher specs effects/inspector.md, callouts §6a,
+  ui-workflow §8.1.
+- Sparkle feed prepared but OFF: no key yet. No licensed exports.
+- Leftover worktrees: agent/app15 (resume it for UI checks or remove) and
+  qa's watch worktree; agent branches app15/qa16–18/timeline15/media15/
+  researcher15 are merged.
+- Full story: docs/HANDOFF.md §0 (session-11 snapshot, follow-ups, NEED_USER).
 
-GOAL (session 11), in priority order:
+GOAL (session 12), in priority order:
 1. Keep CI green (runner: Xcode 26.6 / Swift 6.3.3; local 6.4). Check runs on
    the Actions HTML page `https://github.com/devswizard/wizrec/actions/workflows/ci.yml`
    (no quota); the API has 60 requests/hour unauthenticated, shared with
@@ -29,64 +37,55 @@ GOAL (session 11), in priority order:
    release exists: check `releases/tags/<tag>` in the API instead.
    `OutputHashTests` mix digests vary per CI machine: a new variant shows in
    "Known issues" — pin it there.
-2. If I put a Sparkle public key into release/sparkle.conf: ship checks the
+2. FIRST, with the screen unlocked: run the UI checks on a fresh
+   build/WizRec.app (scripts/make-app.sh), look at the snapshots of every
+   changed screen, fix what fails, then ship v0.1.4 (tag → Release draft →
+   `release/publish` line → public → verify from the public URL) and install
+   it in /Applications (only while my WizRec isn't running; otherwise ask me
+   to quit it first). Update the notes if more lands before the tag.
+3. If I put a Sparkle public key into release/sparkle.conf: ship checks the
    updater is on (`scripts/release/check-sparkle.sh`,
    `WIZREC_EXPECT_UPDATER=on`), then the next release and
    `scripts/release/update-appcast.sh <tag>` only if sign_update can reach the key.
-3. Pending work below, with agents. User-visible fixes first: I test every
-   release myself. When a batch is green, ship v0.1.4 (notes in
-   docs/release-notes-template.md, `check-notes.sh 0.1.4`; tag → Release
-   draft → `release/publish` line → public) and install it in /Applications
-   (only while my WizRec isn't running; otherwise ask me to quit it first).
-4. Only if I delivered licensed Camtasia reference exports: golden parity
+4. Pending work below, with agents. User-visible fixes first.
+5. Only if I delivered licensed Camtasia reference exports: golden parity
    M1/M4/M5/M6 and the "Still needs a licensed export" list at the end of
    docs/testing/camtasia-session-2.md. Never use the trial's watermarked
    exports or saved thumbnails as references.
-5. End of session: an honest progress report in Bengali — % complete and %
-   remaining per area and overall, vs the end of session 10 (product ~50%,
-   engine/format ~70%, editor UX ~50%, look parity unverified).
+6. End of session: an honest progress report in Bengali — % complete and %
+   remaining per area and overall, vs the end of session 11 (product ~55%,
+   engine/format ~72%, editor UX ~60%, look parity unverified).
 
-PENDING WORK → AGENTS (branches `agent/<name>15`, all from main)
+PENDING WORK → AGENTS (branches `agent/<name>16`, qa `agent/qa19`, all from main)
 I test the installed app myself (/Applications/WizRec.app). Agents never touch
 /Applications and never quit or kill my WizRec; they use build/WizRec.app.
 - app (owns Sources/WizRecApp/**, Sources/PlayerKit/**, Sources/TimelineUI/**,
   scripts/ui-checks/**):
-  APP15-1 continue docs/specs/ui-workflow.md §12 (first-time-user checklist):
-  items 6–9 — on-canvas move/scale/rotate handles and a crop mode, dragging
-  annotation/transition/effect/animation tiles onto clips and the canvas,
-  clip and track context menus (§9), captions entry points; our own design.
-  APP15-2 group drops through `DropRules` (group: id) instead of the old
-  `InsertClipInGroup` path; Finder-file hover preview (probe the duration
-  on hover, async, cached).
-  APP15-3 editor window frame autosave must not leak between UI runs and the
-  user's app (UI checks use their own defaults or `--window-size`).
-  Run scripts/ui-checks/run-all.sh at the end; send window snapshots of every
-  changed screen.
-- timeline (owns Sources/TimelineEngine/**, additive TSCProjKit helpers):
-  TL15-1 new projects start with two empty tracks like Camtasia
-  (ui-workflow §2; `ProjectBundle.create`), round-trip and Camtasia-open
-  safe; TL15-2 any command app15 needs (context-menu items: duplicate,
-  ripple cut, select-at-playhead …), API_CHANGE first.
+  APP16-1 run-all.sh + check-canvas-tools.sh + check-drops.sh on a fresh
+  build, fix failures, send snapshots (blocks v0.1.4);
+  APP16-2 inspector pass from docs/specs/effects/inspector.md (ranges,
+  clamping, display scales, degrees↔radians, ease fields);
+  APP16-3 canvas snapping (§8.1), handle hit radius ~4 pt, inline track
+  rename (RenameTrack), caption style tiles in the AX-audit manifest,
+  Captions tab lists empty slots (needs captions `slots(in:)`).
+- captions: CAP16-1 `ClassicCaptions.slots(in:)` (empty caption slots) for app.
+- timeline: TL16-1 `SetClipColor` once researcher has the values; fix
+  AnimationSync dropping a Custom animation's empty animationTracks entry.
 - researcher (owns docs/specs/**, docs/ledger/**, docs/testing/**; the only
-  agent that may drive Camtasia): RES15-1 properties-panel parameters per
-  effect/annotation (names, ranges, defaults, units) read from the inspector
-  by UI scripting, in our own words → docs/specs/effects/*.md and
-  callouts.md (research backlog 6); RES15-2 canvas handles and crop-mode
-  behaviour (§8) by save-only experiments. You review at the wall.
-- qa (owns Tests/**, TestGenKit, WizRecTestSupport, the ci.yml test steps):
-  QA15-1 integration tests for the session-10 app merge (every import path
-  through `DropClip`, canvas drop, key loop model) and every session-11 merge;
-  QA15-2 flaky watch on each merge under `-O` and load.
-- media: MED15-1 (optional, perf) small per-factory reuse cache of
-  IOSurface textures keyed by surface+plane+format if 4K tone map cost
-  (+0.1–0.5 ms/frame since session 10) shows up in playback.
-- ship: only for a key (goal 2) or a release-pipeline finding.
-- render / captions / audio: only with licensed exports (goal 4) or a
-  finding from qa.
+  agent that may drive Camtasia): RES16-1 save-only: clip colour label
+  `colorAttribute` values, Duplicate placement, Select at Playhead on locked
+  tracks, Camtasia opens a WizRec 2-track empty project; RES16-2 crop mode
+  (save often: Camtasia stopped answering AX after the crop tool), snap
+  distance/targets, Size lock, gradient fill and Motion Path keys.
+- qa (owns Tests/**, TestGenKit, WizRecTestSupport, ci.yml test steps):
+  QA16-1 integration tests for every session-12 merge; QA16-2 flaky watch.
+- recorder (optional): non-real-time MediaFileWriter.append 2 s bound → 30 s.
+- ship: only for a key (goal 3) or a release-pipeline finding.
+- render / audio: only with licensed exports (goal 5) or a finding from qa.
 
 READ FIRST, in order:
 1. CLAUDE.md (hard rules, architecture, milestones, current state)
-2. docs/HANDOFF.md — §0 session-10 snapshot + follow-ups + NEED_USER, §3
+2. docs/HANDOFF.md — §0 session-11 snapshot + follow-ups + NEED_USER, §3
    user's pending items, §4 team setup (toolchains), §5 clean-room wall,
    §6 lessons
 3. coordination/AGENT_BRIEF.md, BOARD.md, CONTRACTS.md, DECISIONS.md
@@ -121,7 +120,7 @@ STEP 1 (you alone):
 STEP 2: spawn the agents above in ONE message (up to 6; CI stays with you);
 spawn an owner agent for any product bug a test finding uncovers.
 Each prompt: "Read coordination/AGENT_BRIEF.md first", its name,
-`git switch -c agent/<name>15 main`, its tasks, "commit small and often; never
+`git switch -c agent/<name>16 main`, its tasks, "commit small and often; never
 push; no AI attribution lines; before REVIEW: full swift test + the 6.3.3
 build; don't end your turn while your own background work runs; no
 background polling loops". Record addresses in coordination/ROSTER.md, tasks
