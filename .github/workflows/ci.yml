@@ -51,8 +51,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: spm-${{ runner.os }}-${{ runner.arch }}-
+          key: spm-O-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: spm-O-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Check shell scripts parse
         run: |
@@ -70,21 +70,26 @@ jobs:
         run: |
           set -o pipefail
           # Errors become annotations (readable through the public API, unlike raw logs).
-          if ! swift build 2>&1 | tee build.log; then
+          if ! swift build -Xswiftc -O 2>&1 | tee build.log; then
             grep -E "(error|fatal error):" build.log | sort -u | head -40 | while IFS= read -r line; do
-              echo "::error title=swift build::${line}"
+              echo "::error title=swift build -Xswiftc -O::${line}"
             done
             exit 1
           fi
 
+      # Tests run optimized (-O on every Swift module, still the debug configuration: DEBUG,
+      # -enable-testing and @testable stay as they are). Debug-build DSP, decode, render and SSIM
+      # made the serial media step ~2.5x slower (QA12-1: 296 s → 117 s locally). Both test steps use
+      # this build (`--skip-build`); `Build` uses the same flags so this step is incremental, and the
+      # cache key carries `O` so a cache of -Onone objects is never restored.
       - name: Build tests
         timeout-minutes: 40
         run: |
           set -o pipefail
           start=$(date +%s)
-          if ! swift build --build-tests 2>&1 | tee build-tests.log; then
+          if ! swift build --build-tests -Xswiftc -O 2>&1 | tee build-tests.log; then
             grep -E "(error|fatal error):" build-tests.log | sort -u | head -40 | while IFS= read -r line; do
-              echo "::error title=swift build --build-tests::${line}"
+              echo "::error title=swift build --build-tests -Xswiftc -O::${line}"
             done
             exit 1
           fi
