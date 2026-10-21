@@ -119,10 +119,13 @@ public enum MediaWriter {
     /// `DispatchQueue.main` blocks cannot run while a main-actor caller waits here: the main queue
     /// is busy with the caller (measured, QA10). On GitHub's macOS VMs `AVAssetWriter` needed the
     /// main thread to finish a file, so main-actor callers must use the async API instead.
+    ///
+    /// Time runs on `systemUptime`, which stands still while the Mac sleeps (as `Deadline` in
+    /// WizRecTestSupport), so a system sleep never counts toward the timeout.
     private static func wait(_ timeout: TimeInterval, until condition: () -> Bool) -> Bool {
-        let deadline = Date(timeIntervalSinceNow: timeout)
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while !condition() {
-            if Date() > deadline { return false }
+            if ProcessInfo.processInfo.systemUptime > deadline { return false }
             // `run` returns at once when the mode has no sources: sleep so this never spins.
             if !Thread.isMainThread || !RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005)) {
                 Thread.sleep(forTimeInterval: 0.001)
