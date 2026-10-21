@@ -8,7 +8,7 @@ import Testing
             if case .item(let i) = slot { return i }
             return nil
         }
-        #expect(items == [.importMedia, .record, .undo, .redo, .export])
+        #expect(items == [.importMedia, .record, .undo, .redo, .cropMode, .export])
         #expect(EditorToolbarLayout.defaultSlots.last == .item(.export))
         // Export sits alone on the trailing side, after a flexible space.
         #expect(EditorToolbarLayout.defaultSlots.dropLast().last == .flexibleSpace)

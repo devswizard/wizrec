@@ -15,6 +15,8 @@ final class EditorUIState {
     var canvasDropTargeted = false
     /// A long-running job's status (e.g. "Transcribing voice.wav… 40%"); nil when idle.
     var activity: String?
+    /// Canvas crop mode: the selected clip shows edge handles that crop it (ui-workflow.md §8).
+    var cropMode = false
     private var messageToken = 0
 
     func show(_ text: String, seconds: Double = 6) {

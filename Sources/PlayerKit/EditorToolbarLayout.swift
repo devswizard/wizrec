@@ -12,6 +12,8 @@ public enum EditorToolbarLayout {
         case zoomToFit = "WizRec.toolbar.zoomToFit"
         case zoomIn = "WizRec.toolbar.zoomIn"
         case export = "WizRec.toolbar.export"
+        /// Canvas crop mode on/off (APP15-1a).
+        case cropMode = "WizRec.toolbar.cropMode"
     }
 
     /// A slot of the default arrangement: an item, or AppKit's flexible or fixed space.
@@ -24,10 +26,12 @@ public enum EditorToolbarLayout {
     /// Toolbar identifier (also the key of the saved arrangement).
     public static let identifier = "WizRec.EditorToolbar"
 
-    /// Import and Record on the leading side, Undo/Redo after them, Export alone on the
-    /// trailing edge. Zoom items are available from Customize Toolbar.
+    /// Import and Record on the leading side, Undo/Redo after them, the canvas tool (crop mode)
+    /// in the middle, Export alone on the trailing edge (ui-workflow.md §3). Zoom items are
+    /// available from Customize Toolbar.
     public static let defaultSlots: [Slot] = [
-        .item(.importMedia), .item(.record), .space, .item(.undo), .item(.redo), .flexibleSpace, .item(.export),
+        .item(.importMedia), .item(.record), .space, .item(.undo), .item(.redo), .flexibleSpace, .item(.cropMode),
+        .flexibleSpace, .item(.export),
     ]
 
     /// Every item the customization sheet offers (spaces are added by the app).

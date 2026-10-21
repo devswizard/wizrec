@@ -28,9 +28,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     let inspector = InspectorState()
     private weak var projectDocument: ProjectDocument?
     let options: LaunchOptions
-    private let canvas: EditorCanvasView
+    let canvas: EditorCanvasView
     private let selectionOverlay = SelectionOverlayView()
-    private let timelineView: TimelineUI.TimelineView
+    let timelineView: TimelineUI.TimelineView
     private var providerDirectory: URL?
     private let thumbnails: ThumbnailStore
     private var renderer: CanvasRenderer?
@@ -126,7 +126,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             guard let model, let info = try? await model.thumbnailPool.probe(url) else { return nil }
             return model.dropClipDuration(for: info)
         }
-        timelineModel.fileClipDuration = { url in durations.duration(of: url) }
+        var announced = Set<URL>()
+        timelineModel.contextMenuItems = { [weak self] context in self?.timelineMenuItems(context) ?? [:] }
+        timelineModel.fileClipDuration = { url in
+            let d = durations.duration(of: url)
+            if let d, announced.insert(url).inserted {
+                // UI checks read this line (the Finder hover preview has its length).
+                print("WizRec: drop preview \(url.lastPathComponent) ticks=\(d)")
+                fflush(stdout)
+            }
+            return d
+        }
         updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
         // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
@@ -404,6 +414,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         selectionOverlay.needsDisplay = true
     }
 
+    /// Where top-level clip `clipID` is drawn on the canvas at the playhead (handles).
+    func canvasFrame(of clipID: Int64) -> CanvasFrame? {
+        CanvasGeometry.frame(of: clipID, plan: engine.drawState().plan, project: model.project)
+    }
+
+    /// Canvas ▸ Crop Mode: edge handles on the selected clip crop it; again (or Esc) leaves it.
+    @objc func toggleCropMode(_ sender: Any?) {
+        ui.cropMode.toggle()
+        selectionOverlay.needsDisplay = true
+        print("WizRec: crop mode \(ui.cropMode ? "on" : "off")")   // UI checks read this line
+        fflush(stdout)
+    }
+
     func inspection(of clipID: Int64) -> ClipInspection? {
         ClipInspection.make(project: model.project, clipID: clipID, playhead: engine.currentTicks)
     }
@@ -675,6 +698,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             do {
                 let ids = try await model.placeInGroup(items, group: target.group, track: target.track, at: target.ticks)
                 if let last = ids.last { select([last]) }
+                print("WizRec: placed in group \(target.group) clips=\(ids)")   // UI checks read this line
+                fflush(stdout)
             } catch {
                 ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
             }
@@ -995,6 +1020,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case (119, []), (124, [.command]): engine.goToEnd()
         case (1, []): timelineView.splitAtPlayhead(nil)       // S
         case (46, []): timelineView.addMarker(nil)            // M
+        case (53, []) where ui.cropMode: toggleCropMode(nil)  // Esc leaves crop mode
         default: return false
         }
         return true
@@ -1022,12 +1048,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     static let clipsOriginType = NSPasteboard.PasteboardType("com.devswizard.wizrec.clips-origin")
 
     /// Selected clips that sit directly on a track (copy, group and stitch work on those).
-    private var topLevelSelection: [Int64] {
+    var topLevelSelection: [Int64] {
         let top = Set(model.project.tracks.flatMap(\.clips).map(\.id))
         return model.project.tracks.flatMap(\.clips).map(\.id).filter { timelineModel.selection.contains($0) && top.contains($0) }
     }
 
-    private func put(_ payload: ClipboardPayload) {
+    func put(_ payload: ClipboardPayload) {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setData(payload.data, forType: Self.clipsType)
@@ -1099,7 +1125,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let v = c.videoID { select([v]) }
     }
 
-    private func kindOfSelection() -> ClipKind? {
+    func kindOfSelection() -> ClipKind? {
         guard topLevelSelection.count == 1, let id = topLevelSelection.first else { return nil }
         return model.project.tracks.flatMap(\.clips).first { $0.id == id }?.kind
     }
@@ -1133,8 +1159,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         case #selector(addAudioPoint(_:)):
             return AudioPanel.audioClips(in: model.project, selection: timelineModel.selection)
                 .contains { $0.contains(engine.currentTicks) }
-        case #selector(copy(_:)), #selector(cut(_:)):
-            return !topLevelSelection.isEmpty
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(duplicate(_:)), #selector(rippleCut(_:)):
+            return !model.clipboardSelection(timelineModel.selection, openGroup: timelineModel.openGroups.last).isEmpty
+        case #selector(toggleCropMode(_:)):
+            item.state = ui.cropMode ? .on : .off
+            return ui.cropMode || canvasScaleTarget != nil
+        case #selector(scaleSelection(_:)):
+            return canvasScaleTarget != nil
         case #selector(paste(_:)):
             return NSPasteboard.general.availableType(from: [Self.clipsType]) != nil
         case #selector(groupClips(_:)):
@@ -1162,6 +1193,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     /// Toolbar items validate like the menu items with the same action.
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         guard let action = item.action else { return true }
+        if action == #selector(toggleCropMode(_:)) {
+            // Tinted while crop mode is on.
+            let tint: NSColor = ui.cropMode ? .controlAccentColor : .labelColor
+            item.image = NSImage(systemSymbolName: "crop", accessibilityDescription: item.label)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [tint]))
+        }
         return validateMenuItem(NSMenuItem(title: item.label, action: action, keyEquivalent: ""))
     }
 
