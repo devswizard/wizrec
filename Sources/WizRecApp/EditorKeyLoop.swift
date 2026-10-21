@@ -17,18 +17,29 @@ import TimelineUI
         var singleStop: NSView?
         /// Views that are stops in addition to the pane's controls and tiles.
         var extraStops: [NSView] = []
+        /// The pane moves focus between its own stops (the library grids); otherwise the loop
+        /// moves Tab through the stops in reading order (SwiftUI's own field order can jump out
+        /// of the pane).
+        var ownsTabOrder = false
     }
 
     var panes: [Pane] = []
 
-    /// Handles Tab (`backward` false) or Shift-Tab in `window`: true when focus moved to another
-    /// pane (the key is consumed), false when the key belongs to the focused pane.
+    /// Handles Tab (`backward` false) or Shift-Tab in `window`: true when the loop moved focus
+    /// (the key is consumed), false when the key belongs to the focused pane (`ownsTabOrder`).
     func handleTab(in window: NSWindow, backward: Bool) -> Bool {
         let v = Self.responderView(window)
         let pane = v.flatMap(paneIndex(of:))
         var at: Int?
         if let pane, let v { at = stopIndex(of: v, in: pane) }
-        return perform(WindowKeyLoop.step(pane: pane, position: at, counts: counts(), backward: backward), in: window)
+        let step = WindowKeyLoop.step(pane: pane, position: at, counts: counts(), backward: backward)
+        if step == .withinPane, let pane, let at, !panes[pane].ownsTabOrder {
+            let s = stops(in: pane)
+            let next = at + (backward ? -1 : 1)
+            guard s.indices.contains(next) else { return false }
+            return window.makeFirstResponder(s[next])
+        }
+        return perform(step, in: window)
     }
 
     /// Leaves the pane holding `view` in the key's direction (a library grid's Tab past its last

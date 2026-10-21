@@ -371,6 +371,37 @@ public final class EditorDocumentModel {
         return id
     }
 
+    /// What `importInSequence` did: the clips placed (id and track index, in file order) and the
+    /// files that failed with their errors.
+    public struct SequencedImport {
+        public var placed: [(clip: Int64, track: Int)] = []
+        public var failures: [(file: URL, error: any Error)] = []
+    }
+
+    /// Imports `files` one after another. With `place`, each goes onto the timeline back to back
+    /// from `ticks` (the next one starts where the previous clip ends; track preference as in
+    /// `insertSource`), one undo step per file; without, into the media bin only. A file that
+    /// fails is skipped and the rest continue.
+    public func importInSequence(_ files: [URL], place: Bool, from ticks: Int64, track: Int? = nil) async -> SequencedImport {
+        var out = SequencedImport()
+        var t = ticks
+        for file in files {
+            do {
+                guard place else { _ = try await importMedia(file); continue }
+                let clip = try await importAndInsert(file, at: t, track: track)
+                for (i, tr) in project.tracks.enumerated() {
+                    guard let c = tr.clips.first(where: { $0.id == clip }) else { continue }
+                    t = c.end
+                    out.placed.append((clip, i))
+                    break
+                }
+            } catch {
+                out.failures.append((file, error))
+            }
+        }
+        return out
+    }
+
     /// Imports `files` and places them all at `ticks`, each on the next free track (the first
     /// on `track` when free), stacking upward: e.g. a recording's screen, camera and audio.
     /// One undo step named `name`. Returns the clip ids in `files` order. Files already inside
@@ -384,6 +415,10 @@ public final class EditorDocumentModel {
         for file in files {
             let info: MediaInfo
             do { info = try await thumbnailPool.probe(file) } catch {
+                throw DocumentError.unsupportedMedia(file.lastPathComponent)
+            }
+            // As in importMedia: a file with nothing to show or play is no media.
+            guard info.kind != .unknown, info.kind == .image || info.kind == .shader || !info.streams.isEmpty else {
                 throw DocumentError.unsupportedMedia(file.lastPathComponent)
             }
             let src = try bundle.importFile(file)

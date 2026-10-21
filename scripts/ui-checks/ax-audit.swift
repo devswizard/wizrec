@@ -368,8 +368,19 @@ if let libraryTab = tabs.last, selectTab(libraryTab), let search = element("libr
             role = focusedRole()
             if role == kAXTextFieldRole {
                 pass("key loop: Tab from the canvas → an inspector field (\(id.isEmpty ? role : id))")
-                while focusedRole() == kAXTextFieldRole, steps < 40 { id = tab(); steps += 1 }
-                expectFocus("Tab past the last inspector field (\(steps) fields)", id, { $0 == "editor.timeline" }, "the timeline")
+                var visited: [String] = [id]
+                while focusedRole() == kAXTextFieldRole, steps < 40 {
+                    id = tab()
+                    steps += 1
+                    if focusedRole() == kAXTextFieldRole { visited.append(id) }
+                }
+                // Reading order: Clip Speed's Duration, then Speed, then the transform fields.
+                if visited.count >= 3, visited[0] == "inspector.duration", visited[1] == "inspector.speed" {
+                    pass("key loop: Tab walks \(visited.count) inspector fields top to bottom")
+                } else {
+                    fail("key loop: Tab visited inspector fields \(visited) (want inspector.duration, inspector.speed, then more)")
+                }
+                expectFocus("Tab past the last inspector field", id, { $0 == "editor.timeline" }, "the timeline")
                 expectFocus("Shift-Tab from the timeline", tab(shift: true), { _ in focusedRole() == kAXTextFieldRole },
                             "the last inspector field")
             } else {

@@ -127,9 +127,5 @@ final class WizRecDocumentController: NSDocumentController {
 
 /// File ▸ Open filter: projects and media by extension, plus folders to browse into.
 final class OpenPanelFilter: NSObject, NSOpenSavePanelDelegate {
-    func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        if OpenableFile(url) != nil { return true }
-        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-        return values?.isDirectory == true && values?.isPackage != true
-    }
+    func panel(_ sender: Any, shouldEnable url: URL) -> Bool { OpenableFile.enablesInOpenPanel(url) }
 }

@@ -25,4 +25,17 @@ public enum OpenableFile: Equatable, Sendable {
             self = .media
         }
     }
+
+    /// Whether File ▸ Open enables `url`: anything WizRec opens, and plain folders to browse
+    /// into. Packages that are not projects (e.g. an `.app`) stay disabled.
+    public static func enablesInOpenPanel(_ url: URL, isDirectory: Bool, isPackage: Bool) -> Bool {
+        if OpenableFile(url) != nil { return true }
+        return isDirectory && !isPackage
+    }
+
+    /// `enablesInOpenPanel(_:isDirectory:isPackage:)` with the file system's answers.
+    public static func enablesInOpenPanel(_ url: URL) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return enablesInOpenPanel(url, isDirectory: values?.isDirectory == true, isPackage: values?.isPackage == true)
+    }
 }

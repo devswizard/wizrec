@@ -209,7 +209,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         root.setHoldingPriority(.defaultLow - 10, forSubviewAt: 0)
         root.setHoldingPriority(.defaultLow + 10, forSubviewAt: 1)
         keyLoop.panes = [
-            EditorKeyLoop.Pane(view: bin),
+            EditorKeyLoop.Pane(view: bin, ownsTabOrder: true),
             EditorKeyLoop.Pane(view: center, extraStops: [canvas]),
             EditorKeyLoop.Pane(view: props),
             EditorKeyLoop.Pane(view: timelineView, singleStop: timelineView),
@@ -525,33 +525,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         }
         ui.isImporting = true
         Task {
-            var failures: [String] = unsupported.map { [$0] } ?? []
-            var t = ticks ?? engine.currentTicks
-            var placed: [String] = []
-            var imported = 0
-            for u in urls {
-                do {
-                    if place {
-                        let clip = try await model.importAndInsert(u, at: t, track: track)
-                        if let (i, c) = model.project.tracks.enumerated().lazy
-                            .compactMap({ (i, tr) in tr.clips.first { $0.id == clip }.map { (i, $0) } }).first {
-                            t = c.end
-                            placed.append("\(clip)@track\(i)")
-                        }
-                        select([clip])
-                    } else {
-                        try await model.importMedia(u)
-                    }
-                    imported += 1
-                } catch {
-                    failures.append(Self.importFailure(u, error))
-                }
-            }
+            let r = await model.importInSequence(urls, place: place, from: ticks ?? engine.currentTicks, track: track)
+            if let last = r.placed.last { select([last.clip]) }
             ui.isImporting = false
             // UI checks read this line (drops onto the bin, canvas and timeline).
-            print("WizRec: imported \(imported) of \(urls.count) "
-                  + "place=\(place) clips=[\(placed.joined(separator: ","))] bin=\(model.project.sourceBin.count)")
+            let placed = r.placed.map { "\($0.clip)@track\($0.track)" }.joined(separator: ",")
+            print("WizRec: imported \(urls.count - r.failures.count) of \(urls.count) "
+                  + "place=\(place) clips=[\(placed)] bin=\(model.project.sourceBin.count)")
             fflush(stdout)
+            let failures = (unsupported.map { [$0] } ?? []) + r.failures.map { Self.importFailure($0.file, $0.error) }
             if !failures.isEmpty { ui.show(failures.joined(separator: " "), seconds: 10) }
         }
     }
