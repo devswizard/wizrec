@@ -6,7 +6,7 @@ How a WizRec release is built, signed, notarized and packed. The scripts live in
 WizRec is GPL-3.0-or-later. It is distributed as a notarized direct download (DMG), not
 through the Mac App Store, whose terms conflict with the GPL.
 
-## Status (2026-10-20)
+## Status (2026-10-21)
 
 - **Bundle ID** `com.devswizard.WizRec` (decided 2026-10-20; `WIZREC_BUNDLE_ID` overrides).
 - **Sparkle 2** is in the app (approved 2026-10-20). The feed is prepared
@@ -20,6 +20,11 @@ through the Mac App Store, whose terms conflict with the GPL.
   Checked afterwards without a token: `shasum -a 256 -c` OK, `verify-dmg.sh` OK (with
   `WIZREC_ALLOW_BUILD_RPATHS=1`: one Xcode 26.6 back-deploy run path in the executable),
   launch from the mounted DMG on a temp copy of the demo project with `--quit-after 5`: exit 0.
+- **v0.1.1 prepared (2026-10-21):** notes in `docs/release-notes-template.md`. Built locally
+  from `agent/ship12` (`VERSION=0.1.1 VERIFY=1 scripts/release.sh`, no
+  `WIZREC_ALLOW_BUILD_RPATHS`): `verify-dmg.sh` OK, load/run paths clean in all 22 Mach-O
+  files (no build run path left), 20.9 MB (20941824 bytes), launch-and-quit 7 s, updater
+  off. Publish it with a plain `v0.1.1` request line (no `allow-build-rpaths`).
 - **Still waiting on the user:** the Sparkle key pair (one command, below).
 
 ## Prerequisites
@@ -34,6 +39,7 @@ brew install ffmpeg pkg-config librsvg   # librsvg: rsvg-convert for the app ico
 scripts/release.sh                       # ad-hoc signed build/WizRec-0.1.0.dmg, local testing only
 VERIFY=1 WIZREC_SIGN_IDENTITY="WizRec Dev" scripts/release.sh   # self-signed + smoke test
 scripts/release/verify-dmg.sh build/WizRec-0.1.0.dmg            # smoke-test an existing DMG
+scripts/release/check-sparkle.sh                                # updater off/on/half-config builds (no key)
 ```
 
 `verify-dmg.sh` mounts the image read-only (hidden from Finder), checks the bundle ID, the
@@ -42,7 +48,10 @@ paths (`LC_RPATH`, `otool -l`) of **every Mach-O in the bundle**: each must be
 `@rpath`/`@loader_path`/`@executable_path` or under `/usr/lib` or `/System`, so nothing points
 into Homebrew, `/usr/local`, Xcode or the Command Line Tools. (`WIZREC_ALLOW_BUILD_RPATHS=1`
 reports run paths as warnings instead, for DMGs built before bundle-dylibs.sh stripped them:
-v0.1.0 carries Xcode's back-deploy run path, which is harmless but untidy.) It then
+v0.1.0 carries Xcode's back-deploy run path, which is harmless but untidy.) It reads the
+Sparkle entries with `sparkle-plist-check.sh`: updater off (neither `SUFeedURL` nor
+`SUPublicEDKey`) or on (https feed and a 32-byte key); one without the other, a non-https feed
+or a malformed key fails. It then
 launches the app from the image with `--quit-after 5` and expects a clean exit. Measured
 2026-10-20: 21 MB DMG, launch-and-quit in 6–7 s, both ad-hoc and "WizRec Dev". On macOS 27
 with `diskutil image` (APFS, ULFO): 20.9 MB (UDZO via hdiutil: 22.1 MB), launch-and-quit
@@ -72,6 +81,7 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | `WIZREC_SPARKLE_FEED` | `make-app.sh` (`sparkle-info.sh`) | Appcast URL (`https://` only) → `SUFeedURL`. Together with `WIZREC_SPARKLE_PUBKEY` it overrides `release/sparkle.conf`; one of the two alone, or an invalid value, fails the build |
 | `WIZREC_SPARKLE_PUBKEY` | `make-app.sh` (`sparkle-info.sh`) | EdDSA public key (base64, 32 bytes) → `SUPublicEDKey`. Neither variable set and no key in `release/sparkle.conf` → updater off |
 | `WIZREC_SPARKLE_CONF` | `sparkle-info.sh`, `update-appcast.sh` | Another config file instead of `release/sparkle.conf` |
+| `WIZREC_EXPECT_UPDATER` | `verify-dmg.sh` | `on` or `off`: also require that updater state (`sparkle-plist-check.sh`). Unset: either state passes, a half configuration still fails |
 | `WIZREC_ALLOW_BUILD_RPATHS=1` | `verify-dmg.sh` | Run paths outside the bundle are warnings, not errors (DMGs built before 2026-10-20, e.g. v0.1.0) |
 | `NOTARIZE=1` | `release.sh` | Notarize and staple app and DMG. Without `WIZREC_SIGN_IDENTITY` it is skipped with a warning (ad-hoc builds cannot be notarized) |
 | `WIZREC_NOTARY_PROFILE` | `notarize.sh` | `notarytool` keychain profile name; required when notarizing |
@@ -197,6 +207,44 @@ step: it creates the private key in the login keychain, which no agent or workfl
 3. Put the printed public key into `release/sparkle.conf` (`public_ed_key = <key>`), commit
    and push to `main`.
 4. Every release built after that commit (tag → `release.yml`) has the updater on.
+
+**Readiness check (no key needed).** `scripts/release/check-sparkle.sh` builds the app with
+`make-app.sh` four times and checks each Info.plist with `sparkle-plist-check.sh`:
+`WIZREC_SPARKLE_PUBKEY` alone is refused; `WIZREC_SPARKLE_FEED` plus a throwaway test key
+(32 random bytes, never a real key) gives exactly that `SUFeedURL` and `SUPublicEDKey`; a
+config with an empty `public_ed_key` gives neither (updater off); the committed
+`release/sparkle.conf` gives off while its key is empty and on with its key once filled in
+(this run comes last, so `build/WizRec.app` is left as an ordinary build). It never touches
+the keychain, `generate_keys` or `sign_update`. Measured 2026-10-21 (release config,
+warm build cache): all four pass.
+
+**What main does once the user provides the public key.** The user runs steps 1–2 on the
+maintainer Mac and hands over only the printed **public** key (it is not secret). The agent
+side never runs `generate_keys`, never reads the keychain and never handles the private key.
+
+1. Put the key into `release/sparkle.conf` (`public_ed_key = <key>`) on a branch. Leave the
+   repository variables `WIZREC_SPARKLE_FEED` / `WIZREC_SPARKLE_PUBKEY` unset: the committed
+   file is the single source (setting only one of the two variables fails the build).
+2. Run `scripts/release/check-sparkle.sh`: step 4 must now print
+   `public_ed_key set -> updater on`. Then `swift build && swift test`
+   (`UpdaterConfigurationTests` checks that the committed file yields a valid pair).
+3. Commit (`Sparkle: public key`), merge to `main`, push.
+4. Tag the next release from a `main` commit that contains the key (`git tag v0.1.x`, push
+   the tag). The Release log line of `verify-dmg.sh` must say `updates on (<feed>)`; for a
+   local check of the downloaded DMG use `WIZREC_EXPECT_UPDATER=on
+   scripts/release/verify-dmg.sh WizRec-<version>.dmg`.
+5. Publish as usual (`release/publish`, no `allow-build-rpaths`).
+6. Appcast, only if `sign_update` can reach the private key: on the user's Mac, where the
+   key sits in the login keychain (`sign_update` reads it itself), or with
+   `SPARKLE_KEY_FILE=<exported key file>` that the user supplies outside the repository.
+   Then `scripts/release/update-appcast.sh v0.1.x`, commit `release/appcast.xml`
+   (`Appcast: v0.1.x`) and push to `main`. When neither is possible from the agent session
+   (the keychain is off limits and the classifier blocks it), hand the command to the user
+   as a `NEED_USER` item instead of skipping it silently. Releases built with the updater
+   off (v0.1.0, and v0.1.1 if tagged before the key commit) never read the feed; their
+   users update by hand once to the first release with the updater on. `update-appcast.sh`
+   still accepts them (with a warning), and refuses a DMG whose `SUPublicEDKey` differs
+   from the committed key.
 
 **Per release, after it is public:**
 
