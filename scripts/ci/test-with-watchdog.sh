@@ -71,4 +71,31 @@ if rows:
     msg = "%d tests, %.0f s summed\n" % (len(rows), total) + "\n".join(body)
     print("::notice title=Slowest tests::" + msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
 PY
+# Every known issue (withKnownIssue) in one annotation: test, location and its first detail lines
+# (the issue's own text, then the known-issue reason), each cut to 300 characters. Informational,
+# like the slowest tests: lets digests and measurements that tests print into known issues be read
+# through the public API.
+python3 - "$log" <<'PY' || true
+import re, sys
+head = re.compile(r"^\S+ Test (.+?) recorded a known issue at (\S+?):? (.*)$")
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+entries, seen = [], set()
+for i, line in enumerate(lines):
+    m = head.search(line)
+    if not m:
+        continue
+    details = []
+    for nxt in lines[i + 1:i + 4]:
+        if not nxt.startswith("↳"):
+            break
+        details.append(nxt[1:].strip())
+    cut = lambda s: s if len(s) <= 300 else s[:297] + "..."
+    text = cut("%s (%s): %s" % (m.group(1), m.group(2), " / ".join(details[:2]) or m.group(3)))
+    if text not in seen:
+        seen.add(text)
+        entries.append(text)
+if entries:
+    msg = "%d known issues\n" % len(entries) + "\n".join(entries[:80])
+    print("::notice title=Known issues::" + msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+PY
 exit $status
