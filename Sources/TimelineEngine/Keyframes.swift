@@ -81,13 +81,27 @@ enum ParamWriter {
 }
 
 /// Keeps `animationTracks.visual` in step with the numeric keyframe windows
-/// of a clip's parameters and its effects' parameters (time-mapping.md §6:
-/// every window equals one entry). Entries still in use are kept as they are;
-/// unused ones are removed; missing ones are added in time order. Windows of
-/// zero length get no entry [inf]. The key is left untouched when nothing
-/// changes.
+/// of a clip's parameters, its effects' parameters and its shader
+/// `sourceEffect` parameters (time-mapping.md §6: every window equals one
+/// entry; shader keyframes are listed too [obs, shader-backgrounds.md §11.1
+/// Q3]). Entries still in use are kept as they are, in either shape
+/// (`range` [obs, user projects] or `endTime`/`duration` only [obs, menu
+/// animations, animation.md §1]); unused ones are removed; missing ones are
+/// added in time order. Windows of zero length get no entry [inf]. The key is
+/// left untouched when nothing changes.
 enum AnimationSync {
     struct Window: Hashable { var time: Int64; var endTime: Int64 }
+
+    /// The window of an `animationTracks.visual` entry: `range` `[start, length]`, else
+    /// `endTime` − `duration` … `endTime`; nil when neither is readable.
+    static func window(_ v: JSON) -> Window? {
+        guard let o = v.object else { return nil }
+        if let r = o["range"]?.array, r.count == 2, let s = r[0].int, let d = r[1].int {
+            return Window(time: s, endTime: s + d)
+        }
+        guard let e = o["endTime"]?.int, let d = o["duration"]?.int else { return nil }
+        return Window(time: e - d, endTime: e)
+    }
 
     static func windows(_ clip: JSONObject) -> [Window: String] {
         var out: [Window: String] = [:]
@@ -104,17 +118,36 @@ enum AnimationSync {
         }
         scan(clip["parameters"]?.object)
         for e in clip["effects"]?.array?.items.compactMap(\.object) ?? [] { scan(e["parameters"]?.object) }
+        scan(clip["sourceEffect"]?.object?["parameters"]?.object)
         return out
+    }
+
+    /// Adds an `animationTracks.visual` entry `{endTime, duration}` (Camtasia's animation
+    /// shape [obs, shader-backgrounds.md §11.1 Q3]) for each window in `wanted` that no entry
+    /// covers yet, in time order. Existing entries are never changed or removed.
+    static func addEntries(_ clip: JSONObject, for wanted: [Window]) {
+        var all = clip["animationTracks"]?.object?["visual"]?.array?.items ?? []
+        var have = Set(all.compactMap(window))
+        var added = false
+        for w in wanted.sorted(by: { ($0.time, $0.endTime) < ($1.time, $1.endTime) })
+        where w.endTime > w.time && !have.contains(w) {
+            let entry = J.obj([("endTime", J.int(w.endTime)), ("duration", J.int(w.endTime - w.time))])
+            let at = all.firstIndex { (window($0)?.time ?? 0, window($0)?.endTime ?? 0) > (w.time, w.endTime) } ?? all.count
+            all.insert(entry, at: at)
+            have.insert(w)
+            added = true
+        }
+        guard added else { return }
+        let tracks: JSONObject
+        if let t = clip["animationTracks"]?.object { tracks = t } else {
+            tracks = JSONObject(); clip["animationTracks"] = .object(tracks)
+        }
+        tracks["visual"] = J.arr(all)
     }
 
     static func sync(_ clip: JSONObject) {
         let want = windows(clip)
         let existing = clip["animationTracks"]?.object?["visual"]?.array?.items ?? []
-        func window(_ v: JSON) -> Window? {
-            guard let o = v.object, let r = o["range"]?.array, r.count == 2, let s = r[0].int, let d = r[1].int
-            else { return nil }
-            return Window(time: s, endTime: s + d)
-        }
         var kept: [JSON] = []
         var have = Set<Window>()
         for e in existing {

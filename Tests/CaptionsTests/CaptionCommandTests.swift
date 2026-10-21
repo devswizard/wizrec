@@ -226,6 +226,57 @@ import TimelineEngine
         let p = try makeProject(tracks: [amFile(10, start: s(5), dur: s(3), parameters: params)])
         #expect(ClassicCaptions.cues(in: p) == [CaptionCue(start: 6, end: 8, text: "tail")])
     }
+
+    /// A Cocoa RTF document as Camtasia's caption editor saves typed text (captions.md §1, CA1).
+    private static func rtf(_ body: String) -> String {
+        """
+        {\\rtf1\\ansi\\ansicpg1252\\cocoartf2907
+        \\cocoatextscaling0\\cocoaplatform0{\\fonttbl\\f0\\fswiss\\fcharset0 ArialMT;}
+        {\\colortbl;\\red255\\green255\\blue255;\\red54\\green66\\blue74;}
+        {\\*\\expandedcolortbl;;\\cssrgb\\c27059\\c32941\\c36078;}
+        \\deftab720
+        \\pard\\pardeftab720\\partightenfactor0
+
+        \\f0\\fs36 \\cf2 \(body)}
+        """
+    }
+
+    /// JSON string literal text for `s`.
+    private static func jsonString(_ s: String) -> String {
+        "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n") + "\""
+    }
+
+    @Test func readsRTFCaptionTextAsPlainText() throws {
+        #expect(ClassicCaptions.plainText(Self.rtf("one bold word")) == "one bold word")
+        #expect(ClassicCaptions.plainText(Self.rtf("one \\b bold\\b0  word")) == "one bold word")
+        #expect(ClassicCaptions.plainText(Self.rtf("caf\\'e9\\\nsecond line")) == "café\nsecond line")
+        #expect(ClassicCaptions.plainText("{not rtf}") == "{not rtf}")
+        #expect(ClassicCaptions.plainText("plain") == "plain")
+        _ = ClassicCaptions.plainText("{\\rtf")          // malformed: no crash
+        _ = ClassicCaptions.plainText("{\\rtf1 {{{\\x")
+
+        let kf = { (t: Double, text: String) -> String in
+            #"{"endTime" : \#(s(t)), "time" : \#(s(t)), "value" : {"text" : \#(Self.jsonString(text)), "textAttributes" : null}, "duration" : 0}"#
+        }
+        let params = #"{"captions" : {"type" : "caption", "keyframes" : [\#([kf(0, Self.rtf("one bold word")), kf(4, "plain words"), kf(8, Self.rtf("")), kf(12, "")].joined(separator: ", "))]}}"#
+        let p = try makeProject(tracks: [amFile(10, start: 0, dur: s(13), parameters: params)])
+        // The empty RTF caption (8–12 s) is no caption, like "".
+        #expect(ClassicCaptions.cues(in: p) == [CaptionCue(start: 0, end: 4, text: "one bold word"),
+                                                 CaptionCue(start: 4, end: 8, text: "plain words")])
+        #expect(CaptionFiles.srt(p).contains("one bold word") && !CaptionFiles.srt(p).contains("rtf"))
+
+        // Writers keep plain strings; an untouched RTF caption keeps its bytes.
+        let before = try #require(at(p, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0/parameters/captions/keyframes/1"))
+        let add = AddCaptions(cues: [CaptionCue(start: 9, end: 10, text: "new")])
+        try expectReversible(add, on: p)
+        try add.apply(to: p)
+        let kfs = at(p, "timeline/sceneTrack/scenes/0/csml/tracks/0/medias/0/parameters/captions/keyframes")?.array?.items ?? []
+        #expect(kfs.first?.object?["value"]?.object?["text"]?.string == Self.rtf("one bold word"))
+        #expect(kfs.contains { $0.object?["value"]?.object?["text"]?.string == "new" })
+        #expect(kfs.dropFirst().first == before)
+        #expect(try Project(data: p.serialized()).serialized() == p.serialized())
+    }
 }
 
 @MainActor @Suite struct DynamicCaptionCommandTests {

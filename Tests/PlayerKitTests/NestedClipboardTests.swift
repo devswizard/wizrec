@@ -46,12 +46,13 @@ import TSCProjKit
         try doc.undoLast()
         #expect(doc.project.serialized() == before)
 
-        // A free spot after the clip: same inner track; the group grows to show it.
+        // At the group's end: same inner track, at the window end (hidden); the group never
+        // grows (group-edits.md §8.3).
         let at = g.start + g.duration
         let later = try await doc.paste(payload, origin: nil, track: 0, at: at, group: gid)
         let h = try #require(doc.project.tracks[0].clips.first)
         #expect(h.tracks.count == 1 && h.tracks[0].clips.map(\.id).contains(later[0]))
-        #expect(h.duration == 2 * g.duration)
+        #expect(h.duration == g.duration)
 
         // Pasted at top level instead (no group): a plain top-level clip.
         let top = try await doc.paste(payload, origin: nil, track: nil, at: 30 * Self.rate)

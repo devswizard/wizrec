@@ -79,7 +79,8 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
 }
 
 @MainActor @Test func pasteNestedCopyIntoAnotherOpenGroup() throws {
-    // Group 40 on track 1 (timeline 200–260, inner window 0–60): the paste grows it to 80.
+    // Group 40 on track 1 (timeline 200–260, inner window 0–60). The paste never grows it
+    // (group-edits.md §8.3): 42 runs past the window and is hidden.
     let g40 = { (t0: [String], t1: [String], dur: Int64, md: String, tr: String?) -> String in
         group(40, start: 200, dur: dur, md: md, [innerTrack(0, t0, transitions: tr), innerTrack(1, t1)])
     }
@@ -93,7 +94,7 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
     try expectTracks(p, tracks(
         track(0, [leaf(10, start: 0, dur: 100), groupA()]),
         track(1, [g40([leaf(41, start: 10, dur: 50, parameters: kf, effects: fx), leaf(42, start: 60, dur: 30)],
-                      [leaf(43, start: 30, dur: 30)], 90, "90.0", fade)])
+                      [leaf(43, start: 30, dur: 30)], 60, "60.0", fade)])
     ))
     // The same paste addressed in inner time gives the same JSON.
     let after = p.serialized()
@@ -103,7 +104,7 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
     #expect(p.serialized() == after)
     try inner.revert(on: p)
 
-    // Into the source group itself, after its content: inner track 0 at inner 110 grows group 30.
+    // Into the source group itself, after its content: inner track 0 at inner 110.
     let back = PasteClips(payload, group: 30, track: 0, at: .inner(110))
     try expectReversible(back, on: p)
     try back.apply(to: p)
@@ -142,8 +143,6 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
 
     expectRejected(PasteClips(one, group: 40, track: 1, at: .inner(50)), on: p, .invalid(""))   // overlaps 43
     expectRejected(PasteClips(one, group: 40, track: 2, at: .inner(0)), on: p, .trackNotFound(2))
-    expectRejected(PasteClips(one, group: 40, track: 0, at: .inner(101)), on: p, .invalid(""))   // past the window
-    expectRejected(PasteClips(one, group: 40, track: 0, at: .timeline(100)), on: p, .invalid("")) // before the group
     expectRejected(PasteClips(one, group: 10, track: 0, at: .inner(0)), on: p, .invalid(""))      // not a group
     // Two-track payload whose second track does not exist in the group.
     let two = try ClipboardPayload.copy(clipIDs: [31, 32], from: p)
@@ -152,12 +151,23 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
 
 // MARK: - Demo project
 
-/// Copies the shader background clip out of the demo's Rev group, pastes it at
-/// top level and back into the group, checking keys, growth, undo and round trip.
+/// The demo's Rev group is closed (TL11-5): its background can't be copied out and nothing
+/// pastes into it. With `groupType` removed (a plain group), the background copies out with
+/// `ShaderVidSource`, pastes at top level and back into the group without growing it,
+/// checking keys, undo and round trip.
 @MainActor private func expectNestedCopyOnDemo(_ demo: Project) throws {
     let original = demo.serialized()
     let g = try #require(demo.tracks.first?.clips.first { $0.kind == .group })
     let bg = try #require(g.tracks.first?.clips.first)
+    #expect(g.object["metadata"]?.object?["groupType"]?.string == "revMedia")
+    #expect(throws: EditError.self) { try ClipboardPayload.copy(clipIDs: [bg.id], from: demo) }
+    let whole = try ClipboardPayload.copy(clipIDs: [g.id], from: demo)
+    expectRejected(PasteClips(whole, group: g.id, at: .inner(bg.start)), on: demo, .invalid(""))
+    #expect(demo.serialized() == original)
+
+    // As a plain group.
+    g.object["metadata"]?.object?["groupType"] = nil
+    let plain = demo.serialized()
     let payload = try ClipboardPayload.copy(clipIDs: [bg.id], from: demo)
     let text = String(decoding: payload.data, as: UTF8.self)
     #expect(text.contains("ShaderVidSource") && !text.contains("RevBackground") && !text.contains("RevLook"))
@@ -176,18 +186,19 @@ private func groupA(_ c31: String = leaf(31, start: 20, dur: 50, parameters: kf,
     #expect(try Project(data: demo.serialized()).serialized() == demo.serialized())
     try paste.revert(on: demo)
 
-    // Into the group, right after the clip on inner track 0: the group grows.
+    // Into the group, right after the clip: inner track 0, the group doesn't grow.
     let end = bg.start + bg.duration
-    let inner = PasteClips(payload, group: g.id, track: 0, at: .inner(end))
+    let inner = PasteClips(payload, group: g.id, at: .inner(end))
     try expectReversible(inner, on: demo)
     try inner.apply(to: demo)
     let g2 = try #require(demo.tracks.first?.clips.first { $0.id == g.id })
+    #expect(inner.pastedTracks == [0])
     #expect(g2.tracks[0].clips.map(\.start) == [bg.start, end])
-    #expect(g2.duration == end + bg.duration - g.start)
+    #expect(g2.duration == g.duration && g2.object["mediaDuration"] == g.object["mediaDuration"])
     #expect(g2.object["metadata"] == g.object["metadata"])
     #expect(try Project(data: demo.serialized()).serialized() == demo.serialized())
     try inner.revert(on: demo)
-    #expect(demo.serialized() == original)
+    #expect(demo.serialized() == plain)
 }
 
 @MainActor @Test func nestedCopyPasteOnDemoFixture() throws {

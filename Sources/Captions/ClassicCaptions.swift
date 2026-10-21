@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import TSCProjKit
 import TimelineEngine
@@ -61,9 +62,25 @@ public enum ClassicCaptions {
             .sorted { $0.0 < $1.0 }
         return kfs.enumerated().compactMap { i, kv in
             let end = i + 1 < kfs.count ? kfs[i + 1].0 : max(c.mediaHi, kv.0)
-            guard let text = kv.1.object?["text"]?.string, !text.isEmpty, end > kv.0 else { return nil }
+            guard let raw = kv.1.object?["text"]?.string, !plainText(raw).isEmpty, end > kv.0 else { return nil }
             return Segment(start: kv.0, end: end, value: kv.1)
         }
+    }
+
+    /// The plain text of a caption's `value.text`. Camtasia's caption editor saves typed text
+    /// as a Cocoa RTF document (`{\rtf1…}`) [obs, captions.md §1 CA1]; that is converted with
+    /// the system RTF reader and its fonts, sizes and colours are ignored (captions are styled
+    /// by `captionAttributes`). Trailing line breaks are dropped. Any other string is returned
+    /// as is, and RTF the reader rejects falls back to the raw string.
+    public static func plainText(_ text: String) -> String {
+        guard text.hasPrefix("{\\rtf"),
+              let a = try? NSAttributedString(data: Data(text.utf8),
+                                              options: [.documentType: NSAttributedString.DocumentType.rtf],
+                                              documentAttributes: nil)
+        else { return text }
+        var s = a.string
+        while let last = s.last, last.isNewline { s.removeLast() }
+        return s
     }
 
     /// Every classic caption on the top-level tracks, timeline seconds, sorted by start, clipped
@@ -75,7 +92,7 @@ public enum ClassicCaptions {
                 let a = max(s.start, c.mediaLo), b = min(s.end, c.mediaHi)
                 guard b > a else { return nil }
                 return CaptionCue(start: tb.seconds(timelineTicks(a, c)), end: tb.seconds(timelineTicks(b, c)),
-                                  text: s.value.object?["text"]?.string ?? "")
+                                  text: plainText(s.value.object?["text"]?.string ?? ""))
             }
         }
         .sorted { ($0.start, $0.end) < ($1.start, $1.end) }
