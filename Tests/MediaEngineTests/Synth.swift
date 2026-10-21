@@ -161,6 +161,23 @@ enum Synth {
         let r = try TestProcess.run(path, ["-nostdin", "-hide_banner", "-loglevel", "error", "-y"] + args)
         if r.status != 0 { throw MediaError.decodeFailed("ffmpeg exit \(r.status): \(r.stderrText)") }
     }
+
+    /// Number of byte positions where `a` and `b` differ (length difference counts too).
+    /// Equal buffers take a `memcmp` fast path: per-element Swift loops over megabytes are slow
+    /// in debug test builds (QA11-2).
+    static func differingBytes(_ a: [UInt8], _ b: [UInt8]) -> Int {
+        let n = min(a.count, b.count)
+        return a.withUnsafeBufferPointer { (pa: UnsafeBufferPointer<UInt8>) -> Int in
+            b.withUnsafeBufferPointer { (pb: UnsafeBufferPointer<UInt8>) -> Int in
+                let extra = abs(pa.count - pb.count)
+                guard n > 0, let x = pa.baseAddress, let y = pb.baseAddress else { return extra }
+                if memcmp(x, y, n) == 0 { return extra }
+                var count = extra
+                for i in 0..<n where x[i] != y[i] { count += 1 }
+                return count
+            }
+        }
+    }
 }
 
 /// The user's demo recording (read-only). Tests using it skip when it is absent.

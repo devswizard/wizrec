@@ -81,10 +81,10 @@ import Testing
         let a = Self.bytes(try one.convert(frame))
         let b = Self.bytes(try banded.convert(frame))
         #expect(a.count == c.width * c.height * 4)
-        let diff = zip(a, b).filter { $0 != $1 }.count
+        let diff = Synth.differingBytes(a, b)
         #expect(diff == 0, "\(diff) bytes differ")
         // Twice in a row reuses the band contexts.
-        #expect(Self.bytes(try banded.convert(frame)) == a)
+        #expect(Synth.differingBytes(Self.bytes(try banded.convert(frame)), a) == 0)
     }
 
     /// HDR pictures with no bi-planar equivalent are resampled to 4:4:4 10-bit before tone
@@ -112,7 +112,7 @@ import Testing
         let a = Self.bytes(try one.convert(frame))
         let b = Self.bytes(try banded.convert(frame))
         #expect(a.count == c.width * c.height * 4)
-        #expect(zip(a, b).filter { $0 != $1 }.count == 0)
+        #expect(Synth.differingBytes(a, b) == 0)
     }
 
     @Test func bandsCoverRowsOnDitherPeriod() throws {
