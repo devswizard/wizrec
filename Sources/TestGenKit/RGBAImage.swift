@@ -1,3 +1,4 @@
+import Accelerate
 import CoreGraphics
 import CoreVideo
 import Foundation
@@ -42,6 +43,14 @@ public struct RGBAImage: Sendable, Equatable {
             }
             var out = [UInt8](repeating: 255, count: w * h * 4)
             let bpr = image.bytesPerRow
+            // Fast path (QA11-2): vImage reorders the bytes; per-pixel Swift loops over 1080p frames
+            // dominated golden tests in debug builds. Same bytes as the loop below.
+            if Self.permute(UnsafeRawPointer(base), bytesPerRow: bpr, width: w, height: h,
+                            map: [UInt8(ri), UInt8(gi), UInt8(bi), UInt8(ai)], opaque: !hasAlpha, into: &out) {
+                if premul { Self.unpremultiplyPartialAlpha(&out) }
+                self.init(width: w, height: h, pixels: out)
+                return
+            }
             for y in 0..<h {
                 let row = base + y * bpr
                 for x in 0..<w {
@@ -79,6 +88,42 @@ public struct RGBAImage: Sendable, Equatable {
         return UInt8(Swift.min(v, 255))
     }
 
+    /// Copies `height` rows of 4-byte pixels at `src` (row stride `bytesPerRow`) into `out`
+    /// (tightly packed RGBA), output byte i of each pixel = input byte `map[i]`; `opaque` sets
+    /// every alpha to 255. False when vImage refuses (the caller then uses its pixel loop).
+    static func permute(_ src: UnsafeRawPointer, bytesPerRow: Int, width w: Int, height h: Int, map: [UInt8],
+                        opaque: Bool, into out: inout [UInt8]) -> Bool {
+        guard w > 0, h > 0, out.count == w * h * 4 else { return false }
+        return out.withUnsafeMutableBytes { (dst: UnsafeMutableRawBufferPointer) -> Bool in
+            var s = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: src), height: vImagePixelCount(h),
+                                  width: vImagePixelCount(w), rowBytes: bytesPerRow)
+            var d = vImage_Buffer(data: dst.baseAddress, height: vImagePixelCount(h), width: vImagePixelCount(w),
+                                  rowBytes: w * 4)
+            guard vImagePermuteChannels_ARGB8888(&s, &d, map, vImage_Flags(kvImageNoFlags)) == kvImageNoError else {
+                return false
+            }
+            guard opaque else { return true }
+            // copyMask 0x1 = the fourth channel (alpha here).
+            return vImageOverwriteChannelsWithScalar_ARGB8888(255, &d, &d, 0x1, vImage_Flags(kvImageNoFlags)) == kvImageNoError
+        }
+    }
+
+    /// Un-premultiplies, in place, the pixels of packed RGBA `p` whose alpha is 1…254.
+    static func unpremultiplyPartialAlpha(_ p: inout [UInt8]) {
+        p.withUnsafeMutableBufferPointer { (b: inout UnsafeMutableBufferPointer<UInt8>) -> Void in
+            var o = 0
+            while o + 3 < b.count {
+                let a = b[o + 3]
+                if a > 0, a < 255 {
+                    b[o] = unpremultiplied(b[o], alpha: a)
+                    b[o + 1] = unpremultiplied(b[o + 1], alpha: a)
+                    b[o + 2] = unpremultiplied(b[o + 2], alpha: a)
+                }
+                o += 4
+            }
+        }
+    }
+
     /// Copies a `32BGRA` pixel buffer.
     public init?(pixelBuffer pb: CVPixelBuffer) {
         guard CVPixelBufferGetPixelFormatType(pb) == kCVPixelFormatType_32BGRA else { return nil }
@@ -87,6 +132,11 @@ public struct RGBAImage: Sendable, Equatable {
         guard let base = CVPixelBufferGetBaseAddress(pb)?.assumingMemoryBound(to: UInt8.self) else { return nil }
         let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb), bpr = CVPixelBufferGetBytesPerRow(pb)
         var out = [UInt8](repeating: 255, count: w * h * 4)
+        if Self.permute(UnsafeRawPointer(base), bytesPerRow: bpr, width: w, height: h, map: [2, 1, 0, 3],
+                        opaque: false, into: &out) {
+            self.init(width: w, height: h, pixels: out)
+            return
+        }
         for y in 0..<h {
             let row = base + y * bpr
             for x in 0..<w {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import TestGenKit
 import Testing
@@ -174,5 +175,70 @@ func naiveSSIM(_ a: RGBAImage, _ b: RGBAImage) -> Double {
         ctx.draw(rgba, in: CGRect(x: 0, y: 0, width: 2, height: 1))
         let bgra = try #require(ctx.makeImage())
         #expect(RGBAImage(bgra) == src)
+    }
+
+    /// The vImage fast path (QA11-2) gives the bytes of the plain per-pixel reading for every
+    /// 32-bit layout, row padding, partial alpha (un-premultiplied) and "skip" alpha (opaque).
+    @Test func rgbaImageFastPathMatchesPixelLoop() throws {
+        let (w, h, bpr) = (37, 5, 37 * 4 + 12)
+        var raw = [UInt8](repeating: 0, count: bpr * h)
+        var rng: UInt32 = 12_345
+        for i in raw.indices { rng = rng &* 1_664_525 &+ 1_013_904_223; raw[i] = UInt8(truncatingIfNeeded: rng >> 24) }
+        let layouts: [(CGImageAlphaInfo, Bool)] = [
+            (.premultipliedFirst, true), (.premultipliedLast, false), (.last, false), (.first, false),
+            (.noneSkipFirst, true), (.noneSkipLast, false), (.premultipliedFirst, false), (.noneSkipFirst, false),
+        ]
+        for (alpha, little) in layouts {
+            var info = alpha.rawValue
+            if little { info |= CGBitmapInfo.byteOrder32Little.rawValue }
+            // Premultiplied data must not exceed its alpha.
+            var bytes = raw
+            let alphaFirst = alpha == .first || alpha == .premultipliedFirst || alpha == .noneSkipFirst
+            let order: (r: Int, g: Int, b: Int, a: Int) = switch (little, alphaFirst) {
+            case (false, false): (0, 1, 2, 3)
+            case (false, true): (1, 2, 3, 0)
+            case (true, true): (2, 1, 0, 3)
+            case (true, false): (3, 2, 1, 0)
+            }
+            let premul = alpha == .premultipliedFirst || alpha == .premultipliedLast
+            let hasAlpha = !(alpha == .noneSkipFirst || alpha == .noneSkipLast)
+            var expected = [UInt8](repeating: 0, count: w * h * 4)
+            for y in 0..<h {
+                for x in 0..<w {
+                    let p = y * bpr + 4 * x
+                    if premul {
+                        for c in [order.r, order.g, order.b] { bytes[p + c] = min(bytes[p + c], bytes[p + order.a]) }
+                    }
+                    let a = hasAlpha ? bytes[p + order.a] : 255
+                    var px = [bytes[p + order.r], bytes[p + order.g], bytes[p + order.b]]
+                    if premul, a > 0, a < 255 { px = px.map { UInt8(min((Int($0) * 255 + Int(a) / 2) / Int(a), 255)) } }
+                    let o = 4 * (y * w + x)
+                    expected[o] = px[0]; expected[o + 1] = px[1]; expected[o + 2] = px[2]; expected[o + 3] = a
+                }
+            }
+            let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+            let image = try #require(CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: bpr,
+                                             space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                             bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider, decode: nil,
+                                             shouldInterpolate: false, intent: .defaultIntent))
+            #expect(RGBAImage(image).pixels == expected, "alpha \(alpha.rawValue), little-endian \(little)")
+        }
+        // 32BGRA pixel buffer with row padding.
+        var pbOut: CVPixelBuffer?
+        CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA, nil, &pbOut)
+        let pb = try #require(pbOut)
+        CVPixelBufferLockBaseAddress(pb, [])
+        let base = try #require(CVPixelBufferGetBaseAddress(pb)?.assumingMemoryBound(to: UInt8.self))
+        let pbr = CVPixelBufferGetBytesPerRow(pb)
+        var want = [UInt8](repeating: 0, count: w * h * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let s = y * bpr + 4 * x, d = y * pbr + 4 * x, o = 4 * (y * w + x)
+                for c in 0..<4 { base[d + c] = raw[s + c] }
+                want[o] = raw[s + 2]; want[o + 1] = raw[s + 1]; want[o + 2] = raw[s]; want[o + 3] = raw[s + 3]
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(pb, [])
+        #expect(RGBAImage(pixelBuffer: pb)?.pixels == want)
     }
 }
