@@ -110,5 +110,8 @@ private func range(_ s: Double, _ d: Double, _ rate: Int32) -> CMTimeRange {
         #expect(got == Self.mixDigests)
     }
 
-    static let mixDigests = ["e760e735dcaca112", "f63cd75b0afdb6be", "4855c80aafcdbd52"]
+    /// The third case (no project rate) changed on purpose with AUD12-1: its unmeasured source is
+    /// now measured at the mixer's 48 kHz instead of 44.1 kHz (audio.md §2.1 [WizRec]); it was
+    /// "4855c80aafcdbd52" before. The speed-ups themselves changed no digest.
+    static let mixDigests = ["e760e735dcaca112", "f63cd75b0afdb6be", "15eca0a3d6d8b2ff"]
 }

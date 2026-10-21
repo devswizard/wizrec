@@ -5,11 +5,12 @@ import Testing
 import TSCProjKit
 @testable import AudioEngine
 
-// AUD12-1: a project without a usable `audioFormatSampleRate` exports at the 48 kHz fallback
-// while unmeasured sources are measured at Camtasia's 44.1 kHz default (audio.md §2.1), which
-// resamples every such source once. That resample used to make the export ~10× slower.
+// AUD12-1: a project without a usable `audioFormatSampleRate` exports at the 48 kHz fallback.
+// Unmeasured sources used to be measured at Camtasia's 44.1 kHz default, which resampled every
+// such source once and made the export ~10× slower. They are now measured at the mixer's own rate
+// [WizRec, audio.md §2.1]; projects that carry the key (Camtasia always writes it) are unchanged.
 
-/// Stereo 48 kHz test source: a 997 Hz tone with a 5.5 kHz partial (so the 44.1 kHz measurement
+/// Stereo 48 kHz test source: a 997 Hz tone with a 5.5 kHz partial (so a 44.1 kHz measurement
 /// differs from a 48 kHz one in the last digits) and a quiet passage.
 private func writeSource(_ url: URL, seconds: Double) throws {
     let frames = Int(48_000 * seconds)
@@ -29,9 +30,9 @@ private func project(_ url: URL, seconds: Double, raw: String?, lufs: Double = 1
     return p
 }
 
-/// The mix at the exporter's 48 kHz fallback rate, in 0.5 s chunks like an export.
-private func mix(_ p: Project, seconds: Double) async throws -> [[Float]] {
-    let m = P.mixer(p, rate: 48_000)
+/// The mix at `rate` (default: the exporter's 48 kHz fallback), in 0.5 s chunks like an export.
+private func mix(_ p: Project, seconds: Double, rate: Double = 48_000) async throws -> [[Float]] {
+    let m = P.mixer(p, rate: rate)
     var out: [[Float]] = [[], []]
     var t: Int64 = 0
     let end = sec(seconds), step = sec(0.5)
@@ -43,39 +44,44 @@ private func mix(_ p: Project, seconds: Double) async throws -> [[Float]] {
     return out
 }
 
-/// Missing or invalid rate: the scene reports nil, the source is measured at 44.1 kHz and the
-/// 48 kHz mix applies exactly the gain those stored values would give.
-@Test(arguments: [nil, "0", "\"48000\"", "1e9"] as [String?])
-func fallbackRateMeasuresAt44_1kHz(_ raw: String?) async throws {
+/// Missing or invalid rate: the scene reports nil, the source is measured at the mixer's rate
+/// (48 kHz on export, 44.1 kHz for a 44.1 kHz mixer) and the mix applies exactly the gain those
+/// stored values would give.
+@Test(arguments: [nil, "0", "\"48000\"", "1e9"] as [String?], [48_000.0, 44_100.0])
+func fallbackRateMeasuresAtMixRate(_ raw: String?, _ rate: Double) async throws {
     let dir = try Synth.tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
     let u = dir.appendingPathComponent("s.wav")
     try writeSource(u, seconds: 2)
     let fallback = try project(u, seconds: 2, raw: raw)
     #expect(P.scene(fallback).sampleRate == nil)
+    let other: Double = rate == 48_000 ? 44_100 : 48_000
     let pool = MediaPool(diskCacheDirectory: nil)
-    let m44 = try #require(try await SourceLoudness.measure(pool: pool, url: u, stream: 0, mixRate: 44_100))
-    let m48 = try #require(try await SourceLoudness.measure(pool: pool, url: u, stream: 0, mixRate: 48_000))
-    #expect(m44 != m48, "the test signal must tell the two measurement rates apart")
+    let mine = try #require(try await SourceLoudness.measure(pool: pool, url: u, stream: 0, mixRate: rate))
+    let theirs = try #require(try await SourceLoudness.measure(pool: pool, url: u, stream: 0, mixRate: other))
+    #expect(mine != theirs, "the test signal must tell the two measurement rates apart")
 
-    let got = try await mix(fallback, seconds: 2)
-    let stored44 = try await mix(project(u, seconds: 2, raw: "48000", lufs: m44.integratedLUFS, peak: m44.peakLevel), seconds: 2)
-    let stored48 = try await mix(project(u, seconds: 2, raw: "48000", lufs: m48.integratedLUFS, peak: m48.peakLevel), seconds: 2)
+    let got = try await mix(fallback, seconds: 2, rate: rate)
+    let storedMine = try await mix(project(u, seconds: 2, raw: "48000", lufs: mine.integratedLUFS, peak: mine.peakLevel),
+                                   seconds: 2, rate: rate)
+    let storedOther = try await mix(project(u, seconds: 2, raw: "48000", lufs: theirs.integratedLUFS, peak: theirs.peakLevel),
+                                    seconds: 2, rate: rate)
+    let n = Int(2 * rate)
     let counts: [Int] = got.map { (c: [Float]) -> Int in c.count }
-    #expect(counts == [96_000, 96_000])
-    #expect(got == stored44, "fallback must measure at 44.1 kHz")
-    #expect(got != stored48)
+    #expect(counts == [n, n])
+    #expect(got == storedMine, "fallback must measure at the mixer's rate")
+    #expect(got != storedOther)
     // And the gain is the normalisation rule's: −16 LUFS target, peak-capped.
-    let g = AudioMixer.normalisationGain(target: -16, lufs: m44.integratedLUFS, peak: m44.peakLevel)
-    let dry = try await mix(project(u, seconds: 2, raw: raw, lufs: -16, peak: 0.5), seconds: 2)
-    let wet: Double = Double(got[0][24_000]), want: Double = g * Double(dry[0][24_000])
+    let g = AudioMixer.normalisationGain(target: -16, lufs: mine.integratedLUFS, peak: mine.peakLevel)
+    let dry = try await mix(project(u, seconds: 2, raw: raw, lufs: -16, peak: 0.5), seconds: 2, rate: rate)
+    let k = n / 4
+    let wet: Double = Double(got[0][k]), want: Double = g * Double(dry[0][k])
     #expect(abs(wet - want) < 1e-5)
 }
 
 /// Export-like mix of a 30 s source at the 48 kHz fallback vs a valid 48 kHz rate: both measure the
-/// unmeasured source once; only the fallback resamples it to 44.1 kHz (33-tap sinc, bit-exact with
-/// the pinned digests). After AUD12 (quiet machine): debug ≈ 2×, release ≈ 4–5× (the valid path is
-/// close to a copy, ~1 ms per second of audio). Release asserts ≤ 8× against a return of the old
-/// per-channel resampler (≈ 16× in debug); ~1.5× needs measuring at the mix rate (a policy change).
+/// unmeasured source once at 48 kHz, so neither resamples and the costs match. Asserted (≤ 1.5×)
+/// in release builds; debug builds only report. (Measuring at 44.1 kHz cost ≈ 2× in debug and
+/// 4–5× in release even after the resampler speed-ups.)
 @Test(.enabled(if: ProcessInfo.processInfo.environment["WIZREC_PERF"] == "1"))
 func fallbackRateExportCostsLikeAValidRate() async throws {
     let dir = try Synth.tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
@@ -98,6 +104,6 @@ func fallbackRateExportCostsLikeAValidRate() async throws {
     print(String(format: "fallback-rate mix of %.0f s: valid 48 kHz %.3f s, missing %.3f s (%.2f×)",
                  seconds, valid, missing, ratio))
     #if !DEBUG
-    #expect(ratio <= 8, "missing sample rate costs \(ratio)× a valid one")
+    #expect(ratio <= 1.5, "missing sample rate costs \(ratio)× a valid one")
     #endif
 }
