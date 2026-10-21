@@ -69,6 +69,7 @@ same files.
 | Camtasia measures a source when it is added or first opened, and stores the result on the source track. A project with the sentinel values (100.0 / −1.0) gets real values on its first save | [obs] |
 | A **mono** source is measured as if its one channel played on both stereo channels. The result is about 3 LU louder than a plain BS.1770 mono reading | [obs] (+3.0 on speech and clicks) |
 | The measurement is taken at the project's mix rate (`audioFormatSampleRate`, 44100), after resampling. Matching values for the low-level pink noise only appear once we resample to 44.1 kHz | [inf, good fit] |
+| Projects without a usable `audioFormatSampleRate` (Camtasia always writes the key): WizRec's mixer measures unmeasured sources at its own mix rate (48 kHz on export), not at 44.1 kHz, so it never resamples a whole source just to measure it (AUD12-1) | [WizRec] |
 | `peakLevel` is a linear sample peak taken after that resampling. It is neither the 48 kHz sample peak nor a 4× oversampled true peak; the loud pink noise reads +0.30 dBFS, between the two | [inf] |
 | The loud pink noise reads 0.35 LU lower than our 44.1 kHz dual-mono value. Clipping in the conversion, or Camtasia's resampler, may explain it | [?] |
 | WizRec should store values computed the same way (dual-mono for mono sources, at the mix rate, sample peak after resampling), so that projects round-trip without Camtasia remeasuring them differently | [inf] |

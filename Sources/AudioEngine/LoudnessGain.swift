@@ -9,8 +9,10 @@
 //
 // `integratedLUFS` / `peakLevel` come from `sourceTracks[trackNumber]`; when missing (or the
 // 100.0 / −1.0 sentinels) WizRec measures the whole stream the way Camtasia does (audio.md §2.1,
-// AU2): resampled to the mix rate (`audioFormatSampleRate`, 44100 when absent), BS.1770-4 with a
-// mono source as dual mono (+3 LU), and `peakLevel` = linear sample peak after resampling.
+// AU2): resampled to the mix rate (`audioFormatSampleRate`; when the project has no usable rate,
+// the mixer's own rate [WizRec, AUD12-1]: Camtasia always writes the key, and measuring at the
+// rate being mixed avoids resampling the whole source), BS.1770-4 with a mono source as dual mono
+// (+3 LU), and `peakLevel` = linear sample peak after resampling.
 // Silence (−Infinity LUFS) → gain 1. The whole policy lives in `normalisationGain`.
 
 import CoreMedia
@@ -41,13 +43,14 @@ extension AudioMixer {
     }
 
     /// Integrated loudness and linear sample peak of a whole source stream, measured like the
-    /// stored `integratedLUFS` / `peakLevel` (`SourceLoudness.measure`); nil when the file is
-    /// missing or unsupported.
+    /// stored `integratedLUFS` / `peakLevel` (`SourceLoudness.measure`) at the project's rate, or at
+    /// this mixer's rate when the project has none [WizRec]; nil when the file is missing or
+    /// unsupported.
     func measure(url: URL, stream: Int) async throws -> (lufs: Double, peak: Double)? {
         let key = StreamKey(url: url, stream: stream)
         if let v = measured[key] { return v }
         guard let m = try await SourceLoudness.measure(pool: pool, url: url, stream: stream,
-                                                       mixRate: scene.sampleRate ?? SourceLoudness.defaultMixRate)
+                                                       mixRate: scene.sampleRate ?? Double(grid.rate))
         else { return nil }
         let v = (lufs: m.integratedLUFS, peak: m.peakLevel)
         measured[key] = v
