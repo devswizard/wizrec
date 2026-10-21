@@ -25,6 +25,16 @@ through the Mac App Store, whose terms conflict with the GPL.
   `WIZREC_ALLOW_BUILD_RPATHS`): `verify-dmg.sh` OK, load/run paths clean in all 22 Mach-O
   files (no build run path left), 20.9 MB (20941824 bytes), launch-and-quit 7 s, updater
   off. Publish it with a plain `v0.1.1` request line (no `allow-build-rpaths`).
+  v0.1.1 and v0.1.2 are public (2026-10-21).
+- **v0.1.3 in preparation (2026-10-21, `agent/ship14`):** notes draft in
+  `docs/release-notes-template.md`; "What's new" is a `TODO(release)` placeholder that main
+  fills as the app merges land (`scripts/release/check-notes.sh 0.1.3` fails until then, and
+  so does the Release workflow on the tag). Built locally from `main` 93c8a5d + ship14
+  (`VERSION=0.1.3 VERIFY=1 WIZREC_EXPECT_UPDATER=off scripts/release.sh`, no
+  `WIZREC_ALLOW_BUILD_RPATHS`): `verify-dmg.sh` OK, load/run paths clean in all 22 Mach-O
+  files, 21.1 MB (21113856 bytes), launch-and-quit 6 s, updater off;
+  `check-sparkle.sh` OK (committed config off: `public_ed_key` still empty). Rebuild from the
+  final `main` before tagging.
 - **Still waiting on the user:** the Sparkle key pair (one command, below).
 
 ## Prerequisites
@@ -40,6 +50,7 @@ scripts/release.sh                       # ad-hoc signed build/WizRec-0.1.0.dmg,
 VERIFY=1 WIZREC_SIGN_IDENTITY="WizRec Dev" scripts/release.sh   # self-signed + smoke test
 scripts/release/verify-dmg.sh build/WizRec-0.1.0.dmg            # smoke-test an existing DMG
 scripts/release/check-sparkle.sh                                # updater off/on/half-config builds (no key)
+scripts/release/check-notes.sh 0.1.3                            # notes ready for that version (before tagging)
 ```
 
 `verify-dmg.sh` mounts the image read-only (hidden from Finder), checks the bundle ID, the
@@ -103,7 +114,7 @@ Every input is optional; with none set the result is an ad-hoc signed DMG.
 | 4 | `scripts/release/notarize.sh` | `notarytool submit --wait` with a keychain profile, then `stapler staple` and `spctl` |
 | 5 | `scripts/release/make-dmg.sh` | Read-only image with the app, an `/Applications` link, `LICENSE.txt` and `THIRD_PARTY_NOTICES.md`: `diskutil image create from` (APFS, lzfse `ULFO`) where available, else `hdiutil create` (HFS+, zlib `UDZO`); checksum-verified with `hdiutil verify` (not deprecated) |
 | 6 | `sign.sh` + `notarize.sh` on the DMG | Only with a real identity |
-| 7 | `scripts/release/verify-dmg.sh` | Only with `VERIFY=1`: mount, check, launch `--quit-after 5` |
+| 7 | `scripts/release/verify-dmg.sh` | Only with `VERIFY=1`: mount, check, launch `--quit-after 5` (without window restoration, so an installed WizRec's windows are neither reopened nor saved) |
 | 8 | `scripts/release/appcast.sh` | Only with `SPARKLE=1` (see below) |
 
 ## Secrets
@@ -333,9 +344,12 @@ The repository has no remote yet. Once the user creates it (e.g. `devswizard/wiz
 
 No Apple Developer account: releases are ad-hoc signed and never notarized.
 
-1. Bump the version if needed, commit, then tag and push: `git tag v0.1.0 && git push
-   origin v0.1.0`.
-2. The Release workflow builds the DMG (FFmpeg and Sparkle inside, so users install
+1. Bump the version if needed, fill in the notes, and check them:
+   `scripts/release/check-notes.sh <version>` must pass (no `TODO(release)` line, the DMG name
+   and the `blob/`/`tree/` source links all name this version). Commit, then tag and push:
+   `git tag v0.1.0 && git push origin v0.1.0`.
+2. The Release workflow first runs the same notes check (on a tag; it stops there in
+   seconds if the notes are not ready), then builds the DMG (FFmpeg and Sparkle inside, so users install
    nothing else), runs the DMG smoke test, and attaches `WizRec-<version>.dmg` and
    `SHA256SUMS.txt` to a **draft** GitHub Release using `docs/release-notes-template.md`.
 3. Review the notes (prefilled from the template; update "What's new" for releases after
