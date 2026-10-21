@@ -199,7 +199,8 @@ import RenderEngine
 
     // MARK: Canvas handles
 
-    /// Dragging the canvas handles: a corner drag doubles the scale, the rotation knob turns the
+    /// Dragging the canvas handles: a corner drag doubles the size with the opposite corner fixed, a
+    /// Shift-drag of a side stretches one axis, the rotation knob turns the
     /// clip 90°, a crop-mode edge crops a quarter; each drag previews without undo steps and
     /// commits one on mouse-up; the frame the handles draw follows. Scale ▸ Fit fills the
     /// canvas height.
@@ -222,20 +223,51 @@ import RenderEngine
         let w0 = width(f0)
         #expect(w0 > 0)
 
-        // Corner: from the top-right corner to twice as far from the centre, in two drag steps.
+        /// `CanvasView.mouseDragged` for a corner or edge handle (ui-workflow.md §8.1): the
+        /// factors from `CanvasGeometry.resize` times the clip's scale, the translation shift that
+        /// keeps the opposite corner or side in place; one `scale` change when uniform.
+        func resizeChanges(_ handle: CanvasHandle, _ i: ClipInspection, _ fr: CanvasFrame, from start: CGPoint,
+                           to now: CGPoint, free: Bool) throws -> [EditorDocumentModel.ParameterChange] {
+            let r = try #require(CanvasGeometry.resize(handle, frame: fr, start: start, current: now, free: free))
+            func round(_ v: Double, _ q: Double) -> Double { (v * q).rounded() / q }
+            let sx = round((i.values[.scaleX] ?? 1) * r.x, 10_000), sy = round((i.values[.scaleY] ?? 1) * r.y, 10_000)
+            let x = round((i.values[.positionX] ?? 0) + r.dx, 1000), y = round((i.values[.positionY] ?? 0) + r.dy, 1000)
+            let uniform = r.x == r.y && i.values[.scaleX] == i.values[.scaleY]
+            let scale = uniform ? i.changes(.scale, sx) : i.changes(.scaleX, sx) + i.changes(.scaleY, sy)
+            return scale + i.changes(.positionX, x) + i.changes(.positionY, y)
+        }
+        func near(_ p: CGPoint, _ q: CGPoint) -> Bool { hypot(p.x - q.x, p.y - q.y) < 0.01 }
+
+        // Corner: the top-right corner dragged to twice its distance from the bottom-left one,
+        // in two drag steps: uniform ×2, the opposite (bottom-left) corner stays put (§8.1).
         let i0 = try inspection()
-        let corner = f0.corners[2]
-        let far = CGPoint(x: f0.center.x + 2 * (corner.x - f0.center.x), y: f0.center.y + 2 * (corner.y - f0.center.y))
+        let corner = f0.corners[2], anchor = f0.corners[0]
+        let far = CGPoint(x: anchor.x + 2 * (corner.x - anchor.x), y: anchor.y + 2 * (corner.y - anchor.y))
         let mid = CGPoint(x: (corner.x + far.x) / 2, y: (corner.y + far.y) / 2)
         let undoCount = doc.undo.changeCount
         for p in [mid, far] {
-            let v = CanvasGeometry.scale(from: i0.values[.scale] ?? 1, center: f0.center, start: corner, current: p)
-            try doc.preview(i0.changes(.scale, v))
+            try doc.preview(try resizeChanges(.corner(2), i0, f0, from: corner, to: p, free: false))
         }
         #expect(doc.isPreviewing && doc.undo.changeCount == undoCount, "no undo step while dragging")
         try doc.commitPreview()
-        #expect(abs(width(try frame()) / w0 - 2) < 1e-3)
+        let fs = try frame()
+        #expect(abs(width(fs) / w0 - 2) < 1e-3)
+        #expect(near(fs.corners[0], anchor), "opposite corner fixed: \(fs.corners[0]) vs \(anchor)")
+        #expect(near(fs.corners[2], far))
         let afterScale = doc.project.serialized()
+
+        // Shift-drag of the right side: stretches only the width (×1.5), the left side stays.
+        let ie = try inspection()
+        let right = try #require(fs.edgeMidpoints[.right])
+        let stretched = CGPoint(x: right.x + width(fs) / 2, y: right.y)
+        try doc.preview(try resizeChanges(.edge(.right), ie, fs, from: right, to: stretched, free: true))
+        try doc.commitPreview()
+        let fe = try frame()
+        func height(_ fr: CanvasFrame) -> Double { hypot(fr.corners[3].x - fr.corners[0].x, fr.corners[3].y - fr.corners[0].y) }
+        #expect(abs(width(fe) / width(fs) - 1.5) < 1e-3 && abs(height(fe) / height(fs) - 1) < 1e-3)
+        #expect(near(fe.corners[0], fs.corners[0]) && near(fe.corners[3], fs.corners[3]), "left side fixed")
+        try doc.undoLast()
+        #expect(doc.project.serialized() == afterScale)
 
         // Rotation knob: a quarter turn counter-clockwise about the centre.
         let f1 = try frame(), i1 = try inspection()
