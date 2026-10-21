@@ -394,6 +394,11 @@ public struct WhisperCppRecognizer: ProgressReportingBackend {
 enum WhisperProcess {
     struct Result { var status: Int32; var stderrTail: String }
 
+    /// Seconds the exit path waits for stderr to reach EOF once the process has exited. A
+    /// background child that inherited the pipe can hold it open; the result then carries what
+    /// arrived so far.
+    static let drainTimeout: TimeInterval = 2
+
     static func run(_ exe: URL, arguments: [String], progress: (@Sendable (Double) -> Void)?) async throws -> Result {
         let box = ProcessBox()
         return try await withTaskCancellationHandler {
@@ -407,8 +412,13 @@ enum WhisperProcess {
 }
 
 /// Owns the process and resumes the continuation exactly once.
-// @unchecked Sendable: every stored property is read and written only under `lock`; pipe handlers,
-// the termination handler and cancellation each arrive on their own threads.
+///
+/// stdout and stderr are each drained by one dedicated thread doing blocking reads until EOF, so
+/// every stderr byte is appended in order by a single reader. The termination handler waits
+/// (at most `WhisperProcess.drainTimeout`) for stderr's EOF before reporting, so a tool that
+/// writes its error and exits at once still has that error in `stderrTail`.
+// @unchecked Sendable: every stored property is read and written only under `lock`; the reader
+// threads, the termination handler and cancellation each arrive on their own threads.
 private final class ProcessBox: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
@@ -417,6 +427,8 @@ private final class ProcessBox: @unchecked Sendable {
     private var stderrBuffer = Data()
     private var stderrTail = ""
     private var lastProgress = -1.0
+    /// Signalled once the stderr reader has seen EOF and appended everything before it.
+    private let stderrDrained = DispatchSemaphore(value: 0)
 
     func start(_ exe: URL, arguments: [String], progress: (@Sendable (Double) -> Void)?,
                continuation c: CheckedContinuation<WhisperProcess.Result, any Error>) {
@@ -432,18 +444,10 @@ private final class ProcessBox: @unchecked Sendable {
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
-        out.fileHandleForReading.readabilityHandler = { h in
-            if h.availableData.isEmpty { h.readabilityHandler = nil }
-        }
-        err.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil; return }
-            self?.stderr(d, progress)
-        }
+        let drained = stderrDrained
         p.terminationHandler = { [weak self] p in
-            out.fileHandleForReading.readabilityHandler = nil
-            err.fileHandleForReading.readabilityHandler = nil
-            if let rest = try? err.fileHandleForReading.readToEnd(), !rest.isEmpty { self?.stderr(rest, progress) }
+            // Bounded: a background child holding the pipe open must not stall the result.
+            _ = drained.wait(timeout: .now() + WhisperProcess.drainTimeout)
             self?.finished(p.terminationStatus)
         }
         do {
@@ -455,7 +459,36 @@ private final class ProcessBox: @unchecked Sendable {
         } catch {
             lock.unlock()
             finish(.failure(CaptionsError.modelUnavailable("cannot run \(exe.path): \(error.localizedDescription)")))
+            return
         }
+        // Started only after a successful launch: the parent's write ends are closed by then, so
+        // each reader reaches EOF when the last holder of the pipe exits.
+        Self.drain(out.fileHandleForReading) { _ in }
+        Self.drain(err.fileHandleForReading) { [self] d in
+            if let d { stderr(d, progress) } else { stderrEnded(); drained.signal() }
+        }
+    }
+
+    /// Reads `h` on a dedicated thread until EOF or a read error, handing each chunk to `chunk` as
+    /// soon as it arrives, then calls `chunk(nil)` once. Plain `read(2)`: `FileHandle`'s
+    /// `read(upToCount:)` waits for the full count, and `availableData` raises on errors.
+    private static func drain(_ h: FileHandle, _ chunk: @escaping @Sendable (Data?) -> Void) {
+        let t = Thread {
+            let fd = h.fileDescriptor
+            var buf = [UInt8](repeating: 0, count: 64 * 1024)
+            while true {
+                let n = buf.withUnsafeMutableBytes { (b: UnsafeMutableRawBufferPointer) -> Int in
+                    read(fd, b.baseAddress, b.count)
+                }
+                if n > 0 { chunk(Data(buf[0..<n])); continue }
+                if n < 0 && errno == EINTR { continue }
+                break
+            }
+            try? h.close()
+            chunk(nil)
+        }
+        t.name = "WizRec whisper-cli pipe"
+        t.start()
     }
 
     private func stderr(_ d: Data, _ progress: (@Sendable (Double) -> Void)?) {
@@ -465,15 +498,31 @@ private final class ProcessBox: @unchecked Sendable {
         while let nl = stderrBuffer.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
             let line = String(decoding: stderrBuffer[stderrBuffer.startIndex..<nl], as: UTF8.self)
             stderrBuffer.removeSubrange(stderrBuffer.startIndex...nl)
-            guard !line.isEmpty else { continue }
-            if let v = WhisperCppRecognizer.progress(fromLine: line[...]) {
-                if v > lastProgress { lastProgress = v; updates.append(v) }
-            } else {
-                stderrTail = String((stderrTail + "\n" + line).suffix(600))
-            }
+            if let v = take(line) { updates.append(v) }
         }
         lock.unlock()
         for u in updates { progress?(min(u, 0.99)) }
+    }
+
+    /// EOF: a last line without a newline still belongs to the tail.
+    private func stderrEnded() {
+        lock.lock()
+        let line = String(decoding: stderrBuffer, as: UTF8.self)
+        stderrBuffer.removeAll()
+        _ = take(line)
+        lock.unlock()
+    }
+
+    /// One complete stderr line, under `lock`: a new progress value to report, or tail text.
+    private func take(_ line: String) -> Double? {
+        guard !line.isEmpty else { return nil }
+        if let v = WhisperCppRecognizer.progress(fromLine: line[...]) {
+            guard v > lastProgress else { return nil }
+            lastProgress = v
+            return v
+        }
+        stderrTail = String((stderrTail + "\n" + line).suffix(600))
+        return nil
     }
 
     private func finished(_ status: Int32) {
