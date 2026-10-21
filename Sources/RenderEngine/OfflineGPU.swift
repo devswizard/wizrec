@@ -9,8 +9,8 @@ final class OfflineGPU {
     let device: any MTLDevice
     let queue: any MTLCommandQueue
     let compositor: Compositor
-    /// Wraps caller-owned pixel buffers as render targets (zero-copy); thread-safe against
-    /// releases on Metal's completion queue.
+    /// Wraps caller-owned pixel buffers as render targets (zero-copy, straight from their
+    /// IOSurfaces); wrappers may be released on Metal's completion queue.
     private let targetCache: LockedTextureCache?
     /// BT.709 4:2:0 conversion, built on first use.
     private var yuv: YUVOutput?
@@ -38,7 +38,6 @@ final class OfflineGPU {
               CVPixelBufferGetIOSurface(pixelBuffer) != nil, let cache = targetCache else {
             throw RenderError.notImplemented
         }
-        cache.flush()  // drop wrappers of buffers already released
         func wrap(_ plane: Int, _ f: MTLPixelFormat) throws -> (CacheTexture, any MTLTexture) {
             let planar = CVPixelBufferIsPlanar(pixelBuffer)
             let w = planar ? CVPixelBufferGetWidthOfPlane(pixelBuffer, plane) : CVPixelBufferGetWidth(pixelBuffer)

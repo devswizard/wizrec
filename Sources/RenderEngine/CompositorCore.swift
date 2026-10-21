@@ -9,7 +9,8 @@ import simd
 /// Keeps GPU resources (and `CacheTexture`s) alive until the GPU has finished with them.
 // @unchecked: the box is written once before it is handed to the completion
 // handler and only released there; nothing reads or mutates it concurrently.
-// Cache-backed textures in it release through their cache's lock (`LockedTextureCache`).
+// `CacheTexture`s in it hold their pixel buffer until released, so a pool can't reuse the
+// surface while the GPU reads it (MediaEngine `LockedTextureCache`).
 final class GPURetainer: @unchecked Sendable {
     let objects: [AnyObject]
     init(_ objects: [AnyObject]) { self.objects = objects }
