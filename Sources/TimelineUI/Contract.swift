@@ -70,7 +70,15 @@ public final class TimelineView: NSView {
         canvas.frame = bounds
         canvas.autoresizingMask = [.width, .height]
         addSubview(canvas)
+        // The canvas never draws outside the view (NSView no longer clips by default).
+        clipsToBounds = true
         setAccessibilityIdentifier("editor.timeline")
+    }
+
+    /// The canvas always fills the view (autoresizing from a zero first size can leave it off).
+    override public func layout() {
+        super.layout()
+        if canvas.frame != bounds { canvas.frame = bounds }
     }
 
     @available(*, unavailable)

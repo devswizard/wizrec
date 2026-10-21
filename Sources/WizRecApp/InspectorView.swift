@@ -67,7 +67,6 @@ struct InspectorView: View {
                          ? "Select one clip to see and change its properties."
                          : "Click a clip on the timeline or the canvas to see and change its position, size, crop, opacity, speed and volume.")
                         .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .multilineTextAlignment(.center)
                 .accessibilityElement(children: .combine)

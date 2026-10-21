@@ -118,7 +118,6 @@ struct CanvasOverlay: View {
             Text("Your video starts here").font(.title3.weight(.semibold)).foregroundStyle(.white)
             Text("Record your screen, or add videos, images and audio.\nYou can also drag files onto the canvas, the timeline or the media bin.")
                 .font(.callout).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 Button(action: record) { Label("Record Screen", systemImage: "record.circle") }
                     .accessibilityIdentifier("canvas.record")

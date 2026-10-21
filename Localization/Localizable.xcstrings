@@ -90,6 +90,9 @@
     "Add Track" : {
 
     },
+    "Add a track on top" : {
+
+    },
     "Add to Timeline at Playhead" : {
 
     },
@@ -282,6 +285,9 @@
     "Copy" : {
 
     },
+    "Copy the selected clips (⌘C)" : {
+
+    },
     "Could not add %arg: %arg" : {
       "localizations" : {
         "en" : {
@@ -293,6 +299,9 @@
       }
     },
     "Cut" : {
+
+    },
+    "Cut the selected clips (⌘X)" : {
 
     },
     "Defaults" : {
@@ -308,6 +317,12 @@
 
     },
     "Delete Crash Reports" : {
+
+    },
+    "Delete the selected clips and close the gap (⇧⌫)" : {
+
+    },
+    "Delete the selected clips, leaving a gap (⌫)" : {
 
     },
     "Deselect All" : {
@@ -570,6 +585,9 @@
     "Paste" : {
 
     },
+    "Paste at the playhead (⌘V)" : {
+
+    },
     "Patterns" : {
 
     },
@@ -768,6 +786,9 @@
     "Show the performance overlay" : {
 
     },
+    "Show the whole timeline (⌘0)" : {
+
+    },
     "Shows the frame at the playhead. Click a clip to select it, drag to move it." : {
 
     },
@@ -810,7 +831,13 @@
     "Speech recognition needs a download: %arg" : {
 
     },
+    "Split" : {
+
+    },
     "Split at Playhead  (S)" : {
+
+    },
+    "Split at the playhead (S)" : {
 
     },
     "Spoken language" : {
@@ -957,6 +984,12 @@
 
     },
     "Zoom Out" : {
+
+    },
+    "Zoom in (⌘=)" : {
+
+    },
+    "Zoom out (⌘−)" : {
 
     },
     "Zoom the timeline in (⌘=)" : {

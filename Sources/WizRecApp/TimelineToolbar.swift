@@ -1,11 +1,8 @@
 import AppKit
-import Observation
-import SwiftUI
 
-/// Which timeline toolbar buttons can act now; the window controller refreshes it when the
+/// Which timeline toolbar buttons can act now; the window controller recomputes it when the
 /// selection, playhead, project, undo history or pasteboard change.
-@MainActor @Observable
-final class TimelineToolbarState {
+struct TimelineToolbarState: Equatable {
     var canUndo = false
     var canRedo = false
     var undoName: String?
@@ -38,67 +35,121 @@ struct TimelineToolbarActions {
 }
 
 /// The bar above the timeline (ui-workflow.md §9): undo/redo, clipboard, split and delete on
-/// the left, track and snapping in the middle, zoom on the right. Every button names its
-/// shortcut in its tooltip and is disabled when it cannot act.
-struct TimelineToolbar: View {
+/// the left, add track and snapping next, zoom on the right. Every button names its shortcut
+/// in its tooltip and is disabled when it cannot act. Plain AppKit buttons (never the keyboard
+/// focus without Full Keyboard Access, so Space and the arrow keys stay with the editor).
+@MainActor final class TimelineToolbarView: NSView {
     static let height: CGFloat = 30
-    let state: TimelineToolbarState
-    let actions: TimelineToolbarActions
 
-    var body: some View {
-        HStack(spacing: 4) {
-            button("arrow.uturn.backward", "Undo", undoHelp, "timeline.undo", state.canUndo, actions.undo)
-            button("arrow.uturn.forward", "Redo", redoHelp, "timeline.redo", state.canRedo, actions.redo)
-            divider
-            button("scissors", "Cut", "Cut the selected clips (⌘X)", "timeline.cut", state.canCut, actions.cut)
-            button("doc.on.doc", "Copy", "Copy the selected clips (⌘C)", "timeline.copy", state.canCopy, actions.copy)
-            button("doc.on.clipboard", "Paste", "Paste at the playhead (⌘V)", "timeline.paste", state.canPaste, actions.paste)
-            divider
-            button("square.split.1x2", "Split", "Split at the playhead (S)", "timeline.split", state.canSplit, actions.split)
-            button("trash", "Delete", "Delete the selected clips, leaving a gap (⌫)", "timeline.delete",
-                   state.canDelete, actions.delete)
-            button("delete.backward", "Ripple Delete", "Delete the selected clips and close the gap (⇧⌫)",
-                   "timeline.rippleDelete", state.canDelete, actions.rippleDelete)
-            divider
-            button("plus.rectangle.on.rectangle", "Add Track", "Add a track on top", "timeline.addTrack", true, actions.addTrack)
-            Toggle(isOn: Binding(get: { state.snapping }, set: { _ in actions.toggleSnapping() })) {
-                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.borderless)
-            .help("Snapping: clips snap to edges, the playhead and markers")
-            .accessibilityLabel("Snapping")
-            .accessibilityIdentifier("timeline.snapping")
-            Spacer(minLength: 8)
-            button("minus.magnifyingglass", "Zoom Out", "Zoom out (⌘−)", "timeline.zoomOut", state.canZoomOut, actions.zoomOut)
-            button("arrow.left.and.right.square", "Zoom to Fit", "Show the whole timeline (⌘0)", "timeline.zoomToFit",
-                   true, actions.zoomToFit)
-            button("plus.magnifyingglass", "Zoom In", "Zoom in (⌘=)", "timeline.zoomIn", state.canZoomIn, actions.zoomIn)
+    private let actions: TimelineToolbarActions
+    private var buttons: [String: NSButton] = [:]
+    private var handlers: [ObjectIdentifier: () -> Void] = [:]
+    private(set) var state = TimelineToolbarState()
+
+    init(actions: TimelineToolbarActions) {
+        self.actions = actions
+        super.init(frame: NSRect(x: 0, y: 0, width: 600, height: Self.height))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.toolbar)
+        setAccessibilityLabel(String(localized: "Timeline tools"))
+
+        let left = NSStackView(views: [
+            make("timeline.undo", "arrow.uturn.backward", String(localized: "Undo"), String(localized: "Undo (⌘Z)"), actions.undo),
+            make("timeline.redo", "arrow.uturn.forward", String(localized: "Redo"), String(localized: "Redo (⇧⌘Z)"), actions.redo),
+            Self.separator(),
+            make("timeline.cut", "scissors", String(localized: "Cut"), String(localized: "Cut the selected clips (⌘X)"), actions.cut),
+            make("timeline.copy", "doc.on.doc", String(localized: "Copy"), String(localized: "Copy the selected clips (⌘C)"), actions.copy),
+            make("timeline.paste", "doc.on.clipboard", String(localized: "Paste"), String(localized: "Paste at the playhead (⌘V)"),
+                 actions.paste),
+            Self.separator(),
+            make("timeline.split", "square.split.1x2", String(localized: "Split"), String(localized: "Split at the playhead (S)"),
+                 actions.split),
+            make("timeline.delete", "trash", String(localized: "Delete"),
+                 String(localized: "Delete the selected clips, leaving a gap (⌫)"), actions.delete),
+            make("timeline.rippleDelete", "delete.backward", String(localized: "Ripple Delete"),
+                 String(localized: "Delete the selected clips and close the gap (⇧⌫)"), actions.rippleDelete),
+            Self.separator(),
+            make("timeline.addTrack", "plus.rectangle.on.rectangle", String(localized: "Add Track"),
+                 String(localized: "Add a track on top"), actions.addTrack),
+            make("timeline.snapping", "point.topleft.down.to.point.bottomright.curvepath", String(localized: "Snapping"),
+                 String(localized: "Snapping: clips snap to edges, the playhead and markers"), actions.toggleSnapping, toggle: true),
+        ])
+        let right = NSStackView(views: [
+            make("timeline.zoomOut", "minus.magnifyingglass", String(localized: "Zoom Out"), String(localized: "Zoom out (⌘−)"),
+                 actions.zoomOut),
+            make("timeline.zoomToFit", "arrow.left.and.right.square", String(localized: "Zoom to Fit"),
+                 String(localized: "Show the whole timeline (⌘0)"), actions.zoomToFit),
+            make("timeline.zoomIn", "plus.magnifyingglass", String(localized: "Zoom In"), String(localized: "Zoom in (⌘=)"),
+                 actions.zoomIn),
+        ])
+        for s in [left, right] {
+            s.orientation = .horizontal
+            s.spacing = 2
+            s.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(s)
         }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.bar)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Timeline tools")
+        NSLayoutConstraint.activate([
+            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            left.centerYAnchor.constraint(equalTo: centerYAnchor),
+            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            right.centerYAnchor.constraint(equalTo: centerYAnchor),
+            right.leadingAnchor.constraint(greaterThanOrEqualTo: left.trailingAnchor, constant: 8),
+        ])
+        apply(state, force: true)
     }
 
-    private var undoHelp: String {
-        state.undoName.map { String(localized: "Undo \($0) (⌘Z)") } ?? String(localized: "Undo (⌘Z)")
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
+        NSColor.separatorColor.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
-    private var redoHelp: String {
-        state.redoName.map { String(localized: "Redo \($0) (⇧⌘Z)") } ?? String(localized: "Redo (⇧⌘Z)")
+    /// Shows `new`: enabled states, the snapping toggle and the undo/redo tooltips.
+    func apply(_ new: TimelineToolbarState, force: Bool = false) {
+        guard force || new != state else { return }
+        state = new
+        let enabled: [String: Bool] = [
+            "timeline.undo": new.canUndo, "timeline.redo": new.canRedo, "timeline.cut": new.canCut,
+            "timeline.copy": new.canCopy, "timeline.paste": new.canPaste, "timeline.split": new.canSplit,
+            "timeline.delete": new.canDelete, "timeline.rippleDelete": new.canDelete,
+            "timeline.zoomIn": new.canZoomIn, "timeline.zoomOut": new.canZoomOut,
+        ]
+        for (id, on) in enabled { buttons[id]?.isEnabled = on }
+        buttons["timeline.snapping"]?.state = new.snapping ? .on : .off
+        buttons["timeline.undo"]?.toolTip = new.undoName.map { String(localized: "Undo \($0) (⌘Z)") } ?? String(localized: "Undo (⌘Z)")
+        buttons["timeline.redo"]?.toolTip = new.redoName.map { String(localized: "Redo \($0) (⇧⌘Z)") } ?? String(localized: "Redo (⇧⌘Z)")
     }
 
-    private var divider: some View { Divider().frame(height: 16).padding(.horizontal, 3) }
+    private func make(_ id: String, _ symbol: String, _ label: String, _ tip: String, _ action: @escaping () -> Void,
+                      toggle: Bool = false) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+            ?? NSImage(systemSymbolName: "questionmark", accessibilityDescription: label) ?? NSImage()
+        let b = NSButton(image: image, target: self, action: #selector(press(_:)))
+        b.bezelStyle = .accessoryBarAction
+        b.isBordered = toggle
+        b.setButtonType(toggle ? .pushOnPushOff : .momentaryPushIn)
+        b.imageScaling = .scaleProportionallyDown
+        b.toolTip = tip
+        b.setAccessibilityLabel(label)
+        b.setAccessibilityIdentifier(id)
+        b.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        buttons[id] = b
+        handlers[ObjectIdentifier(b)] = action
+        return b
+    }
 
-    private func button(_ symbol: String, _ label: LocalizedStringKey, _ help: String, _ id: String, _ enabled: Bool,
-                        _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 13)).frame(width: 22, height: 20) }
-            .buttonStyle(.borderless)
-            .disabled(!enabled)
-            .help(help)
-            .accessibilityLabel(label)
-            .accessibilityIdentifier(id)
+    @objc private func press(_ sender: NSButton) { handlers[ObjectIdentifier(sender)]?() }
+
+    private static func separator() -> NSView {
+        let v = NSBox()
+        v.boxType = .separator
+        v.widthAnchor.constraint(equalToConstant: 9).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        return v
     }
 }

@@ -129,7 +129,7 @@ case_start_screen() {
 
 case_editor() {
     : > "$WORK/app.log"
-    open_project --no-audio -WizRec.SidebarTab media ${shots[@]+"${shots[@]}"} || return
+    open_project --no-audio --window-size 1280x800 -WizRec.SidebarTab media ${shots[@]+"${shots[@]}"} || return
     local before tile
     before=$(imports)
     drop_on editor.canvas 0 0 2 "$WORK/clip.mp4"

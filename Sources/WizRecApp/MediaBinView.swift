@@ -116,7 +116,6 @@ struct MediaBinView: View {
                         .accessibilityHidden(true)
                     Text("Your recordings and imported media appear here. Drag files here from Finder, or:")
                         .multilineTextAlignment(.center).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                     Button("Import Media…") { actions.importMedia() }
                         .accessibilityIdentifier("bin.importMedia")
                         .help("Add video, audio or image files (⌘I)")
