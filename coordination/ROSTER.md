@@ -152,6 +152,7 @@ Not spawned (no finding / no licensed exports yet): render, captions, audio.
 | researcher | a27765824dc8d7f4d | `agent/researcher15` |
 | qa | aae9206b121acedd4 | `agent/qa16` |
 | media | a820d7956aa00b898 | `agent/media15` |
+| export | ac2bdad39fa36e0bd | `agent/export16` (QA19-F1 export stall watch counts sleep) |
 
 Not spawned (no Sparkle key, no licensed exports, no finding yet): ship, render, captions, audio.
 

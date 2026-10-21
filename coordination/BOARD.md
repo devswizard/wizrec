@@ -460,6 +460,7 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 | RES15-2 | researcher | done | canvas handles and crop mode behaviour (§8), save-only |
 | QA15-1 | qa | done | integration tests: every import path through `DropClip`, canvas drop, key loop model; every session-11 merge |
 | QA15-2 | qa | done | flaky watch on each merge under `-O` and load |
+| EXP16-1 | export | claimed | StallWatch measures awake time (QA19-F1: sleep mid-export → encoderStalled) |
 | MED15-1 | media | done | measure 4K tone-map texture cost; IOSurface texture reuse cache only if it matters |
 
 ## Session 11 merges
