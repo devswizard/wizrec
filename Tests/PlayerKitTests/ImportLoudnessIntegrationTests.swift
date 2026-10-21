@@ -75,13 +75,14 @@ import TSCProjKit
         try bundle.save()
         let keyless = try EditorDocumentModel(url: url)
         #expect(keyless.audioScene.sampleRate == nil)
+        #expect(keyless.audioSampleRate == 48_000, "keyless playback mixes at the export rate")
         let s = try await keyless.importMedia(a)
         let t = try #require(keyless.project.source(id: s)?.tracks.first)
         #expect(abs((t.integratedLUFS ?? 0) - at48.integratedLUFS) < 1e-9, "stored at 15 significant digits")
         #expect(abs((t.object["peakLevel"]?.double ?? -1) - at48.peakLevel) < 1e-9)
 
         let keyed = try EditorDocumentModel.untitled(width: 640, height: 360, in: dir)
-        #expect(keyed.audioScene.sampleRate == 44_100)
+        #expect(keyed.audioScene.sampleRate == 44_100 && keyed.audioSampleRate == 44_100)
         let k = try await keyed.importMedia(a)
         #expect(abs((keyed.project.source(id: k)?.tracks.first?.integratedLUFS ?? 0) - at44.integratedLUFS) < 1e-9)
     }

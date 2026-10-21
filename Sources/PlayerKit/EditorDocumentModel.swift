@@ -104,10 +104,11 @@ public final class EditorDocumentModel {
         if dir.lastPathComponent.hasPrefix("WizRec-Untitled-") { try? FileManager.default.removeItem(at: dir) }
     }
 
-    /// Output sample rate for playback, Hz.
+    /// Output sample rate for playback, Hz: the project's `audioFormatSampleRate`, or, when the
+    /// project has no usable rate, the rate export mixes it at (`MixFormat`'s 48 kHz), so playback
+    /// and export mix (and measure unmeasured sources) at the same rate.
     public var audioSampleRate: Double {
-        let r = bundle.project.audioSampleRate
-        return r > 0 ? Double(r) : 44100
+        audioScene.sampleRate.map { $0.rounded() } ?? MixFormat().sampleRate
     }
 
     /// A playback engine for this document; `audio` false plays silently on the host clock.
