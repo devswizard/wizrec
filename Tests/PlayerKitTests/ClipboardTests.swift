@@ -29,15 +29,16 @@ import TSCProjKit
         let doc = try EditorDocumentModel.untitled(in: dir)
         let clip = try await doc.importAndInsert(png, at: 0)
         let payload = try doc.copyClips([clip])
-        // Pasting over the original (track 0, t = 0) lands on a new top track instead.
+        // Pasting over the original (track 0, t = 0) lands on a new top track instead
+        // (above the new project's two tracks, TL15-1).
         let ids = try await doc.paste(payload, origin: doc.bundle.directory, track: 0, at: 0)
         #expect(ids.count == 1)
-        #expect(doc.project.tracks.count == 2)
-        #expect(doc.project.tracks[1].clips.map(\.id) == ids)
+        #expect(doc.project.tracks.count == 3)
+        #expect(doc.project.tracks[2].clips.map(\.id) == ids)
         #expect(doc.project.sourceBin.count == 1)                 // source reused by src
         #expect(doc.undo.undoName == "Paste")
         try doc.undoLast()
-        #expect(doc.project.tracks.count == 1)
+        #expect(doc.project.tracks.count == 2)
         // Free spot: same track.
         let later = try await doc.paste(payload, origin: doc.bundle.directory, track: 0, at: 6 * 705_600_000)
         #expect(doc.project.tracks[0].clips.map(\.id).contains(later[0]))

@@ -44,9 +44,9 @@ private func demoBundleCopy() throws -> URL {
     #expect(p.authoringClient.platform == "Mac")
     #expect(p.authoringClient.version == ProjectBundle.authoringVersion)
     #expect(p.sourceBin.isEmpty)
-    #expect(p.tracks.count == 1)
-    #expect(p.tracks[0].clips.isEmpty)
-    #expect(p.timeline?.trackAttributes.count == 1)
+    #expect(p.tracks.count == 2)
+    #expect(p.tracks.allSatisfy { $0.clips.isEmpty })
+    #expect(p.timeline?.trackAttributes.count == 2)
     #expect(p.timeline?.backgroundColor == [0, 0, 0, 255])
     // Same top-level and timeline key sets/order as a Camtasia 2026 project.
     let demo = try Project(contentsOf: fixtureURL())
@@ -57,6 +57,53 @@ private func demoBundleCopy() throws -> URL {
     #expect(p.root["targetLoudness"]?.number?.lexeme == "-18.0")
     // Serialisation is stable.
     #expect(try Project(data: p.serialized()).serialized() == p.serialized())
+}
+
+/// TL15-1: a new project has two empty tracks (ui-workflow §2), each the shape
+/// Camtasia 2026 saves for an empty track (the demo project's track 1 [obs]).
+@Test func createStartsWithTwoEmptyTracks() throws {
+    let url = try tempDir().appendingPathComponent("Two.cmproj")
+    _ = try ProjectBundle.create(at: url)
+    let p = try ProjectBundle(url: url).project
+    let timeline = try #require(p.timeline?.object)
+    let wantScenes = try JSON.parse("""
+    {"scenes" : [{"csml" : {"tracks" : [
+      {"trackIndex" : 0, "medias" : [], "parameters" : {}},
+      {"trackIndex" : 1, "medias" : [], "parameters" : {}}]}}]}
+    """)
+    #expect(timeline["sceneTrack"] == wantScenes)
+    let attrs = """
+    {"ident" : "", "audioMuted" : false, "videoHidden" : false, "magnetic" : false, "matte" : 0, "solo" : false,
+     "metadata" : {"IsLocked" : "False", "trackHeight" : "56"}}
+    """
+    #expect(timeline["trackAttributes"] == (try JSON.parse("[\(attrs), \(attrs)]")))
+
+    // Same shape as the empty track Camtasia wrote in the demo project.
+    let demo = try Project(contentsOf: fixtureURL())
+    let demoTracks = demo.tracks
+    let demoAttrs = try #require(demo.timeline?.trackAttributes)
+    try #require(demoTracks.count == 2 && demoAttrs.count == 2 && demoTracks[1].clips.isEmpty)
+    #expect(JSON.object(p.tracks[1].object) == JSON.object(demoTracks[1].object))
+    let mine = try #require(p.timeline?.trackAttributes[1])
+    #expect(mine.keys == demoAttrs[1].keys)
+    #expect(mine["metadata"]?.object?.keys == demoAttrs[1]["metadata"]?.object?.keys)
+
+    // Lossless: the written file parses and re-serialises to the same bytes.
+    let bytes = try Data(contentsOf: url.appendingPathComponent("project.tscproj"))
+    #expect(try Project(data: bytes).serialized() == bytes)
+}
+
+@Test func createHonoursTrackCount() throws {
+    let dir = try tempDir()
+    let one = try ProjectBundle.create(at: dir.appendingPathComponent("One.cmproj"), trackCount: 1)
+    #expect(one.project.tracks.count == 1 && one.project.timeline?.trackAttributes.count == 1)
+    let four = ProjectTemplate.newProject(width: 640, height: 360, fps: 30, trackCount: 4)
+    #expect(four.tracks.map(\.index) == [0, 1, 2, 3])
+    #expect(four.timeline?.trackAttributes.count == 4)
+    #expect(ProjectTemplate.newProject(width: 640, height: 360, fps: 30, trackCount: 0).tracks.count == 1)
+    let none = dir.appendingPathComponent("None.cmproj")
+    #expect(throws: BundleWriteError.self) { try ProjectBundle.create(at: none, trackCount: 0) }
+    #expect(!FileManager.default.fileExists(atPath: none.path))
 }
 
 @Test func createRefusesExistingURL() throws {

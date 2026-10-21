@@ -273,10 +273,10 @@ private func writeImage(_ url: URL) throws {
         try doc.undo.perform(AddTrack(at: 1))           // e.g. a timeline gesture
         doc.syncWithUndoStack()
         #expect(doc.isDirty)
-        #expect(doc.project.tracks.count == 2)
+        #expect(doc.project.tracks.count == 3)          // a new project has two tracks (TL15-1)
         try doc.undoLast()
         #expect(!doc.isDirty)
-        #expect(doc.project.tracks.count == 1)
+        #expect(doc.project.tracks.count == 2)
     }
 
     @Test func placementAvoidsOverlapAndAddsTrack() async throws {
@@ -288,23 +288,30 @@ private func writeImage(_ url: URL) throws {
         let first = try await doc.importAndInsert(img, at: 0)
         let source = try #require(doc.project.sourceBin.first?.id)
         // Drop rules (ui-workflow.md §4, DropRules): 3 s into the 5 s image is past the insert
-        // window, so the busy timeline drop goes on a new top track.
+        // window, so the busy timeline drop goes on the lowest higher track with room: the new
+        // project's empty track 1 (TL15-1).
         let second = try doc.insertSource(source, at: 3 * 705_600_000, track: 0)
         #expect(doc.project.tracks.count == 2)
         #expect(doc.project.tracks[0].clips.map(\.id) == [first])
         #expect(doc.project.tracks[1].clips.map(\.id) == [second])
         #expect(doc.undo.undoName == "Add to Timeline")
+        // With every higher track busy: a new top track, removed again with the clip on undo.
+        let third = try doc.insertSource(source, at: 4 * 705_600_000, track: 0)
+        #expect(doc.project.tracks.count == 3)
+        #expect(doc.project.tracks[2].clips.map(\.id) == [third])
         try doc.undoLast()
-        #expect(doc.project.tracks.count == 1)          // track and clip removed together
+        #expect(doc.project.tracks.count == 2)          // track and clip removed together
+        try doc.undoLast()
+        #expect(doc.project.tracks[1].clips.isEmpty)
         // 1 s in (inside the insert window): inserted at the image's start, the image pushed right.
         let inserted = try doc.insertSource(source, at: 705_600_000, track: 0)
-        #expect(doc.project.tracks.count == 1)
+        #expect(doc.project.tracks.count == 2)
         #expect(doc.project.tracks[0].clips.map(\.id) == [inserted, first])
         #expect(doc.project.tracks[0].clips.first?.start == 0)
         #expect(doc.project.tracks[0].clips.last?.start == doc.project.tracks[0].clips.first?.end)
         try doc.undoLast()
-        let third = try doc.insertSource(source, at: 5 * 705_600_000, track: 0)    // free after the first
-        #expect(doc.project.tracks[0].clips.map(\.id).contains(third))
+        let fourth = try doc.insertSource(source, at: 5 * 705_600_000, track: 0)    // free after the first
+        #expect(doc.project.tracks[0].clips.map(\.id).contains(fourth))
     }
 
     @Test func severalFilesStackInOneStep() async throws {
@@ -326,7 +333,7 @@ private func writeImage(_ url: URL) throws {
         #expect(doc.project.tracks[1].clips.map(\.id) == [ids[1]])
         #expect(doc.undo.undoName == "Add Recording")
         try doc.undoLast()
-        #expect(doc.project.sourceBin.isEmpty && doc.project.tracks.count == 1)
+        #expect(doc.project.sourceBin.isEmpty && doc.project.tracks.count == 2)
         try doc.redoLast()
         #expect(doc.project.tracks.flatMap(\.clips).map(\.id).sorted() == ids.sorted())
     }

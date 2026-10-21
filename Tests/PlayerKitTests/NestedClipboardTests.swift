@@ -42,7 +42,7 @@ import TSCProjKit
         let g = try #require(doc.project.tracks[0].clips.first)
         #expect(ids.count == 1 && g.tracks.count == 2)
         #expect(g.tracks[1].clips.map { [$0.id, $0.start] } == [[ids[0], 0]])
-        #expect(doc.project.tracks.count == 1 && doc.undo.undoName == "Paste")
+        #expect(doc.project.tracks.count == 2 && doc.undo.undoName == "Paste")   // new project: 2 tracks
         try doc.undoLast()
         #expect(doc.project.serialized() == before)
 

@@ -42,9 +42,8 @@ import TimelineEngine
         let sa = try #require(a.sourceID), sb = try #require(b.sourceID), sc = try #require(c.sourceID)
         #expect(Set([sa, sb, sc]).count == 3)
 
-        // Tracks: 0 = A clips, 1 = B clips, 2 = image.
+        // Tracks: 0 = A clips, 1 = B clips, 2 = image. A new project has tracks 0 and 1 (TL15-1).
         try chain.run(AddTrack(at: 1))
-        try chain.run(AddTrack(at: 2))
         #expect(chain.project.tracks.count == 3)
         let a1 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: 0)).clipID)
         let a2 = try #require(try chain.run(InsertClip(sourceID: sa, track: 0, start: frames(60))).clipID)

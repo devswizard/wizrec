@@ -37,10 +37,9 @@ import WizRecAssets
             ctx.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
             ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
         }
-        let doc = try EditorDocumentModel.untitled(in: dir)   // one empty track
+        let doc = try EditorDocumentModel.untitled(in: dir)   // two empty tracks (TL15-1)
         let tb = doc.project.timebase
         _ = try await doc.importAndInsert(png, at: 0, track: 0)   // 0–5 s on track 0
-        try doc.perform(AddTrack(at: 1))
         let blur = try #require(AssetCatalog.callout(id: "region-blur"))
 
         // Over the image: track 1 (just above it), scaled to 640 px.
