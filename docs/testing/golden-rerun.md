@@ -13,8 +13,10 @@ golden-frame case and golden sheet skips cleanly; the harness self-tests
 | `SheetGoldenTests` (EF1–EF9, CO1–CO2) | suite disabled | each sheet prints `sheet <name>: no reference yet …, skipped`; EF8/EF9 print `after-EF0, skipped` |
 | `GoldenHarnessSelfTests`, `SheetHarnessSelfTests` | run (need Metal) | run |
 
-The self-tests record 18 *known issues* on purpose (a reference shifted one
-frame, a damaged cell); they are expected and do not fail the run.
+The self-tests break a reference on purpose (a reference shifted one frame, a
+damaged cell, an unreachable PSNR floor). Since QA14-3 (2026-10-21) the harness
+hands those failures to a `GoldenFailures` collector and the self-tests check
+them, so they record no *known issues*; a known issue in a run is always real.
 
 ## One command
 
