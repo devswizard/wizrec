@@ -15,6 +15,9 @@
 //   - action: exposes AXPress;
 //   - focus: AXFocused is settable, and setting it makes the tile the app's focused element;
 //   - keyboard: Tab from a focused tile moves keyboard focus to another tile (key view loop);
+//   - keyboard walk: Tab from the search field enters the grid, Tab visits every tile of the
+//     tab once (tiles the lazy grid has not realized scroll into view), Tab from the last
+//     tile leaves the grid, Shift-Tab from the first tile returns to the search field;
 //
 // and that every expected tile of the tab was found. Prints PASS/FAIL lines; exit status is
 // the number of failures (capped at 125).
@@ -113,6 +116,16 @@ func focusedIdentifier() -> String {
     return string(f as! AXUIElement, kAXIdentifierAttribute)
 }
 
+/// The focused element for a log line: its identifier, or its role and title/description.
+func focusedDescription() -> String {
+    guard let f = attr(app, kAXFocusedUIElementAttribute) else { return "nothing" }
+    let e = f as! AXUIElement   // swiftlint:disable:this force_cast
+    let id = string(e, kAXIdentifierAttribute)
+    if !id.isEmpty { return id }
+    let label = [string(e, kAXTitleAttribute), string(e, kAXDescriptionAttribute)].first { !$0.isEmpty } ?? ""
+    return label.isEmpty ? string(e, kAXRoleAttribute) : "\(string(e, kAXRoleAttribute)) \"\(label)\""
+}
+
 /// The scroll area holding `tile` (its nearest AXScrollArea ancestor).
 func scrollArea(of tile: AXUIElement) -> AXUIElement? {
     var e: AXUIElement? = tile
@@ -197,6 +210,68 @@ for tab in tabs {
         wait(0.3)
         if focusedIdentifier() == firstID { pass("\(tab): Shift-Tab returns to \(firstID)") }
         else { fail("\(tab): Shift-Tab went to \"\(focusedIdentifier())\"") }
+    }
+
+    // Keyboard walk (APP12-1): Tab from the search field enters the grid; Tab then visits
+    // every tile of the tab once, including those the lazy grid had not realized (they scroll
+    // into view); Tab from the last tile leaves the grid; Shift-Tab from the first tile
+    // returns to the search field.
+    guard let search = first(window, where: { string($0, kAXIdentifierAttribute) == "librarySearch" }) else {
+        fail("\(tab): no search field (librarySearch)"); continue
+    }
+    let realizedAtTop = Set(tiles(in: window).map { string($0, kAXIdentifierAttribute) })
+    func focusSearch() {
+        AXUIElementSetAttributeValue(search, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        wait(0.3)
+    }
+    focusSearch()
+    if focusedIdentifier() != "librarySearch" {
+        fail("\(tab): focusing the search field left focus on \"\(focusedIdentifier())\""); continue
+    }
+    key(48)
+    wait(0.4)
+    let entry = focusedIdentifier()
+    guard entry.hasPrefix("library.") else {
+        fail("\(tab): Tab from the search field went to \"\(entry)\", not to a tile"); continue
+    }
+    pass("\(tab): Tab from the search field enters the grid at \(entry)")
+    var visited: [String] = [entry]
+    var leftTo = ""
+    for _ in 0..<(want.count + 2) {
+        key(48)
+        wait(0.4)
+        let f = focusedIdentifier()
+        if !f.hasPrefix("library.") || visited.contains(f) { leftTo = f; break }
+        visited.append(f)
+    }
+    let visitedSet = Set(visited)
+    let notReached = want.filter { !visitedSet.contains($0) }
+    if notReached.isEmpty, visited.count == want.count {
+        let offscreen = visited.filter { !realizedAtTop.contains($0) }.count
+        pass("\(tab): Tab visits all \(want.count) tiles once (\(offscreen) not realized at the start)")
+    } else {
+        fail("\(tab): Tab visited \(visited.count) of \(want.count) tiles; not reached \(notReached.prefix(6)); stopped at \"\(leftTo)\"")
+    }
+    let lastTile = visited.last ?? entry
+    if leftTo == lastTile {
+        fail("\(tab): Tab from the last tile \(lastTile) left focus there")
+    } else if leftTo.hasPrefix("library.") {
+        fail("\(tab): Tab from the last tile \(lastTile) went back to tile \(leftTo)")
+    } else {
+        pass("\(tab): Tab from the last tile \(lastTile) leaves the grid (to \(focusedDescription()))")
+    }
+    // Back at the top: Shift-Tab from the first tile goes to the search field.
+    focusSearch()
+    key(48)
+    wait(0.4)
+    if focusedIdentifier() == entry {
+        key(48, shift: true)
+        wait(0.4)
+        let back = focusedIdentifier()
+        if back == "librarySearch" { pass("\(tab): Shift-Tab from the first tile \(entry) returns to the search field") }
+        else { fail("\(tab): Shift-Tab from the first tile \(entry) went to \"\(back)\", not to the search field") }
+    } else {
+        fail("\(tab): Tab from the search field went to \"\(focusedIdentifier())\" the second time, not \(entry)")
     }
 }
 

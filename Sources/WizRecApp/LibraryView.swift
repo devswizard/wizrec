@@ -228,6 +228,8 @@ struct LibraryList: View {
     let apply: (LibraryItem.Kind, String) -> Bool
     let hint: LocalizedStringKey
     @State private var query = ""
+    @State private var focus = LibraryTileFocus()
+    @FocusState private var searchFocused: Bool
     private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 8)]
 
     /// Drag pasteboard type; nil for audio items (double-click only: the timeline takes no audio drops).
@@ -255,31 +257,60 @@ struct LibraryList: View {
         return out
     }
 
+    /// Tile identifiers in reading order (sections top to bottom, each grid row-major).
+    private var focusOrder: [String] {
+        sections.flatMap { group in group.items.map { (item: LibraryItem) -> String in "library.\(item.name)" } }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TextField("Search", text: $query)
                 .textFieldStyle(.roundedBorder)
+                .focused($searchFocused)
+                .accessibilityIdentifier("librarySearch")
+                .onKeyPress(.tab, phases: .down) { press in
+                    // Tab from the search field enters the grid at its first tile.
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    return focus.enterFromSearchField(backward: false) ? .handled : .ignored
+                }
                 .padding(.horizontal, 10).padding(.top, 8)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if shown.isEmpty {
-                        Text("No matches").font(.callout).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity).padding(.top, 20)
+            ScrollViewReader { proxy in
+                grid
+                    .onAppear { connectFocus(proxy) }
+                    .onChange(of: focusOrder) { _, order in focus.order = order }
+            }
+        }
+    }
+
+    private func connectFocus(_ proxy: ScrollViewProxy) {
+        focus.order = focusOrder
+        focus.scrollTo = { id, backward in
+            proxy.scrollTo(id, anchor: backward ? UnitPoint.top : UnitPoint.bottom)
+        }
+        let field = $searchFocused
+        focus.focusSearchField = { field.wrappedValue = true }
+    }
+
+    private var grid: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if shown.isEmpty {
+                    Text("No matches").font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.top, 20)
+                }
+                ForEach(sections, id: \.title) { group in
+                    if let t = group.title.isEmpty ? nil : group.title {
+                        Text(t).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                            .accessibilityAddTraits(.isHeader)
                     }
-                    ForEach(sections, id: \.title) { group in
-                        if let t = group.title.isEmpty ? nil : group.title {
-                            Text(t).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                                .padding(.top, 4)
-                                .accessibilityAddTraits(.isHeader)
-                        }
-                        LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(group.items) { tile($0) }
-                        }
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(group.items) { tile($0).id("library.\($0.name)") }
                     }
                 }
-                .padding(10)
             }
+            .padding(10)
         }
     }
 
@@ -301,7 +332,7 @@ struct LibraryList: View {
         // AXDescription; an AppKit element in front of the tile carries them (mouse passes through).
         .accessibilityHidden(true)
         .overlay(LibraryTileAccessibility(title: item.title, note: item.note, hint: Self.hint(for: kind),
-                                          identifier: "library.\(item.name)") { apply(kind, item.name) })
+                                          identifier: "library.\(item.name)", focus: focus) { apply(kind, item.name) })
     }
 
     static func hint(for kind: LibraryItem.Kind) -> String {
@@ -332,11 +363,15 @@ struct LibraryTileAccessibility: NSViewRepresentable {
     var note: String?
     var hint: String
     var identifier: String
+    var focus: LibraryTileFocus
     var press: () -> Bool
 
     final class Element: NSView {
         var press: () -> Bool = { false }
         var title = ""
+        /// The tile this element shows (`library.<name>`) and the grid's focus order.
+        var tileID = ""
+        weak var focus: LibraryTileFocus?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         // NSView drops a stored AXTitle for button roles; answer it directly.
         override func accessibilityTitle() -> String? { title }
@@ -368,38 +403,17 @@ struct LibraryTileAccessibility: NSViewRepresentable {
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if mods.isEmpty, [49, 36, 76].contains(event.keyCode) {   // Space, Return, keypad Enter
                 _ = accessibilityPerformPress()
-            } else if event.keyCode == 48, mods.subtracting(.shift).isEmpty, focusNeighbour(backward: mods.contains(.shift)) {
-                return   // Tab / Shift-Tab
+            } else if event.keyCode == 48, mods.subtracting(.shift).isEmpty, let focus {
+                focus.move(from: self, id: tileID, backward: mods.contains(.shift))   // Tab / Shift-Tab
             } else {
                 super.keyDown(with: event)
             }
         }
 
-        /// Moves keyboard focus to the next (previous) tile in reading order. SwiftUI's hosting
-        /// view leaves these AppKit views out of the window's key view loop, so the tiles chain
-        /// themselves. False at either end: Tab then leaves the grid the usual way.
-        private func focusNeighbour(backward: Bool) -> Bool {
-            guard let window, let root = window.contentView else { return false }
-            var tiles: [Element] = []
-            func collect(_ view: NSView) {
-                for sub in view.subviews {
-                    if let tile = sub as? Element { if !tile.isHiddenOrHasHiddenAncestor { tiles.append(tile) } } else { collect(sub) }
-                }
-            }
-            collect(root)
-            // Reading order in window coordinates (y up): rows top to bottom, then left to right.
-            let keyed: [(row: Int, x: Int, tile: Element)] = tiles.map { t in
-                let r: NSRect = t.convert(t.bounds, to: nil)
-                return (row: -Int(r.midY.rounded()), x: Int(r.minX.rounded()), tile: t)
-            }
-            let ordered: [Element] = keyed.sorted { $0.row != $1.row ? $0.row < $1.row : $0.x < $1.x }.map(\.tile)
-            guard let i = ordered.firstIndex(where: { $0 === self }) else { return false }
-            let j = backward ? i - 1 : i + 1
-            guard ordered.indices.contains(j) else { return false }
-            let next = ordered[j]
-            guard window.makeFirstResponder(next) else { return false }
-            next.scrollToVisible(next.bounds)
-            return true
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // A tile scrolled into view for a pending Tab takes focus once it is on the window.
+            if window != nil, !tileID.isEmpty { focus?.register(self, id: tileID) }
         }
         override func isAccessibilityFocused() -> Bool { window?.firstResponder === self }
         override func setAccessibilityFocused(_ focused: Bool) {
@@ -415,5 +429,8 @@ struct LibraryTileAccessibility: NSViewRepresentable {
         v.setAccessibilityValue(note ?? "")
         v.setAccessibilityHelp(hint)
         v.setAccessibilityIdentifier(identifier)
+        v.tileID = identifier
+        v.focus = focus
+        focus.register(v, id: identifier)
     }
 }
