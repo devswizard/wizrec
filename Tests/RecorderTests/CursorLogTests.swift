@@ -101,14 +101,43 @@ import Testing
         #expect(r.width == 32 && r.height == 32 && r.hotspotX == 8 && r.hotspotY == 10)
     }
 
-    @Test func windowFrameMatchesWindowList() throws {
+    /// Bounds of on-screen layer-0 windows from the window list, by window id.
+    private static func windowListBounds() -> [CGWindowID: CGRect] {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        guard let w = list.first(where: { ($0[kCGWindowLayer as String] as? Int) == 0 }),
-              let id = w[kCGWindowNumber as String] as? Int,
-              let b = w[kCGWindowBounds as String] as? NSDictionary,
-              let expected = CGRect(dictionaryRepresentation: b as CFDictionary) else { return } // no windows (CI)
-        #expect(CursorLogger.windowFrame(CGWindowID(id)) == expected)
+        var out: [CGWindowID: CGRect] = [:]
+        for w in list where (w[kCGWindowLayer as String] as? Int) == 0 {
+            guard let id = w[kCGWindowNumber as String] as? Int,
+                  let b = w[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+            out[CGWindowID(id)] = r
+        }
+        return out
+    }
+
+    /// Other processes' windows move and resize (agents' UI checks use `--window-size` and
+    /// snapshots), so a window is compared only when its list bounds were the same just before
+    /// and just after `windowFrame` read it (QA14-4: a live window resized between two reads).
+    @Test func windowFrameMatchesWindowList() throws {
         #expect(CursorLogger.windowFrame(0xFFFF_FFF0) == nil)
+        for attempt in 1...20 {
+            let before = Self.windowListBounds()
+            guard !before.isEmpty else {
+                print("windowFrameMatchesWindowList: no on-screen windows (CI), not compared")
+                return
+            }
+            var frames: [CGWindowID: CGRect?] = [:]
+            for id in before.keys { frames[id] = CursorLogger.windowFrame(id) }
+            let after = Self.windowListBounds()
+            // Windows that stayed still across both list reads.
+            let still = before.filter { after[$0.key] == $0.value }
+            if let (id, expected) = still.min(by: { $0.key < $1.key }) {
+                let got: CGRect? = frames[id] ?? nil
+                #expect(got == expected, "window \(id), attempt \(attempt)")
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        print("windowFrameMatchesWindowList: every window moved during 20 attempts, not compared")
     }
 
     /// The live logger needs no Screen Recording permission: sample the real cursor briefly.
