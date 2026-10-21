@@ -41,8 +41,8 @@ final class TimelineCanvas: NSView {
     var drag: TimelineDrag = .none
     /// Drop target shown while media is dragged over the view.
     var dropTarget: (track: Int, ticks: Int64)?
-    /// Where the drop rules put a media-bin item dragged over the top level (`DropRules.place`),
-    /// with its clip duration (ticks); nil for files (not imported yet) and inside groups.
+    /// Where the drop rules put media dragged over the timeline (`DropRules.place`),
+    /// with its clip duration (ticks), in display time; nil for files not probed yet.
     var dropPreview: (placement: DropPlacement, duration: Int64)?
     /// Library item (effect/transition) target shown while it is dragged over the view.
     var libraryTarget: LibraryDrop?
@@ -591,14 +591,32 @@ final class TimelineCanvas: NSView {
         return .copy
     }
 
-    /// The drop rules' placement for a top-level media-bin drop at (`track`, `ticks`), the same
-    /// call the drop itself makes (`DropClip`), so the hover shows where the clip will land.
+    /// The drop rules' placement for a media drop at (`track`, `ticks`, display time), the same
+    /// call the drop itself makes (`DropClip`), so the hover shows where the clip will land. Bin
+    /// items use their source; Finder files the duration `TimelineModel.fileClipDuration` reports
+    /// (nil until probed). Inside an open group the placement is on its inner tracks, converted
+    /// back to display time for drawing.
     func preview(_ payload: DropPayload, track: Int, ticks: Int64) -> (placement: DropPlacement, duration: Int64)? {
-        guard snapshot.groupPath.isEmpty, case .sources(let ids) = payload, let id = ids.first,
-              let d = try? DropRules.clipDuration(source: id, in: model.project),
-              let p = try? DropRules.place(.timeline(track: track, at: .timeline(ticks)), duration: d, in: model.project)
-        else { return nil }
-        return (p, d)
+        let d: Int64
+        switch payload {
+        case .sources(let ids):
+            guard let id = ids.first, let x = try? DropRules.clipDuration(source: id, in: model.project) else { return nil }
+            d = x
+        case .files(let urls):
+            guard let url = urls.first, let x = model.fileClipDuration?(url), x > 0 else { return nil }
+            d = x
+        }
+        guard let group = snapshot.groupPath.last else {
+            guard let p = try? DropRules.place(.timeline(track: track, at: .timeline(ticks)), duration: d, in: model.project)
+            else { return nil }
+            return (p, d)
+        }
+        guard let target = editor.groupDropTarget(track: track, ticks: ticks),
+              let p = try? DropRules.place(.timeline(track: target.track, at: .inner(target.ticks)), group: group,
+                                           duration: d, in: model.project) else { return nil }
+        let map = snapshot.timeMap
+        let start = map.display(p.start), end = map.display(p.start &+ d)
+        return (DropPlacement(rule: p.rule, track: p.track, start: start, push: p.push), max(1, end - start))
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {

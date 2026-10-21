@@ -87,7 +87,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .unified
         super.init(window: window)
-        window.toolbar = toolbarItems.make(autosave: !options.isScripted)
+        window.toolbar = toolbarItems.make(autosave: options.keepsLayout)
         window.editor = self
         window.delegate = self
         canvas.editor = self
@@ -99,8 +99,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if renderer == nil { ui.compositorError = "Metal is not available on this Mac." }
         buildLayout(in: window)
         shouldCascadeWindows = false
-        // `--window-size` runs leave the saved frame alone (no autosave name, no restore).
-        if options.windowSize == nil { windowFrameAutosaveName = "WizRec.EditorWindow" }
+        // Scripted, timed, `--window-size` and `--ephemeral-layout` runs leave the saved frame
+        // alone (no autosave name, no restore): UI checks never share it with the user's app.
+        if options.keepsLayout { windowFrameAutosaveName = Self.frameAutosaveName }
 
         timelineModel.onSeek = { [weak self] t in self?.engine.seek(toTicks: t) }
         timelineModel.onDrop = { [weak self] payload, track, ticks in
@@ -119,6 +120,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             }
             return true
         }
+        // Finder files dragged over the timeline: probed once, then the landing preview shows
+        // their real length (the clip they would become under the drop rules).
+        let durations = DropDurationCache { [weak model] url in
+            guard let model, let info = try? await model.thumbnailPool.probe(url) else { return nil }
+            return model.dropClipDuration(for: info)
+        }
+        timelineModel.fileClipDuration = { url in durations.duration(of: url) }
         updateMediaProvider()
         model.onChange = { [weak self] in self?.projectDidChange() }
         // `-WizRec.BackgroundLibraryRoot <dir>` (argument domain): where library backgrounds placed
@@ -140,6 +148,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// UserDefaults name of the saved editor window frame (interactive runs only, `keepsLayout`).
+    static let frameAutosaveName = "WizRec.EditorWindow"
 
     // MARK: Layout
 
@@ -204,7 +215,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         top.setHoldingPriority(.defaultLow - 10, forSubviewAt: 1)
         top.setHoldingPriority(.defaultLow + 10, forSubviewAt: 2)
         top.defaultSizes = { size in [250, max(360, size.width - 250 - 290 - 2)] }
-        if options.windowSize == nil { top.persist(as: "WizRec.EditorSplit.Panes") } else { top.useDefaultLayout() }
+        if options.keepsLayout { top.persist(as: "WizRec.EditorSplit.Panes") } else { top.useDefaultLayout() }
 
         let root = EditorSplitView()
         root.isVertical = false
@@ -237,7 +248,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             EditorKeyLoop.Pane(view: timelinePane, singleStop: timelineView),
         ]
         root.defaultSizes = { size in [max(360, size.height - 230 - TimelineToolbarView.height)] }
-        if options.windowSize == nil { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
+        if options.keepsLayout { root.persist(as: "WizRec.EditorSplit.Timeline") } else { root.useDefaultLayout() }
         window.contentView = root
     }
 
@@ -248,7 +259,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         if let size = options.windowSize {
             window.setContentSize(size)
             window.center()
-        } else if !window.setFrameUsingName("WizRec.EditorWindow") {
+        } else if !options.keepsLayout || !window.setFrameUsingName(Self.frameAutosaveName) {
             window.center()
         }
         window.layoutIfNeeded()
@@ -623,8 +634,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     func insertSource(_ id: Int64) { place(.sources([id]), track: nil, at: engine.currentTicks) }
 
     /// Handles a drop on the canvas or timeline: files are imported, then placed;
-    /// bin items are placed one after another from `ticks`.
+    /// bin items are placed one after another from `ticks`. With a group open on the timeline, a
+    /// canvas drop or bin double-click (`track` nil) goes into that group by the canvas rule
+    /// (`placeInGroup(_:group:atPlayhead:)`, DECISIONS session 11).
     func place(_ drop: MediaDrop, track: Int?, at ticks: Int64) {
+        if track == nil, let group = timelineModel.openGroups.last {
+            switch drop {
+            case .files(let urls):
+                let media = DroppedFiles(urls)
+                if !media.projects.isEmpty { (NSDocumentController.shared as? WizRecDocumentController)?.openFiles(media.projects) }
+                if let unsupported = media.unsupportedMessage() { ui.show(unsupported, seconds: 10) }
+                guard !media.media.isEmpty else { return }
+                placeInGroup(.files(media.media), atPlayhead: ticks, group: group)
+            case .sources(let ids):
+                placeInGroup(.sources(ids), atPlayhead: ticks, group: group)
+            }
+            return
+        }
         switch drop {
         case .files(let urls):
             importFiles(urls, place: true, track: track, at: ticks)
@@ -649,6 +675,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             do {
                 let ids = try await model.placeInGroup(items, group: target.group, track: target.track, at: target.ticks)
                 if let last = ids.last { select([last]) }
+            } catch {
+                ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
+            }
+        }
+    }
+
+    /// A canvas drop or bin double-click while group `group` is open: into the group at the
+    /// playhead by the canvas rule (one undo step).
+    private func placeInGroup(_ items: EditorDocumentModel.GroupPlacement, atPlayhead ticks: Int64, group: Int64) {
+        if case .files = items { ui.isImporting = true }
+        groupDrop = Task {
+            defer { ui.isImporting = false }
+            do {
+                let ids = try await model.placeInGroup(items, group: group, atPlayhead: ticks)
+                if let last = ids.last { select([last]) }
+                print("WizRec: placed in group \(group) clips=\(ids)")
+                fflush(stdout)
             } catch {
                 ui.show(String(localized: "Cannot add to the group: \(Self.describe(error))"), seconds: 8)
             }

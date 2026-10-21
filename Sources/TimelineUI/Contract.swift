@@ -44,6 +44,13 @@ public final class TimelineModel {
     /// Builds inner-track add/remove commands (seam over TimelineEngine's group-track commands).
     @ObservationIgnored var groupTracks: any GroupTrackCommands = EngineGroupTracks()
 
+    // Additive (API_CHANGE TimelineUI, session 11, APP15-2).
+
+    /// Clip duration (ticks) a Finder file dragged over the timeline would get, for the landing
+    /// preview; nil while unknown (the app probes it asynchronously and caches it; the preview
+    /// appears on a later drag update). Nil closure: files show no preview.
+    @ObservationIgnored public var fileClipDuration: ((URL) -> Int64?)?
+
     public init(undo: UndoStack) { self.undo = undo }
 }
 
