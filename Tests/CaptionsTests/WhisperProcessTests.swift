@@ -55,11 +55,13 @@ import WizRecTestSupport
     /// result still arrives within the bounded drain wait, with what was written.
     @Test func inheritedStderrDoesNotHang() async throws {
         let started = Date()
-        let r = try await Self.run("echo 'before exit' >&2; sleep 20 & exit 4")
+        let r = try await Self.run("echo 'before exit' >&2; sleep 60 & exit 4")
         let took = Date().timeIntervalSince(started)
         #expect(r.status == 4)
         #expect(r.stderrTail.contains("before exit"))
-        LoadGate.expect(took < WhisperProcess.drainTimeout + 3, "returned within the drain bound, took \(took) s")
+        // Far below the child's 60 s, far above the 2 s drain bound: a loaded CI runner took
+        // 9.5 s (run 36), and the old code waited for the child.
+        #expect(took < 30, "returned without waiting for the child, took \(took) s")
     }
 
     /// Progress lines become callbacks, not tail text.
