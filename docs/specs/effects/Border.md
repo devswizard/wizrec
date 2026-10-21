@@ -50,3 +50,7 @@ Camtasia 2026.2.3 wrote these defaults when Border was added from
 | 3 | M-disc | `width` 20 (silhouette or box) |
 | 4 | M-grey + RoundCorners radius 80 | `width` 20 (follows the rounding?) |
 | 5 | M-grey | colour (0, 0, 1), alpha 0.5 |
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

@@ -188,6 +188,41 @@ Not a transcript: the groups say which jobs the menus cover [obs].
 | Snapping | *View ▸ Enable Canvas Snapping*; optional rulers | [obs] |
 | Canvas context menu (on a clip) | Cut, copy, duplicate, delete; scale (fit, fill, actual pixels, 200/100/75/50/25 %); stacking order; group; add effects (every visual, audio, cursor and gesture effect, and filters); hide properties; copy properties; crop mode; project settings | [obs] |
 
+### 8.1 Canvas handles in Edit mode (RES15-2, RT-031)
+
+Save-only gestures on a 1600×900 still at scale 1 on a 1920×1080 canvas,
+canvas zoom 74 % (1 pt on screen = 2.697 canvas px), canvas snapping
+**off** unless noted. Each gesture started from the same state (undone
+after saving). Drags were synthetic mouse events with modifiers held.
+Translation is in canvas px, +y up (`transform.md` §1).
+
+| Gesture | Result in the saved project | Tag |
+|---|---|---|
+| Drag inside the media (centre or elsewhere) | Move: `translation0/1` change by the drag; nothing else | [obs] |
+| Drag a **corner** handle | **Uniform** scale (`scale0` = `scale1`); the **opposite corner stays fixed**; the scale follows the axis with the larger relative change (+80.9 px on both axes of 1600×900 → 1.0899, the height ratio) | [obs] |
+| **Shift** + corner | Free scale: each axis follows the pointer (1.0506 × 1.0899), opposite corner fixed | [obs] |
+| Drag an **edge** handle (middle of a side) | **Uniform** scale from that axis; the **opposite edge stays fixed**, the other axis grows equally on both sides (right edge +80.9 px → scale 1.0506 both, `translation0` +40.45, `translation1` 0) | [obs] |
+| **Shift** + edge | Stretch that axis only (`scale0` or `scale1` alone), opposite edge fixed | [obs] |
+| **Option** + corner or edge | No change saved | [obs] (what Option does on the canvas is [?]) |
+| Handle hit area | About ±4 pt around the edge: 2 pt inside the right edge grabbed the handle, 6 pt inside moved the media, 6 pt outside did nothing | [obs] |
+| Rotation handle | **None found**: drags 10–76 pt above the top edge, 7–18 pt beyond a corner, 8 pt below centre and below the bottom edge (with a 1.2 s hover first) changed nothing or moved the media. Rotation is set in Properties (Z/Y/X dials) [obs]; an on-canvas rotate gesture is [?] | [obs] negative |
+| The lock in Properties *Size* | Read as unchecked (value 0) while corners still scaled uniformly, so it is not "corner keeps aspect" [obs]; whether turning it on/off changes the handle rules is [?] | |
+| First transform gesture on a clip | Writes `metadata.default-translation0/1/2`, `default-scale0/1/2`, `default-rotation0/1/2`, `default-anchor0/1/2`, `default-shear0/1/2`, `default-width`, `default-height` (the values before the edit); render-neutral | [obs] |
+
+**Snapping** (*View ▸ Enable Canvas Snapping*, on by default):
+
+| Claim | Tag |
+|---|---|
+| With snapping on, a corner drag that brought the bottom edge 4 px short of the canvas bottom ended **exactly on it** (scale 1.1, bottom = −540) | [obs] one case |
+| With snapping off the same drag gave 1.0899 | [obs] |
+| Snap distance, the other snap targets (centre lines, other media) and the guide lines drawn are [?] | |
+
+**Crop mode** (*toolbar crop tool*, or *crop mode* in the canvas context
+menu): the gestures and the keys a crop writes are **[?]**. Camtasia
+stopped answering accessibility requests right after the crop tool was
+pressed by automation, so no crop save was made this session.
+`transform.md` §6 keeps the existing `geometryCrop*`/`sourceCrop*` model.
+
 Transport under the canvas: previous frame, play/pause, next frame,
 previous/next clip, a scrub slider and the time label. Buttons that can't
 act are disabled, not hidden [obs].

@@ -56,3 +56,7 @@ track-level matte feature, which is unused here.
 - A sixth column sets `intensity` to 0.5.
 - **Extra test:** put a second content clip on a track two below the matte.
   This shows whether the matte reaches past the adjacent track.
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

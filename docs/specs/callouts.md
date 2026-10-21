@@ -238,6 +238,100 @@ run = { name, rangeStart, rangeEnd, value, valueType }
 
 [inf]
 
+## 6a. Properties panel → `def` keys (RES15-1, RT-030)
+
+Read from Camtasia 2026.2.3's Properties panel (accessibility tree) and
+confirmed by save-only experiments: 34 Annotations tiles dropped on the
+canvas of a test-card project, fields typed, *File ▸ Save*, diff. All
+[obs] unless tagged.
+
+### Tiles and placement
+
+| Claim | Tag |
+|---|---|
+| Annotations has six sub-tabs: Callouts (14 tiles), Arrows and Lines (7), Shapes (8), Blur and Highlight, Sketch Motion (16), Keystroke Callout (2) | [obs] |
+| Callouts tiles give `text-arrow2`, `text` (8 of the 14 tiles, as different styles), `speech-bubble2`, `text-rectangle`, `speech-bubble`, `text-arrow`, `thought-bubble2`, `thought-bubble`; Arrows and Lines all give `arrow`; Shapes give `shape-rectangle` (4), `shape-triangle`, `shape-ellipse`, `shape-star`, `shape-octagon`. All `style` `basic` | [obs] |
+| Default boxes: text 400×250, bubbles 350×180, thought bubbles 300×150, text arrows 400×120, text-rectangle 350×150, rectangle 240×180, triangle and star 180×180, ellipse 350×180, octagon 200×200; arrows have no width/height, tail (100, 0) | [obs] |
+| A canvas drop puts the callout at the playhead for 5 s. **Sketch Motion starts 1 s before the playhead** (dropped at 198 s, saved at 197 s; RT-017 dropped at 1 s, saved at 0 s) and gets a 1 s `Fade` at its end | [obs ×2] |
+| A freshly dropped text callout has `textAttributes.keyframes[0].value: null` even with text ("ABC"); the first text-style edit writes a full run list (fontName, fontSize, fontWeight, fontItalic, underline, strikethrough, kerning, fgColor) over the whole text | [obs] |
+| The first edit of a key writes `metadata.default-callout-<key>` (the old value, as a string); clips touched by any edit get `metadata.lockAspectRatio` `{type: bool, value: true}` | [obs] |
+
+### Tabs
+
+Shape callouts show three tabs: **Visual** (the clip transform, as for media,
+`ui-workflow.md` §10), **Text** and **Annotation**. A `text` callout has no
+Annotation tab; arrows, shapes and region/keystroke/sketch callouts have no
+Text tab [obs].
+
+### Annotation tab: shapes, bubbles, text arrows
+
+| Control | Key | Range, format | UI = f(stored) |
+|---|---|---|---|
+| Theme | (theme menu: Default, *Manage Themes…*) | — | not studied |
+| Shape | `def.shape` | bubbles/arrows: Arrow (`text-arrow`), Arrow #2 (`text-arrow2`), Speech Bubble, Speech Bubble #2, Thought Bubble, Thought Bubble #2, Square (`text-rectangle`); shapes: Ellipse, Rectangle, Octagon, Star, Triangle (`shape-*`). Changing it keeps `width`/`height` | name map |
+| Fill style | `fill-style` | Solid → `solid`, Gradient → `gradient` (no new keys were written; the gradient editor is not exposed to accessibility, so its keys are [?]) | |
+| Fill colour | `fill-color-red/-green/-blue` | colour well | 0–1 |
+| Fill opacity | `fill-color-opacity` | 0–100, `N%`, stepper 1 | ×100 |
+| Outline style | `stroke-style` | five icon-only entries: 0 `solid` [inf], 1 `dash` [inf], 2 `dot`, 3 `dashdot`, 4 `dashdotdot` [inf] | by order |
+| Outline colour | `stroke-color-*` | colour well | 0–1 |
+| Thickness | `stroke-width` | 0–100, `N.N` (2.5 kept) | same |
+| Outline opacity | `stroke-color-opacity` | 0–100, `N%` | ×100 |
+
+### Annotation tab: arrows and lines (`shape: arrow`)
+
+| Control | Key | Values | UI = f(stored) |
+|---|---|---|---|
+| Color | `stroke-color-*` | colour well | 0–1 |
+| Start point | `shape-anchor` | five icon entries: 0 `arrow`, 1 `circle`, 2 `diamond`, 3 `rounded`, 4 `none` | by order |
+| Line style | `stroke-style` | three icon entries: 0 `solid`, 1 `dash`, 2 `dot` | by order |
+| End point | `shape-tail` | the same five entries as the start point | by order |
+| Thickness | `stroke-width` | 0–100, `N.N` (default 8) | same |
+| Opacity | `stroke-color-opacity` | 0–100, `N%` | ×100 |
+| Bezier Curve | adds `ctrlPt0-x/-y`, `ctrlPt1-x/-y`, `numCtrlPts` 2.0 | check box | on a (100, 0) arrow: (25, 20) and (75, −20) |
+
+The presets' other anchors (`fletching`, `square`, `base`) are not offered
+by the pop-up [obs]; readers keep and draw them anyway [inf].
+
+### Text tab (shape and text callouts)
+
+| Control | Key | Range, format | Notes |
+|---|---|---|---|
+| Font | run `fontName` (and `font.name` on text callouts) | font pop-up | |
+| Font colour | run `fgColor` `"(r,g,b,a)"` 0–255 | colour well | |
+| Weight | run `fontWeight` (Regular 400, Bold 700) and `fontItalic`; `font.weight` keeps the name | 16 entries, Thin … Black, each with Italic | "Bold Italic" wrote `fontItalic` **2** [obs]; plain values 0 |
+| Size | run **`fontSize`** (`font.size` unchanged) | combo box + slider 12–256 | |
+| Stroke colour | `text-stroke-color-*` | colour well | |
+| Stroke weight | `text-stroke-width` | 0–50, `N.N` | same |
+| Stroke opacity | `text-stroke-color-alpha` | 0–100, `N%` | ×100 |
+| Underline, Strike-through | runs `underline`, `strikethrough` | toggles | 0/1 |
+| Alignment, first group | `horizontal-alignment` | left, center, right | |
+| Alignment, second group | `vertical-alignment` | top, center, bottom | |
+| V Spacing | `line-spacing` | −0.5–3 | same (1.5 kept) |
+| H Spacing | run **`kerning`** (not `def.tracking`) | −0.2–5 | same (2 → 2.0) |
+| Font Ligatures | `enable-ligatures` | check box | 1.0/0.0 |
+| Auto-resize text | `resize-behavior` | on `resizeText`, off **`resizeCallout`** | |
+| Auto-rotate text | `attributes.autoRotateText` | check box (not on `text` callouts) | true/false |
+
+### Region, sketch and keystroke callouts
+
+| Callout | Control | Key | Range | UI = f(stored) |
+|---|---|---|---|---|
+| Blur (`TypeWinBlur`) | Intensity | `intensity` | slider 0–50 shows ×10; field `N.N` shows ×100 (0.8125 → 81.3) | typing 25 stored 0.25 |
+| | Invert | `blur-invert` | check box; tooltip: blur everything except the area | 1.0/0.0 |
+| Pixelate (`TypeWinPixelate`) | Intensity | `intensity` | 0–100 | ×100 |
+| Highlighter (`TypeWinHighlighter`) | Color, Opacity, Invert | `fillColorRed/Green/Blue`, `fill-color-opacity` (0–100 %), `fill-invert` (highlight everything except the area) | | ×100 |
+| Spotlight (`TypeWinSpotlight`) | Intensity | `intensity` | 0–100 % | ×100 |
+| Sketch Motion (`TypeWinSVG`) | Color | `borderColorRed/Green/Blue` | colour well | |
+| | Thickness | `borderWidth` | 0–25 | same |
+| | Draw Time | the `DrawTime` edge-mod **`duration`** (2.5 s → 1764000000 ticks), not the `DrawTime` key | stepper 0–25 | seconds |
+| Keystroke (`MacKey`) | Style | `keyStyle` | Clear 0, Gray 1 [inf], Traditional 2, Outline 3 [inf], Black 4 [inf] | by order |
+| | Keys | `keys` | text field | |
+| | Draw background | `showKeyBackg` | check box 0/1 | |
+| | Show modifier key name | `showKeyHint` | check box 0/1 | |
+
+Turning on the keystroke background and modifier name changed `width`
+from 90.1 to 128 (the box is resized to fit) [obs].
+
 ## 7. Experiments
 
 Save into `~/WorkDir/vibe_coding/camtasia_rea_refs/research/callouts/`.

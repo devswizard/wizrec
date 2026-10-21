@@ -75,3 +75,7 @@ other cell has one non-default parameter:
 
 Also from EF0: the UI ranges and defaults. Those need a screenshot of the
 Properties panel with the effect selected, saved as `ef0-coloradjust.png`.
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.

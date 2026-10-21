@@ -48,3 +48,7 @@ draw R under the layer
 | 2 | Same | Opacity at its maximum |
 | 3 | Same | Distance or gap at a non-zero value |
 | 4 | Same, `rotation2` = 0.3 | Does the reflection rotate with the layer? |
+
+## Properties panel
+
+UI controls, ranges, display formats and the keys they write (RES15-1, RT-030): `inspector.md` §2.
