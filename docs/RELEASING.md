@@ -295,6 +295,13 @@ for non-sandboxed apps.
   the shell scripts parse. Golden, perf, capture, speech and whisper suites stay off; tests
   needing the user's projects or Camtasia skip. The asset audit runs as part of `swift test`.
   Actions use their Node 24 majors (`checkout@v7`, `cache@v6`, `upload-artifact@v7`).
+  A separate `actionlint` job (Ubuntu, under a minute, independent of the macOS job) lints
+  every workflow in `.github/workflows/`, including the `run:` scripts through shellcheck.
+  It downloads actionlint (MIT) as a pinned release binary and checks its SHA-256 before
+  running it; findings become annotations (`.github/actionlint-matcher.json`). To upgrade:
+  change `ACTIONLINT_VERSION` and `ACTIONLINT_SHA256` together, taking the hash of
+  `actionlint_<version>_linux_amd64.tar.gz` from that release's `checksums.txt`. Locally:
+  `brew install actionlint shellcheck`, then `actionlint` in the repository root.
 - `.github/workflows/release.yml`: on a `v*` tag or by hand. Builds an ad-hoc signed DMG and
   uploads it as a workflow artifact. When the repository has the secrets
   `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY` (and, for notarization,
