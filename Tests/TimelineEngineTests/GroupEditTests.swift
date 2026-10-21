@@ -146,66 +146,81 @@ private func newVideo(_ id: Int64, start: Int64) -> String {
     try before.revert(on: p)
 
     expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .inner(10)), on: p, .invalid(""))  // overlaps 31
-    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 2, at: .inner(0)), on: p, .trackNotFound(2))
+    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 3, at: .inner(0)), on: p, .trackNotFound(3))
+    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: -1, at: .inner(0)), on: p, .trackNotFound(-1))
     expectRejected(InsertClipInGroup(sourceID: 9, group: 30, track: 1, at: .inner(0)), on: p, .invalid(""))
     expectRejected(InsertClipInGroup(sourceID: 2, group: 31, track: 0, at: .inner(0)), on: p, .invalid(""))
-    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 1, at: .inner(201)), on: p, .invalid(""))  // past visible end
+
+    // Past the visible end (200): accepted as is, hidden; the group keeps its timing (§8.6).
+    let late = InsertClipInGroup(sourceID: 2, group: 30, track: 1, at: .inner(201))
+    try expectReversible(late, on: p)
+    try late.apply(to: p)
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [leaf(31, start: 0, dur: 50)]), gTrack(1, [newVideo(32, start: 201)])])])))
+    try late.revert(on: p)
+
+    // Track index = inner track count: a new top inner track (a drop above the inner tracks).
+    let above = InsertClipInGroup(sourceID: 2, group: 30, track: 2, at: .inner(0))
+    try expectReversible(above, on: p)
+    try above.apply(to: p)
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [leaf(31, start: 0, dur: 50)]), gTrack(1, []),
+                                                    gTrack(2, [newVideo(32, start: 0)])])])))
 }
 
-@MainActor @Test func insertInGroupMapsTimelineTime() throws {
+@MainActor @Test func insertInGroupMapsTimelineTimeWithoutClamping() throws {
     // Group trimmed on the left (mediaStart 20) at half speed (scalar 2).
     let p = try project([track(0, [group(30, [gTrack(0, [])], ms: "20.0", md: "100.0", scalar: "2")])])
-    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .timeline(480)), on: p, .invalid(""))  // inner 10 < 20
-    let insert = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .timeline(561))  // inner 50.5 → 50
+    // Timeline 480 → inner 10, before the window start 20: kept, not clamped (§8.6).
+    let early = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .timeline(480))
+    try expectReversible(early, on: p)
+    try early.apply(to: p)
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(31, start: 10)])], ms: "20.0", md: "100.0", scalar: "2")])))
+    try early.revert(on: p)
+    // Timeline 561 → inner 50.5 → 50. Clip end 140 > visible end 120: the group does not grow.
+    let insert = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .timeline(561))
     try expectReversible(insert, on: p)
     try insert.apply(to: p)
-    // Clip end 140 > visible end 120: mediaDuration 120 → 120, duration 240.
-    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(31, start: 50)])], dur: 240,
-                                               ms: "20.0", md: "120.0", scalar: "2")])))
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(31, start: 50)])], ms: "20.0", md: "100.0", scalar: "2")])))
+    try insert.revert(on: p)
+    // Before the inner timeline's zero: a negative inner start is kept.
+    let negative = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .timeline(400))  // inner 20 − 50 = −30
+    try negative.apply(to: p)
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(31, start: -30)])], ms: "20.0", md: "100.0", scalar: "2")])))
 }
 
-@MainActor @Test func insertInGroupGrowsGroupAndChecksItsTrack() throws {
+@MainActor @Test func insertInGroupNeverGrowsGroupOrNeighbours() throws {
     let p = try project([track(0, [group(30, [gTrack(0, [])]), leaf(50, start: 720, dur: 10)])])
-    // Inner 120 → ends 210: group grows to 210 → [500, 710), clear of clip 50.
-    let fits = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .inner(120))
-    try expectReversible(fits, on: p)
-    try fits.apply(to: p)
-    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(51, start: 120)])], dur: 210, md: "210.0"),
-                                         leaf(50, start: 720, dur: 10)])))
-    try fits.revert(on: p)
-    // Inner 150 → ends 240: group would reach 740 and hit clip 50.
-    expectRejected(InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .inner(150)), on: p, .invalid(""))
+    // Inner 150 → ends 240, past the window end 200 and past clip 50's start: nothing moves.
+    let late = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .inner(150))
+    try expectReversible(late, on: p)
+    try late.apply(to: p)
+    try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [newVideo(51, start: 150)])]), leaf(50, start: 720, dur: 10)])))
 
-    // On a magnetic top-level track the next clip is pushed instead.
+    // On a magnetic top-level track the next clip stays too.
     let m = try project([track(0, [group(30, [gTrack(0, [])], start: 0), leaf(50, start: 200, dur: 10)])], magnetic: [0])
     let push = InsertClipInGroup(sourceID: 2, group: 30, track: 0, at: .inner(150))
     try expectReversible(push, on: m)
     try push.apply(to: m)
-    try expectTracks(m, tracks(track(0, [group(30, [gTrack(0, [newVideo(51, start: 150)])], start: 0, dur: 240, md: "240.0"),
-                                         leaf(50, start: 240, dur: 10)])))
+    try expectTracks(m, tracks(track(0, [group(30, [gTrack(0, [newVideo(51, start: 150)])], start: 0),
+                                         leaf(50, start: 200, dur: 10)])))
 }
 
-@MainActor @Test func insertInNestedGroupGrowsEveryLevel() throws {
+@MainActor @Test func insertInNestedGroupGrowsNoLevel() throws {
     let inner = group(40, [gTrack(0, [])], start: 100, dur: 50, md: "50.0")
     let p = try project([track(0, [group(30, [gTrack(0, [inner])])])])
-    // Project 610 → outer inner 110 → inner-group inner 10. Clip ends at 100:
-    // inner group grows to 100 ([100, 200) in the outer); the outer (end 200) fits already.
+    // Project 610 → outer inner 110 → inner-group inner 10; the clip ends at 100, past both windows.
     let insert = InsertClipInGroup(sourceID: 2, group: 40, track: 0, at: .timeline(610))
     try expectReversible(insert, on: p)
     try insert.apply(to: p)
     try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [
-        group(40, [gTrack(0, [newVideo(41, start: 10)])], start: 100, dur: 100, md: "100.0"),
+        group(40, [gTrack(0, [newVideo(41, start: 10)])], start: 100, dur: 50, md: "50.0"),
     ])])])))
     try insert.revert(on: p)
-    // Inner 50 (the visible end) → ends 140: inner group [100, 240) → outer grows to 240.
-    let deep = InsertClipInGroup(sourceID: 2, group: 40, track: 0, at: .inner(50))
+    let deep = InsertClipInGroup(sourceID: 2, group: 40, track: 0, at: .inner(51))
     try expectReversible(deep, on: p)
     try deep.apply(to: p)
     try expectTracks(p, tracks(track(0, [group(30, [gTrack(0, [
-        group(40, [gTrack(0, [newVideo(41, start: 50)])], start: 100, dur: 140, md: "140.0"),
-    ])], dur: 240, md: "240.0")])))
-    try deep.revert(on: p)
-    expectRejected(InsertClipInGroup(sourceID: 2, group: 40, track: 0, at: .inner(51)), on: p, .invalid(""))
+        group(40, [gTrack(0, [newVideo(41, start: 51)])], start: 100, dur: 50, md: "50.0"),
+    ])])])))
 }
 
 @MainActor @Test func insertOnMagneticGroupTrackPacks() throws {
