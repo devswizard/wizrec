@@ -105,6 +105,9 @@
     "Animated: edits set a keyframe at the playhead" : {
 
     },
+    "Annotations" : {
+
+    },
     "Apple Speech" : {
 
     },
@@ -123,6 +126,9 @@
     "As preset" : {
 
     },
+    "Audio" : {
+
+    },
     "Automatic" : {
 
     },
@@ -136,6 +142,9 @@
 
     },
     "Background color" : {
+
+    },
+    "Backgrounds" : {
 
     },
     "Blur & Highlight" : {
@@ -317,6 +326,9 @@
 
     },
     "Edit" : {
+
+    },
+    "Effects" : {
 
     },
     "Enter Full Screen" : {
@@ -762,6 +774,9 @@
 
     },
     "Transcription needs the WizRec app bundle (scripts/make-app.sh)." : {
+
+    },
+    "Transitions" : {
 
     },
     "Undo" : {
