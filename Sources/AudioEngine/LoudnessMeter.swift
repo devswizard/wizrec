@@ -80,11 +80,27 @@ struct LoudnessMeter: Sendable {
                 guard c < chans.count, weights[c] != 0 else { continue }
                 var (f1, f2) = filters[c]
                 var s = 0.0
-                chans[c].withUnsafeBufferPointer { p in
-                    for j in i..<(i + n) {
-                        let y = f2.step(f1.step(Double(p[j])))
+                chans[c].withUnsafeBufferPointer { (p: UnsafeBufferPointer<Float>) -> Void in
+                    guard let x = p.baseAddress else { return }
+                    // `f2.step(f1.step(x))` written out over locals (debug builds do not inline
+                    // the steps; AUD12-2). Same expressions, same order.
+                    let (b10, b11, b12, a11, a12) = (f1.b0, f1.b1, f1.b2, f1.a1, f1.a2)
+                    let (b20, b21, b22, a21, a22) = (f2.b0, f2.b1, f2.b2, f2.a1, f2.a2)
+                    var (p1, p2, q1, q2) = (f1.x1, f1.x2, f1.y1, f1.y2)
+                    var (r1, r2, t1, t2) = (f2.x1, f2.x2, f2.y1, f2.y2)
+                    var j = i
+                    let end = i + n
+                    while j < end {
+                        let v = Double(x[j])
+                        let y1: Double = b10 * v + b11 * p1 + b12 * p2 - a11 * q1 - a12 * q2
+                        p2 = p1; p1 = v; q2 = q1; q1 = y1
+                        let y: Double = b20 * y1 + b21 * r1 + b22 * r2 - a21 * t1 - a22 * t2
+                        r2 = r1; r1 = y1; t2 = t1; t1 = y
                         s += y * y
+                        j += 1
                     }
+                    f1.x1 = p1; f1.x2 = p2; f1.y1 = q1; f1.y2 = q2
+                    f2.x1 = r1; f2.x2 = r2; f2.y1 = t1; f2.y2 = t2
                 }
                 filters[c] = (f1, f2)
                 subSum[c] += s
