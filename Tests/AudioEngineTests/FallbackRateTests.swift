@@ -60,14 +60,15 @@ func fallbackRateMeasuresAt44_1kHz(_ raw: String?) async throws {
     let got = try await mix(fallback, seconds: 2)
     let stored44 = try await mix(project(u, seconds: 2, raw: "48000", lufs: m44.integratedLUFS, peak: m44.peakLevel), seconds: 2)
     let stored48 = try await mix(project(u, seconds: 2, raw: "48000", lufs: m48.integratedLUFS, peak: m48.peakLevel), seconds: 2)
-    #expect(got.map(\.count) == [96_000, 96_000])
+    let counts: [Int] = got.map { (c: [Float]) -> Int in c.count }
+    #expect(counts == [96_000, 96_000])
     #expect(got == stored44, "fallback must measure at 44.1 kHz")
     #expect(got != stored48)
     // And the gain is the normalisation rule's: −16 LUFS target, peak-capped.
     let g = AudioMixer.normalisationGain(target: -16, lufs: m44.integratedLUFS, peak: m44.peakLevel)
     let dry = try await mix(project(u, seconds: 2, raw: raw, lufs: -16, peak: 0.5), seconds: 2)
-    let i = 24_000
-    #expect(abs(Double(got[0][i]) - g * Double(dry[0][i])) < 1e-5)
+    let wet: Double = Double(got[0][24_000]), want: Double = g * Double(dry[0][24_000])
+    #expect(abs(wet - want) < 1e-5)
 }
 
 /// Export-like mix of a 20 s source at the 48 kHz fallback: without a project rate it must cost at
