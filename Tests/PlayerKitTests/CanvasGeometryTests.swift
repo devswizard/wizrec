@@ -35,6 +35,7 @@ import Testing
         #expect(at(CGPoint(x: 200, y: 100)) == .corner(2))
         #expect(at(CGPoint(x: 0, y: 0), dx: 5) == .corner(0))
         #expect(at(CGPoint(x: 100, y: 50)) == .body)
+        #expect(at(CGPoint(x: 200, y: 50)) == .edge(.right))
         #expect(at(CGPoint(x: 500, y: 50)) == nil)
         let knob = CanvasGeometry.rotateKnob(frame, viewSize: view, canvasSize: canvas)
         #expect(knob == CGPoint(x: 530, y: 320 + CanvasGeometry.rotateKnobOffset))
@@ -49,12 +50,34 @@ import Testing
         #expect(CanvasGeometry.handle(at: knob, frame: frame, cropMode: true, viewSize: view, canvasSize: canvas) == nil)
     }
 
-    @Test func cornerDragScalesAboutTheCentre() {
-        // The corner 2× as far from the centre doubles the scale.
-        #expect(CanvasGeometry.scale(from: 0.5, center: CGPoint(x: 100, y: 50), start: CGPoint(x: 200, y: 100),
-                                     current: CGPoint(x: 300, y: 150)) == 1)
-        #expect(CanvasGeometry.scale(from: 0.5, center: .zero, start: CGPoint(x: 10, y: 0), current: .zero) == 0.01)
-        #expect(CanvasGeometry.scale(from: 0.8, center: .zero, start: .zero, current: CGPoint(x: 5, y: 5)) == 0.8)
+    /// ui-workflow.md §8.1 [obs]: a 1600×900 still at scale 1, centred. Corner +80.9 px on both
+    /// axes → uniform 1.0899 (the height's larger relative change), opposite corner fixed; Shift →
+    /// 1.0506 × 1.0899; right edge +80.9 → uniform 1.0506 and translation0 +40.45; Shift + edge →
+    /// that axis only.
+    @Test func cornerAndEdgeDragsKeepTheOppositeSideFixed() throws {
+        let f = CanvasFrame(clipID: 1, size: CGSize(width: 1600, height: 900), transform: .identity, crop: .zero)
+        let tr = CGPoint(x: 800, y: 450), d = 80.9
+        let c = try #require(CanvasGeometry.resize(.corner(2), frame: f, start: tr, current: CGPoint(x: tr.x + d, y: tr.y + d), free: false))
+        #expect(abs(c.x - 1.0899) < 1e-4 && c.x == c.y)
+        // The bottom-left corner (−800, −450) stays: new centre offset = −800·(1 − s), −450·(1 − s).
+        #expect(abs(c.dx - 800 * (c.x - 1)) < 1e-6 && abs(c.dy - 450 * (c.y - 1)) < 1e-6)
+        let free = try #require(CanvasGeometry.resize(.corner(2), frame: f, start: tr, current: CGPoint(x: tr.x + d, y: tr.y + d), free: true))
+        #expect(abs(free.x - 1.0506) < 1e-4 && abs(free.y - 1.0899) < 1e-4)
+        let e = try #require(CanvasGeometry.resize(.edge(.right), frame: f, start: CGPoint(x: 800, y: 0), current: CGPoint(x: 800 + d, y: 30),
+                                                   free: false))
+        #expect(abs(e.x - 1.0506) < 1e-4 && e.x == e.y && abs(e.dx - 40.45) < 1e-6 && e.dy == 0)
+        let stretch = try #require(CanvasGeometry.resize(.edge(.top), frame: f, start: CGPoint(x: 0, y: 450), current: CGPoint(x: 0, y: 540),
+                                                         free: true))
+        #expect(stretch.x == 1 && abs(stretch.y - 1.1) < 1e-9 && abs(stretch.dy - 45) < 1e-6)
+        // Scaled and rotated 90°: dragging the right edge (now at the top) up grows it.
+        var r = f
+        r.transform = CGAffineTransform(scaleX: 0.5, y: 0.5).concatenating(CGAffineTransform(rotationAngle: .pi / 2))
+        let up = try #require(CanvasGeometry.resize(.edge(.right), frame: r, start: .zero, current: CGPoint(x: 0, y: 40), free: false))
+        #expect(abs(up.x - 1.05) < 1e-9)
+        // Never flips or collapses; other handles have no resize.
+        let tiny = try #require(CanvasGeometry.resize(.corner(2), frame: f, start: tr, current: CGPoint(x: -2000, y: -2000), free: false))
+        #expect(tiny.x == CanvasGeometry.minFactor)
+        #expect(CanvasGeometry.resize(.rotate, frame: f, start: .zero, current: .zero, free: false) == nil)
     }
 
     @Test func knobDragRotatesCounterClockwisePositive() {

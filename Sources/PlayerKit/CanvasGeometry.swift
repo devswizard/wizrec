@@ -58,8 +58,12 @@ public enum CanvasCropEdge: String, CaseIterable, Sendable {
 
 /// What a press on the canvas grabs: a selected clip's handle, or its body.
 public enum CanvasHandle: Equatable, Sendable {
-    /// Corner `index` (bottom-left, bottom-right, top-right, top-left): uniform scale about the centre.
+    /// Corner `index` (bottom-left, bottom-right, top-right, top-left): uniform scale with the
+    /// opposite corner fixed; Shift scales each axis freely (ui-workflow.md §8.1).
     case corner(Int)
+    /// The middle of a side: uniform scale from that axis with the opposite side fixed; Shift
+    /// stretches that axis only (§8.1).
+    case edge(CanvasCropEdge)
     /// The knob above the top edge: rotation about the centre.
     case rotate
     /// A crop-mode edge handle.
@@ -146,6 +150,11 @@ public enum CanvasGeometry {
             for (i, c) in f.corners.enumerated() where near(viewPoint(c, viewSize: viewSize, canvasSize: canvasSize)) {
                 return .corner(i)
             }
+            for edge in CanvasCropEdge.allCases {
+                if let m = f.edgeMidpoints[edge], near(viewPoint(m, viewSize: viewSize, canvasSize: canvasSize)) {
+                    return .edge(edge)
+                }
+            }
         }
         let p = canvasPoint(v, viewSize: viewSize, canvasSize: canvasSize)
         let local = p.applying(f.transform.inverted())
@@ -154,14 +163,56 @@ public enum CanvasGeometry {
         return inside ? .body : nil
     }
 
-    /// Scale after dragging a corner from `start` to `current` (canvas px): `scale0` times the
-    /// ratio of their distances from `center`, at least 0.01, rounded to 1/1000.
-    public static func scale(from scale0: Double, center: CGPoint, start: CGPoint, current: CGPoint) -> Double {
-        let d0 = hypot(start.x - center.x, start.y - center.y)
-        let d1 = hypot(current.x - center.x, current.y - center.y)
-        guard d0 > 1e-6 else { return scale0 }
-        return max(0.01, (scale0 * d1 / d0 * 1000).rounded() / 1000)
+    /// A corner or edge drag from `start` to `current` (canvas px) as per-axis scale factors
+    /// (multiply `scale0` / `scale1`) and the translation change (canvas px) that keeps the
+    /// opposite corner or side where it was (ui-workflow.md §8.1 [obs]): a corner scales
+    /// uniformly by the axis with the larger relative change, an edge uniformly by its own axis;
+    /// `free` (Shift) lets a corner follow the pointer on both axes and an edge stretch only its
+    /// axis. Factors are at least `minFactor`. Nil for other handles.
+    public static func resize(_ handle: CanvasHandle, frame f: CanvasFrame, start: CGPoint, current: CGPoint,
+                              free: Bool) -> (x: Double, y: Double, dx: Double, dy: Double)? {
+        let local = CanvasFrame.corners(f.size, f.crop)
+        func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
+        let grabbed: CGPoint, anchor: CGPoint
+        switch handle {
+        case .corner(let i) where (0..<4).contains(i):
+            grabbed = local[i]; anchor = local[(i + 2) % 4]
+        case .edge(let e):
+            let l = mid(local[0], local[3]), r = mid(local[1], local[2]), t = mid(local[3], local[2]), b = mid(local[0], local[1])
+            switch e {
+            case .left: (grabbed, anchor) = (l, r)
+            case .right: (grabbed, anchor) = (r, l)
+            case .top: (grabbed, anchor) = (t, b)
+            case .bottom: (grabbed, anchor) = (b, t)
+            }
+        default:
+            return nil
+        }
+        let linear = CGAffineTransform(a: f.transform.a, b: f.transform.b, c: f.transform.c, d: f.transform.d, tx: 0, ty: 0)
+        let delta = CGPoint(x: current.x - start.x, y: current.y - start.y).applying(linear.inverted())
+        let v0 = CGPoint(x: grabbed.x - anchor.x, y: grabbed.y - anchor.y)
+        let v1 = CGPoint(x: v0.x + delta.x, y: v0.y + delta.y)
+        let rx: Double = abs(v0.x) > 1e-9 ? v1.x / v0.x : 1
+        let ry: Double = abs(v0.y) > 1e-9 ? v1.y / v0.y : 1
+        var sx: Double, sy: Double
+        switch handle {
+        case .edge(let e):
+            let r = e == .left || e == .right ? rx : ry
+            if free { (sx, sy) = e == .left || e == .right ? (r, 1) : (1, r) } else { (sx, sy) = (r, r) }
+        default:
+            if free { (sx, sy) = (rx, ry) } else {
+                let r = abs(rx - 1) >= abs(ry - 1) ? rx : ry
+                (sx, sy) = (r, r)
+            }
+        }
+        sx = max(minFactor, sx); sy = max(minFactor, sy)
+        // T·S(sx, sy) keeps the anchor in place after shifting by L·(anchor − S·anchor).
+        let keep = CGPoint(x: anchor.x - anchor.x * sx, y: anchor.y - anchor.y * sy).applying(linear)
+        return (x: sx, y: sy, dx: Double(keep.x), dy: Double(keep.y))
     }
+
+    /// Smallest scale factor a resize drag applies (no flips, no zero size).
+    public static let minFactor = 0.01
 
     /// Rotation (radians, counter-clockwise positive as `rotation2`) after dragging the knob
     /// from `start` to `current` about `center`; `snap` rounds to 15° steps.
