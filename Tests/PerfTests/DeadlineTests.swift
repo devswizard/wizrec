@@ -47,7 +47,7 @@ struct DeadlineTests {
     @Test func callbackResumesOnDone() async throws {
         try await Deadline.callback("immediate", seconds: 60) { done in done() }
         try await Deadline.callback("later", seconds: 60) { done in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { done() }
+            Thread.detachNewThread { Thread.sleep(forTimeInterval: 0.01); done() }
         }
     }
 
@@ -64,7 +64,7 @@ struct DeadlineTests {
 
     @Test func blockingWaits() throws {
         try Deadline.blocking("async signal", seconds: 60) { done in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.01) { done() }
+            Thread.detachNewThread { Thread.sleep(forTimeInterval: 0.01); done() }
         }
         #expect(throws: DeadlineExceeded.self) { try Deadline.blocking("never", seconds: 0.05) { _ in } }
     }
@@ -74,7 +74,7 @@ struct DeadlineTests {
     /// the main queue is busy running this test; see `Deadline.wait`.)
     @MainActor @Test func blockingOnMainServicesTheRunLoop() throws {
         try Deadline.blocking("main run-loop completion", seconds: 60) { done in
-            DispatchQueue.global().async {
+            Thread.detachNewThread {
                 CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) { done() }
                 CFRunLoopWakeUp(CFRunLoopGetMain())
             }

@@ -140,10 +140,12 @@ struct ProResReferenceSelfTests {
         m.psnrReference = "reference.mov"
         m.frames = [0, 45]  // two frames keep the known-issue count small
         try m.write(to: golden.url("golden.json"))
-        await withKnownIssue("psnrMin 99 dB on the compared file on purpose") {
-            let gated = try #require(try await runGoldenCase(golden))
-            #expect(gated.allSatisfy { $0.passed })
-        }
+        // psnrMin 99 dB on the compared file on purpose: both frames fail on PSNR alone.
+        let failures = GoldenFailures()
+        let gated = try #require(try await runGoldenCase(golden, failures: failures))
+        #expect(gated.count == 2 && gated.allSatisfy { !$0.passed }, "\(gated.map(\.description))")
+        #expect(failures.messages.count == 2 && failures.messages.allSatisfy { $0.contains("< 99.0") },
+                "\(failures.messages)")
     }
 
     @Test @MainActor func movieSheetUsesMov() async throws {

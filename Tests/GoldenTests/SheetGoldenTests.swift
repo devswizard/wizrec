@@ -149,9 +149,10 @@ func sheetReference(_ s: GoldenSheet, _ m: SheetManifest, bundle: ProjectBundle)
     return nil
 }
 
-/// Renders and scores one sheet; nil when skipped (logged).
+/// Renders and scores one sheet; nil when skipped (logged). Failing sheets go to `failures`
+/// (default: test issues).
 @MainActor
-func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
+func runSheet(_ s: GoldenSheet, failures: GoldenFailures? = nil) async throws -> [SheetScore]? {
     let m = try s.manifest()
     guard m.status == "ready", let projectPath = m.project else {
         print("sheet \(s.name): \(m.status), skipped")
@@ -190,7 +191,8 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
                motion: Bool = false) throws -> SheetScore {
         let ref = ref.flattened(over: bg8)
         guard rendered.width == ref.width, rendered.height == ref.height else {
-            Issue.record("\(s.name) \(label): rendered \(rendered.width)×\(rendered.height), reference \(ref.width)×\(ref.height)")
+            GoldenFailures.report("\(s.name) \(label): rendered \(rendered.width)×\(rendered.height), reference \(ref.width)×\(ref.height)",
+                                  to: failures)
             return SheetScore(label: label, whole: 0, cells: [], threshold: m.ssimMin)
         }
         let whole = Metrics.ssim(rendered, ref)
@@ -214,7 +216,8 @@ func runSheet(_ s: GoldenSheet) async throws -> [SheetScore]? {
             if !result.passed {
                 let notes = m.cells.filter { result.failedCells.contains($0.id) }
                     .map { "cell \($0.id) (\($0.settings))" }.joined(separator: "; ")
-                Issue.record("\(s.name) \(label): SSIM \(String(format: "%.4f", result.whole)) / failing cells: \(notes.isEmpty ? "none" : notes) (min \(m.ssimMin))\(result.psnrOK ? "" : String(format: "; PSNR %.2f < %.2f dB", result.psnr ?? 0, psnrFloor ?? 0)); artefacts in \(dir.path)")
+                GoldenFailures.report("\(s.name) \(label): SSIM \(String(format: "%.4f", result.whole)) / failing cells: \(notes.isEmpty ? "none" : notes) (min \(m.ssimMin))\(result.psnrOK ? "" : String(format: "; PSNR %.2f < %.2f dB", result.psnr ?? 0, psnrFloor ?? 0)); artefacts in \(dir.path)",
+                                      to: failures)
             }
         }
         return result
@@ -450,10 +453,11 @@ struct SheetHarnessSelfTests {
 
         // A reference one frame late must fail on the moving frames (frame-index sensitivity).
         try await writeMovie(offset: 1)
-        await withKnownIssue("reference shifted by one frame on purpose") {
-            let late = try #require(try await runSheet(golden))
-            #expect(late.contains { !$0.passed })
-        }
+        let failures = GoldenFailures()
+        let late = try #require(try await runSheet(golden, failures: failures))
+        let lateFailed = late.filter { !$0.passed }
+        #expect(!lateFailed.isEmpty)
+        #expect(failures.messages.count == lateFailed.count, "\(failures.messages)")
     }
 
     @Test @MainActor func damagedCellFails() async throws {
@@ -462,9 +466,11 @@ struct SheetHarnessSelfTests {
         var bad = ref
         for y in 0..<360 { for x in 480..<960 { bad.pixels[4 * (y * 1920 + x)] = 0 } }  // cell 2: red off (luma SSIM alone misses it)
         try MediaWriter.writePNG(try #require(bad.cgImage()), to: sheet.url("reference.png"))
-        await withKnownIssue("cell 2 was damaged on purpose") {
-            let scores = try #require(try await runSheet(sheet))
-            #expect(scores[0].failedCells == [2])
-        }
+        // Cell 2 damaged on purpose: exactly that cell fails, and the failure names it.
+        let failures = GoldenFailures()
+        let scores = try #require(try await runSheet(sheet, failures: failures))
+        #expect(scores.count == 1 && scores.first?.failedCells == [2])
+        #expect(failures.messages.count == 1 && failures.messages.first?.contains("failing cells: cell 2 (") == true,
+                "\(failures.messages)")
     }
 }

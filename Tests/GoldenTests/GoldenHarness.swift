@@ -165,10 +165,27 @@ struct FrameScore: CustomStringConvertible {
     }
 }
 
+/// Where the golden harness reports a failing frame or sheet. Real golden tests leave it nil:
+/// each failure is an `Issue.record`. Harness self-tests that break a reference on purpose pass
+/// a collector and check the messages, so their expected failures are not "known issues" that
+/// would hide real ones (unrecorded audio digests, timing under load) in CI's annotation.
+@MainActor final class GoldenFailures {
+    /// Failure messages in report order (the text `Issue.record` would get).
+    private(set) var messages: [String] = []
+
+    init() {}
+
+    /// Records `message` here, or as a test issue when `sink` is nil.
+    static func report(_ message: String, to sink: GoldenFailures?) {
+        if let sink { sink.messages.append(message) } else { Issue.record(Comment(rawValue: message)) }
+    }
+}
+
 /// Renders the case's frames and scores them against the reference.
-/// Returns `nil` (and logs) when the case has no reference export yet.
+/// Returns `nil` (and logs) when the case has no reference export yet. Failing frames go to
+/// `failures` (default: test issues).
 @MainActor
-func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
+func runGoldenCase(_ c: GoldenCase, failures: GoldenFailures? = nil) async throws -> [FrameScore]? {
     let m = try c.manifest()
     guard let refURL = ReferenceFile.resolve(in: c.directory, declared: m.reference) else {
         print("golden \(m.caseName): no \(m.reference) (or .mov) yet, skipped")
@@ -200,7 +217,8 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
         guard rendered.width == reference.width, rendered.height == reference.height else {
             let dir = try Golden.writeArtefacts(case: m.caseName, frame: n, rendered: rendered, reference: reference,
                                                 ssim: nil)
-            Issue.record("\(m.caseName) frame \(n): rendered \(rendered.width)×\(rendered.height), reference \(reference.width)×\(reference.height); artefacts in \(dir.path)")
+            GoldenFailures.report("\(m.caseName) frame \(n): rendered \(rendered.width)×\(rendered.height), reference \(reference.width)×\(reference.height); artefacts in \(dir.path)",
+                                  to: failures)
             continue
         }
         let ssim = Metrics.ssim(rendered, reference)
@@ -241,7 +259,8 @@ func runGoldenCase(_ c: GoldenCase) async throws -> [FrameScore]? {
                                                 ssim: ssim)
             if !passed {
                 let expect = m.expectations["\(n)"].map { " (expected: \($0))" } ?? ""
-                Issue.record("\(m.caseName) frame \(n): SSIM \(String(format: "%.4f", ssim.mean)) < \(m.ssimMin) or PSNR \(String(format: "%.2f", psnr)) < \(psnrFloor ?? 0)\(expect); artefacts in \(dir.path)")
+                GoldenFailures.report("\(m.caseName) frame \(n): SSIM \(String(format: "%.4f", ssim.mean)) < \(m.ssimMin) or PSNR \(String(format: "%.2f", psnr)) < \(psnrFloor ?? 0)\(expect); artefacts in \(dir.path)",
+                                      to: failures)
             }
         }
     }
