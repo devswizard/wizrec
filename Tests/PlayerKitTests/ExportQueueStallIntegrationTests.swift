@@ -45,11 +45,16 @@ private final class NeverFinishing: FinishableWriter {
             let session = ExportSession(scene: scene, audio: audio, pool: MediaPool(diskCacheDirectory: nil),
                                         settings: settings, output: output)
             await session.setProgressHandler(progress)
-            let hooks = stuckJobs.contains(id) ? WriterHooks(wrapWriter: { NeverFinishing($0) }) : WriterHooks()
-            try await ExportSession.$writerHooks.withValue(hooks) {
-                try await ExportSession.$writerTimeouts.withValue(WriterTimeouts(finish: 0.5, stall: 0.3, cancel: 2)) {
-                    try await session.run()
+            if stuckJobs.contains(id) {
+                // Short bounds only for the stuck job: under load (or in optimized builds, QA12-1)
+                // a healthy encode can pause longer than 0.3 s and the next job failed as stalled too.
+                try await ExportSession.$writerHooks.withValue(WriterHooks(wrapWriter: { NeverFinishing($0) })) {
+                    try await ExportSession.$writerTimeouts.withValue(WriterTimeouts(finish: 0.5, stall: 0.3, cancel: 2)) {
+                        try await session.run()
+                    }
                 }
+            } else {
+                try await session.run()
             }
             progress(1)
         }
