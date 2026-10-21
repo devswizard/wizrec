@@ -246,6 +246,9 @@
     "Choose the whisper-cli executable" : {
 
     },
+    "Choose video, audio or image files to start a new project with." : {
+
+    },
     "Choose…" : {
 
     },
@@ -316,7 +319,13 @@
     "Double-click to add to the selected clips" : {
 
     },
+    "Drop a .cmproj or .tscproj project, or a video, audio or image file." : {
+
+    },
     "Drop media files here\nor choose File ▸ Import Media…" : {
+
+    },
+    "Drop projects or media files anywhere in this window." : {
 
     },
     "Duration" : {
@@ -352,6 +361,9 @@
     "Export is not available in this build." : {
 
     },
+    "Export the project as a video, GIF or audio file (⌘E)" : {
+
+    },
     "Exported captions to %arg." : {
 
     },
@@ -379,6 +391,9 @@
     "File name" : {
 
     },
+    "Fit the timeline to the window (⌘0)" : {
+
+    },
     "Formats" : {
 
     },
@@ -401,6 +416,9 @@
 
     },
     "General" : {
+
+    },
+    "Get Started" : {
 
     },
     "Go to End  (End)" : {
@@ -427,6 +445,9 @@
     "Highlight the word being spoken" : {
 
     },
+    "Import" : {
+
+    },
     "Import Captions" : {
 
     },
@@ -440,6 +461,9 @@
 
     },
     "Import Media… (⌘I)" : {
+
+    },
+    "Import media into the project (⌘I)" : {
 
     },
     "Imported %arg captions from %arg." : {
@@ -459,6 +483,9 @@
 
     },
     "Include audio" : {
+
+    },
+    "It was moved, renamed or deleted: %arg" : {
 
     },
     "Keep Exporting" : {
@@ -482,10 +509,16 @@
     "Model" : {
 
     },
+    "Modified %arg" : {
+
+    },
     "New Project" : {
 
     },
     "New Recording…" : {
+
+    },
+    "New recording (⌘R)" : {
 
     },
     "Next Frame  (→)" : {
@@ -494,7 +527,13 @@
     "No matches" : {
 
     },
-    "Open Project…" : {
+    "No recent projects" : {
+
+    },
+    "Not found" : {
+
+    },
+    "Open" : {
 
     },
     "Open Recent" : {
@@ -552,6 +591,9 @@
     "Progress" : {
 
     },
+    "Projects you open or save appear here. Open a Camtasia project, start a new one, or drop files here." : {
+
+    },
     "Properties" : {
 
     },
@@ -567,7 +609,19 @@
     "Range" : {
 
     },
+    "Recent Projects" : {
+
+    },
+    "Recent projects, New Project, New Recording and Open. When off, launching shows the Open panel." : {
+
+    },
+    "Record" : {
+
+    },
     "Redo" : {
+
+    },
+    "Redo (⇧⌘Z)" : {
 
     },
     "Refresh" : {
@@ -580,6 +634,9 @@
 
     },
     "Remove Track" : {
+
+    },
+    "Remove from List" : {
 
     },
     "Reports stay in ~/Library/Logs/WizRec. WizRec never sends them anywhere; attach one to a bug report yourself if you like. They hold the app and macOS version and a backtrace, never project content." : {
@@ -610,6 +667,9 @@
 
     },
     "Save to" : {
+
+    },
+    "Screen recorder & editor" : {
 
     },
     "Search" : {
@@ -666,16 +726,22 @@
     "Show Performance Overlay" : {
 
     },
+    "Show Start Screen" : {
+
+    },
     "Show Welcome Window" : {
 
     },
     "Show in Finder" : {
 
     },
-    "Show the performance overlay" : {
+    "Show start screen at launch" : {
 
     },
-    "Show the welcome window at launch" : {
+    "Show the introduction at launch" : {
+
+    },
+    "Show the performance overlay" : {
 
     },
     "Shows the frame at the playhead. Click a clip to select it, drag to move it." : {
@@ -724,6 +790,9 @@
 
     },
     "Spoken language" : {
+
+    },
+    "Start Screen" : {
 
     },
     "Start a new block at each sentence" : {
@@ -785,6 +854,9 @@
     "Undo" : {
 
     },
+    "Undo (⌘Z)" : {
+
+    },
     "Ungroup" : {
 
     },
@@ -795,6 +867,9 @@
 
     },
     "Uses %arg from the models folder." : {
+
+    },
+    "Version %arg" : {
 
     },
     "View" : {
@@ -824,6 +899,9 @@
     "WizRec" : {
 
     },
+    "WizRec can’t open %arg" : {
+
+    },
     "WizRec has no account, no analytics and sends nothing over the network." : {
 
     },
@@ -845,6 +923,12 @@
     "Zoom Out" : {
 
     },
+    "Zoom the timeline in (⌘=)" : {
+
+    },
+    "Zoom the timeline out (⌘-)" : {
+
+    },
     "Zoom to Fit" : {
 
     },
@@ -852,6 +936,9 @@
 
     },
     "macOS asks before WizRec can record. Nothing is requested until you use the feature." : {
+
+    },
+    "not found" : {
 
     },
     "not previewed" : {
@@ -876,6 +963,9 @@
 
     },
     "whisper.cpp needs a model: %arg. Settings ▸ Captions shows the models folder." : {
+
+    },
+    "“%arg” can’t be found" : {
 
     }
   },
