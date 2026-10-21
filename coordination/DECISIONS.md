@@ -305,3 +305,13 @@ Dated log. Newest last.
 - **2026-10-21 · CI test builds optimized (session 9, qa12):** test builds use
   `-Xswiftc -O` (debug config, `-enable-testing`), serial media step 324 s → 89 s locally;
   enabled after the RenderEngine texture-lifetime crash it exposed is fixed (render12).
+- **2026-10-21 · Library background into an open Rev group (session 9, app12):** it goes on a
+  new top inner track at the playhead like any other drop (§8.6), so it writes no
+  `ShaderVidSource`/`RevBackground`; those stay limited to `SetShaderVidSource` on inner track 0
+  [WizRec]. Revisit only if a save shows Camtasia putting it on track 0.
+- **2026-10-21 · Audio hash tests (session 9):** mix digests have one variant per CI machine type
+  (Accelerate/libm last bits); `OutputHashTests` accepts each observed variant, an unknown one
+  fails locally and is a known issue on CI (printed in the "Known issues" annotation, then
+  pinned). Decode digests are exact everywhere.
+- **2026-10-21 · CI known-issues annotation (session 9, qa12):** each test step prints a
+  "Known issues" notice listing every `withKnownIssue` (readable without login).
