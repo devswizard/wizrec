@@ -391,9 +391,8 @@ Source: a copy of the demo project (Rev media whose background is
   - set `ShaderVidSource` to the new file's absolute library path inside
     the app bundle.
 - **Camtasia Assets ▸ Dynamic Backgrounds** is where Camtasia places a
-  library background outside Rev. Its tiles did not accept synthetic
-  drags, double-clicks or right-clicks (the drags work from the media bin).
-  This path is still **[?]**.
+  library background outside Rev. Session 8 could not drive it; session 9
+  did (§11.2). It writes **no** `ShaderVidSource` [obs].
 - Media-bin imports have no `ShaderVidSource` (SH2, §11 table) [obs].
 - **WizRec keeps its rule** (write the key only for the Rev placement). It
   matches everything observed.
@@ -439,3 +438,48 @@ Source: a copy of the demo project (Rev media whose background is
   unchanged. When it writes a keyframed shader parameter, it should add (or
   reuse) the matching `animationTracks.visual` entry `{endTime,
   duration}`, as Camtasia does for every animation [inf].
+
+### 11.2 Session 9: a background placed from Camtasia Assets (RT-026)
+
+This answers §11.1 Q1 outside Rev. Base: a fresh copy of
+`format/one-video-base` (one 10 s video on track 1, 1920×1080, 30 fps).
+Saves are in `camtasia_rea_refs/research/shaders/as12/`.
+
+**How it was driven.**
+
+- The Media tab's second segment opens **Camtasia Assets**, which has the
+  rows Titles, Footage, Callouts, Dynamic Backgrounds and Music. Some Titles
+  tiles carry a premium badge. They were not touched. The Dynamic
+  Backgrounds tiles used here had no badge [obs].
+- **What did not work** [obs]:
+  - In the short row, a synthetic click doesn't select a tile.
+  - The row's context menu lists *Add to Timeline at Playhead*, *Preview*
+    and *Assets Help*, but *Add to Timeline at Playhead* added nothing.
+  - In the full grid (*See All*), a click selects the tile. But Return, a
+    double-click and a drag onto the timeline all did nothing.
+- **What worked: dragging a grid tile onto the canvas.** The undo item
+  became "Add Media" [obs].
+
+**Result** (`as1-4stop-canvas-drop`: "4 Stop Gradient", playhead 2 s;
+`as2-alabaster-canvas-drop`: "Alabaster", playhead 4 s) [obs]:
+
+| Claim | Tag |
+|---|---|
+| The clip is a `VMFile` on a **new track on top**, starting at the **playhead**, **15 s** long (`mediaDuration` 15 s). A media-bin drop of the same file makes a 60 s clip (§9; control `as4-bin-control`) | [obs] |
+| The file is copied into the bundle as `media/<stamp>/<stem>.tscshadervid`, with a new `sourceBin` entry of the import form (numeric `effectDef`, `sourceTracks` with `metaData` "<file>;", `metadata.timeAdded`). It also appears in the media bin | [obs] |
+| Neither file is in the app bundle, so Camtasia fetched them from its online asset library [inf] | [inf] |
+| **No `ShaderVidSource`** on either clip, and no `Rev*` or `groupType` keys anywhere | [obs] |
+| `attributes.ident` is "4stopgradient" (the file stem; the same as the bin drop) for one, and "Alabaster" (the tile title, capitalised) for the other | [obs]; rule [?] |
+| `sourceEffect` lists every `effectDef` entry, then `sourceFileType`, as in §6. For Alabaster, every value is the file's default. For 4 Stop Gradient, the colours are the defaults but the eight `PosN.x`/`PosN.y` values are **not** (for example `Pos0` 127.12, 968.69 against the file's 135, 970). The bin drop of the same file wrote the file's defaults | [obs]; the asset carrying its own preset values [inf] |
+| Clip `parameters` are in the long form `{type, defaultValue, interp "eioe"}` (the four `geometryCrop` keys; one clip also had `translation1` of −2.8e-14, float noise) | [obs] |
+| Clip `metadata` has the usual insert keys plus `default-*` keys. These differ between the two clips. 4 Stop Gradient has typed doubles `default-anchor0..2`, `rotation0..2`, `scale0..2`, `shear0..2`, `translation0..2`, `width` 1920 and `height` 1080, and four strings `default-SourceEffect-Color0..3` such as "(255,255,34,255)" that don't match its colours. Alabaster has `default-width`/`height`, `default-scale` "1" and `default-translation0/1` 95.64/176.0, while its real translation is 0 | [obs]; meaning [?] (compare the `default-…-Amount` key of RT-019) |
+| `animationTracks` is written as `{}` | [obs] |
+| A later save keeps both clips unchanged apart from the dense id renumbering (`as2` against `as1`) | [obs] |
+
+**WizRec's rule stands** [inf]. It writes `ShaderVidSource` only for the
+Rev placement, which matches: an Assets placement writes none. When WizRec
+places a library background from its own library panel, it may follow
+the Assets shape: a new top track at the playhead, 15 s, the file's
+`effectDef` defaults and no `ShaderVidSource`. The `default-*` metadata
+keys are not needed: Camtasia opens projects without them (every bin
+import lacks them).
