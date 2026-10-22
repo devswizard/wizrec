@@ -8,6 +8,27 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ## 0. Session 11 snapshot (2026-10-21) — read this first
 
+> **PAUSED 2026-10-22 ~06:15 by the user (token budget); resumes next week.**
+> State at the pause: `main` = `373893a`, pushed, 1299 tests green, 0 known issues, 6.3.3
+> build green; CI run 58 green, run 59 (docs-only) was running. **No agent is running**; no
+> GUI lock, no caffeinate, no test process left. v0.1.3 is still the public release.
+>
+> **Resume in this order:**
+> 1. Step 0 checks (NEXT_SESSION_PROMPT); confirm run 59 green on the Actions page.
+> 2. Spawn **app** (`agent/app16` from main): fresh `scripts/make-app.sh`, GUI lock + bounded
+>    `caffeinate`, then `check-canvas-tools.sh`, `check-drops.sh`, `run-all.sh` (11 checks)
+>    with `SHOTS_DIR` in the scratchpad; review the snapshots; fix failures. These checks
+>    have **never run** on the session-11 UI (canvas handles, crop, menus, tile drags,
+>    Captions/Animations tabs).
+> 3. Green → tag `v0.1.4` on main (notes ready: `check-notes.sh 0.1.4` OK) → Release draft →
+>    `release/publish` = `v0.1.4` → verify from the public URL → install in /Applications only
+>    after the user quits WizRec.
+> 4. Then the pending work list in NEXT_SESSION_PROMPT (session-12 roster).
+>
+> Leftover worktrees `agent-aae9206b121acedd4` (qa19) and `agent-ac2bdad39fa36e0bd`
+> (export16) are merged but marked "locked" by the harness: remove them with
+> `git worktree unlock <path> && git worktree remove <path>` once no agent uses them.
+
 - **`main` is green: 1299 tests, 0 known issues**, 6.3.3 build green. CI runs 53–56 green; run
   57 (final merge push) was running at the end — check the Actions page first.
 - **User at start:** no Sparkle key (`public_ed_key` empty), no licensed exports (0/26).

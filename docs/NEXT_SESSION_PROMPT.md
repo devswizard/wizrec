@@ -8,8 +8,9 @@ run_in_background true), let them talk to each other with SendMessage, and use a
 workflow if useful. I want automated solutions: do everything yourself, decide
 sensible defaults, and only ask me what truly needs me.
 
-WHERE SESSION 11 ENDED (2026-10-21)
-- main is green locally: 1299 tests, 0 known issues, Swift 6.3.3 build green.
+WHERE SESSION 11 ENDED (paused 2026-10-22 ~06:15; resume next week)
+- Read docs/HANDOFF.md §0 "PAUSED" box first: it has the exact resume order.
+- main = 373893a (+ this handoff commit), pushed; 1299 tests, 0 known issues, Swift 6.3.3 build green.
   CI runs 53–56 green; run 57 (final merge push) and the wrap-up push were
   running at the end: check the Actions page first.
 - v0.1.0–v0.1.3 PUBLIC; v0.1.3 installed in /Applications on my Mac.
@@ -24,9 +25,8 @@ WHERE SESSION 11 ENDED (2026-10-21)
   --ephemeral-layout; researcher specs effects/inspector.md, callouts §6a,
   ui-workflow §8.1.
 - Sparkle feed prepared but OFF: no key yet. No licensed exports.
-- Leftover worktrees: agent/app15 (resume it for UI checks or remove) and
-  qa's watch worktree; agent branches app15/qa16–18/timeline15/media15/
-  researcher15 are merged.
+- Leftover worktrees: qa19 and export16 (merged, harness-locked: unlock +
+  remove). All session-11 agent branches are merged; no agent running.
 - Full story: docs/HANDOFF.md §0 (session-11 snapshot, follow-ups, NEED_USER).
 
 GOAL (session 12), in priority order:
