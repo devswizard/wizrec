@@ -76,7 +76,7 @@ continue here.
   modes, matte modes, Border/Reflection, CO3 callouts, Extend Frame, Metal
   HDR tone map for playback), group/split/trim/ungroup/marker/copy-paste/
   drop/Clip Speed rules from observed Camtasia saves. Automated UI checks of
-  the built app (`scripts/ui-checks/`, 10/10). **1296 tests green, 0 known
+  the built app (`scripts/ui-checks/`, 10/10). **1299 tests green, 0 known
   issues** (golden/LoadGate self-tests now check collected failures).
 - Session 11 landed (v0.1.4 notes ready, **not tagged**: screen locked, UI
   checks never ran):

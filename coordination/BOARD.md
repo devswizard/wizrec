@@ -460,7 +460,7 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 | RES15-2 | researcher | done | canvas handles and crop mode behaviour (§8), save-only |
 | QA15-1 | qa | done | integration tests: every import path through `DropClip`, canvas drop, key loop model; every session-11 merge |
 | QA15-2 | qa | done | flaky watch on each merge under `-O` and load |
-| EXP16-1 | export | claimed | StallWatch measures awake time (QA19-F1: sleep mid-export → encoderStalled) |
+| EXP16-1 | export | done | StallWatch measures awake time (QA19-F1: sleep mid-export → encoderStalled) |
 | MED15-1 | media | done | measure 4K tone-map texture cost; IOSurface texture reuse cache only if it matters |
 
 ## Session 11 merges
@@ -471,4 +471,5 @@ All tasks done; every branch merged; worktrees removed. Follow-ups and NEED_USER
 - qa16/17/18: import-path placement + key loop integration tests, group-drop and 2-track tests, session-11 edit integration tests; thumbnail keyframe flake and recorder writer load flake fixed (test-only).
 - researcher15 (wall-reviewed): `effects/inspector.md` (every effect's controls, ranges, display scales, ease keys), callouts §6a, ui-workflow §8.1 canvas handles (RT-030, RT-031). Crop mode [?] (Camtasia hung on AX).
 - Full run 1296 tests, 0 known issues; 6.3.3 build green. CI runs 54–56 green, 57 on the final push.
+- export16: QA19-F1 export stall watch on `systemUptime` (sleep mid-export no longer fails it); exporter test bounds on awake time. qa19: TestGenKit MediaWriter waits on uptime.
 - v0.1.4 notes ready (`check-notes.sh 0.1.4` OK), **not tagged**: app's UI checks could not run (screen locked from 21:57).

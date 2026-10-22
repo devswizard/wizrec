@@ -9,7 +9,7 @@ workflow if useful. I want automated solutions: do everything yourself, decide
 sensible defaults, and only ask me what truly needs me.
 
 WHERE SESSION 11 ENDED (2026-10-21)
-- main is green locally: 1296 tests, 0 known issues, Swift 6.3.3 build green.
+- main is green locally: 1299 tests, 0 known issues, Swift 6.3.3 build green.
   CI runs 53–56 green; run 57 (final merge push) and the wrap-up push were
   running at the end: check the Actions page first.
 - v0.1.0–v0.1.3 PUBLIC; v0.1.3 installed in /Applications on my Mac.

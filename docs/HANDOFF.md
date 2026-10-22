@@ -8,7 +8,7 @@ This is for the **lead session** that continues the WizRec build. Read
 
 ## 0. Session 11 snapshot (2026-10-21) — read this first
 
-- **`main` is green: 1296 tests, 0 known issues**, 6.3.3 build green. CI runs 53–56 green; run
+- **`main` is green: 1299 tests, 0 known issues**, 6.3.3 build green. CI runs 53–56 green; run
   57 (final merge push) was running at the end — check the Actions page first.
 - **User at start:** no Sparkle key (`public_ed_key` empty), no licensed exports (0/26).
   Mid-session the user set a short time budget. The screen locked at ~21:57 and stayed locked
@@ -39,6 +39,8 @@ This is for the **lead session** that continues the WizRec build. Read
     session-11 edit integration tests; two load flakes fixed (thumbnail keyframe assumption;
     recorder non-real-time writer drops under load ≥ 130 → LoadGate bound).
   - media15: tone-map texture creation measured negligible (21–28 µs/4K frame) → no cache.
+  - export16 (QA19-F1): the export stall watch measured wall time, so a Mac sleep mid-export
+    failed it with "encoder stalled"; it now reads `systemUptime` (injectable, tested).
 - **Follow-ups:**
   - run the UI checks and ship v0.1.4 (above);
   - crop mode keys/gestures in Camtasia [?] (Camtasia hung on AX after the crop tool);
@@ -53,6 +55,11 @@ This is for the **lead session** that continues the WizRec build. Read
   - Custom animation's empty `animationTracks` entry dropped by `AnimationSync.sync` on a later
     `SetParameter` (pre-existing);
   - Recorder: non-real-time `MediaFileWriter.append` waits only 2 s per sample (tests only).
+  - Sleep-unsafe wall-clock bounds left after export16 (QA19-F1 class): Recorder countdown
+    (`Contract.swift` ~104, `Date()+1` per tick), `wizrec-record` recording length (`Date()`;
+    a sleep ends a recording early), `VTPictureDecoder` `cond.wait(until:)` (likely harmless);
+    test bounds on `ContinuousClock` in RecorderTests, AudioEngineTests, RenderEngineTests,
+    PerfTests → `SuspendingClock` where used as bounds.
 - **NEED_USER:**
   1. Keep the Mac unlocked/awake while UI checks and the release run.
   2. One Sparkle `generate_keys` run, public key into `release/sparkle.conf`.

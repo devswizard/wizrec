@@ -82,6 +82,11 @@ To record, allow WizRec under **System Settings ▸ Privacy & Security** for
   media dropped on the canvas or double-clicked in the media bin goes into that group.
 - **Dragging a file from Finder over the timeline** now previews the clip's real length.
 
+**Fixes**
+
+- An export no longer fails with "encoder stalled" when the Mac goes to sleep while it
+  runs.
+
 See the [0.1.3 release](https://github.com/devswizard/wizrec/releases/tag/v0.1.3) for the
 previous changes (empty states, drops everywhere, timeline toolbar, smarter placement,
 Clip Speed by duration, Tab between panes).
