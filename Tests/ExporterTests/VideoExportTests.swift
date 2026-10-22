@@ -295,16 +295,16 @@ final class ProgressLog: @unchecked Sendable {
         let session = ExportSession(scene: p.scene, audio: p.audio, pool: MediaPool(),
                                     settings: ExportSettings(format: .mp4(codec: "h264", bitrate: nil)),
                                     output: dir.appendingPathComponent("poll.mp4"))
-        let t0 = Date()
+        let t0 = ProcessInfo.processInfo.systemUptime  // awake time: system sleep does not count
         let run = Task.detached { try await session.run() }
         var polls = 0
         while await session.progress < 1 {
             polls += 1
             try await Task.sleep(nanoseconds: 200_000_000)
-            if Date().timeIntervalSince(t0) > 60 { break }
+            if ProcessInfo.processInfo.systemUptime - t0 > 60 { break }
         }
         try await Deadline.value(of: run, "polled export to finish")
-        let elapsed = Date().timeIntervalSince(t0)
+        let elapsed = ProcessInfo.processInfo.systemUptime - t0
         LoadGate.expect(elapsed < 60, "export with polling took \(elapsed) s (\(polls) polls)")
     }
 }

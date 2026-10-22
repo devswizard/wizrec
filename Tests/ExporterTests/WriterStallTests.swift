@@ -63,7 +63,7 @@ private func start(_ session: ExportSession, hooks: WriterHooks) -> Task<Void, a
 /// Runs the export and expects `ExportError.encoderStalled(seconds: 1)` well before the test bound;
 /// then the output must be absent, nothing left in `dir`, and the writer cancelled.
 private func expectStall(_ session: ExportSession, hooks: WriterHooks, dir: URL, cancels: CallCount?) async throws {
-    let clock = ContinuousClock()
+    let clock = SuspendingClock()  // awake time: a system sleep mid-test once read as a 954 s stall
     let began = clock.now
     let run = start(session, hooks: hooks)
     await #expect(throws: ExportError.encoderStalled(seconds: 1)) {
